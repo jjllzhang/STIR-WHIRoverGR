@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../parameters.hpp"
+#include "fri/common.hpp"
 
 namespace swgr::fri {
 
@@ -20,6 +21,7 @@ struct FriParameters {
 };
 
 bool validate(const FriParameters& params);
+bool validate(const FriParameters& params, const FriInstance& instance);
 
 }  // namespace swgr::fri
 

@@ -1,6 +1,7 @@
 #ifndef SWGR_FRI_PROOF_SIZE_ESTIMATOR_HPP_
 #define SWGR_FRI_PROOF_SIZE_ESTIMATOR_HPP_
 
+#include "fri/common.hpp"
 #include "fri/parameters.hpp"
 #include "ldt.hpp"
 
@@ -10,7 +11,7 @@ class FriProofSizeEstimator {
  public:
   explicit FriProofSizeEstimator(FriParameters params);
 
-  swgr::EstimateResult estimate() const;
+  swgr::EstimateResult estimate(const FriInstance& instance) const;
 
  private:
   FriParameters params_;

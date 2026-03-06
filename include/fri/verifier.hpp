@@ -10,7 +10,7 @@ class FriVerifier {
  public:
   explicit FriVerifier(FriParameters params);
 
-  bool verify(const FriProof& proof) const;
+  bool verify(const FriInstance& instance, const FriProof& proof) const;
 
  private:
   FriParameters params_;
