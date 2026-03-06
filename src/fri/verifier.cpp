@@ -15,7 +15,7 @@ FriVerifier::FriVerifier(FriParameters params) : params_(std::move(params)) {}
 bool FriVerifier::verify(const FriInstance& instance,
                          const FriProof& proof) const {
   try {
-    if (params_.fold_factor != 3 || !validate(params_, instance)) {
+    if (!validate(params_, instance)) {
       return false;
     }
 

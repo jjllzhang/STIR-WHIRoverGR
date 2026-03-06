@@ -15,10 +15,6 @@ FriProver::FriProver(FriParameters params) : params_(std::move(params)) {}
 FriProof FriProver::prove(
     const FriInstance& instance,
     const swgr::poly_utils::Polynomial& polynomial) const {
-  if (params_.fold_factor != 3) {
-    throw std::invalid_argument(
-        "fri::FriProver::prove currently implements Phase 3 FRI-3 only");
-  }
   if (!validate(params_, instance)) {
     throw std::invalid_argument("fri::FriProver::prove received invalid instance");
   }

@@ -14,10 +14,11 @@
 - `GRContext`、ring element 序列化、`Domain`、`Polynomial`、GR 插值 wrapper 已给出第一版实现；
 - `Domain` 现已对 `offset`/`root` 做 fail-fast 校验，并检查 `root` 的 exact order；
 - `FFT3` / `inverse_fft3` 与 `folding` 已给出第一版语义正确实现，并补上基础 roundtrip / 对拍测试；
-- `FRI-3` baseline 已按 Phase 3 落地为 **in-memory oracle + deterministic mock transcript** 版本，包含 prover / verifier / proof size estimator；
+- `FRI-3` / `FRI-9` baseline 已按 **Phase 4** 落地为 **in-memory oracle + deterministic mock transcript** 版本，包含 prover / verifier / proof size estimator；
 - CMake target 命名已统一为 `galoisring_backend` 与 `stir_over_gr`；
 - Phase 1 域构造推荐从 `Domain::teichmuller_subgroup(...)` / `Domain::teichmuller_coset(...)` 进入；
-- `FRI-9`、`STIR(9->3)`、真实 `Merkle + Fiat–Shamir` hash/opening 仍待后续 Phase 继续实现。
+- `bench_proof_size_estimate` 现会并排输出 `FRI-3` 与 `FRI-9` 的估算结果，便于做 baseline 对照；
+- `STIR(9->3)` 与真实 `Merkle + Fiat–Shamir` hash/opening 仍待后续 Phase 继续实现。
 
 ## 构建
 
@@ -27,7 +28,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-### Phase 3 快速验证
+### Phase 4 快速验证
 
 ```bash
 ctest --test-dir build --output-on-failure -R test_fri
@@ -36,9 +37,10 @@ ctest --test-dir build --output-on-failure -R test_fri
 
 说明：
 
-- 当前 `FRI-3` verifier 使用 mock transcript 重新派生 round challenge 与 query positions；
+- 当前 `FRI-3` / `FRI-9` verifier 使用 mock transcript 重新派生 round challenge 与 query positions；
 - proof 仍走 in-memory oracle，不依赖真实 `MerkleTree::open(...)`；
-- `bench_proof_size_estimate` 输出的是 Phase 3 口径下的估算值，不是最终真实序列化 proof 大小。
+- `bench_proof_size_estimate` 会顺序打印 `protocol=fri3` 与 `protocol=fri9` 两段结果，使用同一组 ring / domain / degree 参数做初步对照；
+- 当前输出仍是 Phase 4 口径下的估算值，不是最终真实序列化 proof 大小。
 
 ## 目录
 

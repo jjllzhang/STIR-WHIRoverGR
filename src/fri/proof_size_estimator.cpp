@@ -15,10 +15,6 @@ FriProofSizeEstimator::FriProofSizeEstimator(FriParameters params)
 
 swgr::EstimateResult FriProofSizeEstimator::estimate(
     const FriInstance& instance) const {
-  if (params_.fold_factor != 3) {
-    throw std::invalid_argument(
-        "fri::FriProofSizeEstimator::estimate currently implements FRI-3 only");
-  }
   if (!validate(params_, instance)) {
     throw std::invalid_argument(
         "fri::FriProofSizeEstimator::estimate received invalid instance");
