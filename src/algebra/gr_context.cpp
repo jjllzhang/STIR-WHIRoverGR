@@ -11,9 +11,11 @@
 #include <vector>
 
 #include "GaloisRing/Inverse.hpp"
+#include "GaloisRing/PrimitiveElement.hpp"
 #include "GaloisRing/utils.hpp"
 
 using NTL::BytesFromZZ;
+using NTL::NumBits;
 using NTL::ProbPrime;
 using NTL::SetCoeff;
 using NTL::ZZ;
@@ -226,7 +228,14 @@ void GRContext::ensure_teich_generator_initialized() const {
   ensure_backend_initialized();
 
   const long k_long = CheckedLong(cfg_.k_exp, "k_exp");
-  {
+  const long r_long = CheckedLong(cfg_.r, "r");
+  const long max_long_bits = static_cast<long>(8 * sizeof(long) - 1);
+  const ZZ teich_order = power(prime_, r_long) - ZZ(1);
+
+  if (NumBits(teich_order) <= max_long_bits) {
+    teich_generator_ =
+        FindTeichmullerGenerator(prime_, k_long, r_long, extension_polynomial_);
+  } else {
     ZZ_pPush modulus_push(modulus_);
     ZZ_pEPush ext_push(extension_polynomial_);
     ZZ_pX x_poly;
