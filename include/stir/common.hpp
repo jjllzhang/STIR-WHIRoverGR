@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "crypto/fs/transcript.hpp"
+#include "crypto/merkle_tree/merkle_tree.hpp"
 #include "domain.hpp"
 #include "ldt.hpp"
 #include "poly_utils/polynomial.hpp"
@@ -41,8 +43,11 @@ struct StirRoundProof {
   swgr::poly_utils::Polynomial input_polynomial;
   swgr::poly_utils::Polynomial folded_polynomial;
   std::vector<swgr::algebra::GRElem> shifted_oracle_evals;
+  std::vector<std::uint64_t> fold_query_positions;
   std::vector<std::uint64_t> shift_query_positions;
   std::vector<swgr::algebra::GRElem> shift_query_answers;
+  swgr::crypto::MerkleProof input_oracle_proof;
+  swgr::crypto::MerkleProof shift_oracle_proof;
   std::vector<swgr::algebra::GRElem> ood_points;
   std::vector<swgr::algebra::GRElem> ood_answers;
   swgr::poly_utils::Polynomial answer_polynomial;
@@ -68,11 +73,20 @@ std::vector<std::uint64_t> derive_unique_positions(
     const std::vector<std::uint8_t>& seed_material, std::uint64_t round_tag,
     std::uint64_t modulus, std::uint64_t requested_count);
 
+std::vector<std::uint64_t> derive_unique_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t requested_count);
+
 std::vector<swgr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
     const std::vector<std::uint8_t>& oracle_commitment, std::uint64_t round_tag,
     std::uint64_t sample_count);
+
+std::vector<swgr::algebra::GRElem> derive_ood_points(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    std::string_view label_prefix, std::uint64_t sample_count);
 
 }  // namespace swgr::stir
 

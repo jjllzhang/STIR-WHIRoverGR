@@ -1,7 +1,9 @@
 #include "stir/prover.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -15,28 +17,19 @@
 namespace swgr::stir {
 namespace {
 
-constexpr std::uint64_t kCombinationTagOffset = 0x20000ULL;
-constexpr std::uint64_t kShiftTagOffset = 0x30000ULL;
-
-std::vector<std::uint8_t> AppendSerializedElement(
-    const swgr::algebra::GRContext& ctx, std::vector<std::uint8_t> seed,
-    const swgr::algebra::GRElem& value) {
-  const auto serialized = ctx.serialize(value);
-  seed.insert(seed.end(), serialized.begin(), serialized.end());
-  return seed;
-}
-
-std::vector<std::uint8_t> AppendSerializedElements(
-    const swgr::algebra::GRContext& ctx, std::vector<std::uint8_t> seed,
-    const std::vector<swgr::algebra::GRElem>& values) {
-  for (const auto& value : values) {
-    seed = AppendSerializedElement(ctx, std::move(seed), value);
-  }
-  return seed;
-}
-
 std::uint64_t SaturatingSubtract(std::uint64_t lhs, std::uint64_t rhs) {
   return lhs >= rhs ? lhs - rhs : 0;
+}
+
+double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
+                           std::chrono::steady_clock::time_point end) {
+  return std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(
+             end - start)
+      .count();
+}
+
+std::string RoundLabel(const char* prefix, std::size_t round_index) {
+  return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
 }  // namespace
@@ -60,6 +53,7 @@ StirProof StirProver::prove(
   Domain current_domain = instance.domain;
   std::uint64_t current_degree_bound = instance.claimed_degree;
   swgr::poly_utils::Polynomial current_polynomial = polynomial;
+  swgr::crypto::Transcript transcript(params_.hash_profile);
 
   const std::size_t round_count = folding_round_count(instance, params_);
   const auto schedule =
@@ -67,6 +61,19 @@ StirProof StirProver::prove(
   const std::uint64_t elem_bytes =
       static_cast<std::uint64_t>(ctx.elem_bytes());
   std::uint64_t serialized_bytes = 0;
+  const auto prover_start = std::chrono::steady_clock::now();
+  double encode_ms = 0.0;
+  double merkle_ms = 0.0;
+  double transcript_ms = 0.0;
+  double fold_ms = 0.0;
+  double interpolate_ms = 0.0;
+  double query_open_ms = 0.0;
+  double ood_ms = 0.0;
+  double answer_ms = 0.0;
+  double quotient_ms = 0.0;
+  double degree_correction_ms = 0.0;
+  double commit_ms = 0.0;
+  double query_phase_ms = 0.0;
 
   for (std::size_t round_index = 0; round_index < round_count; ++round_index) {
     StirRoundProof round;
@@ -75,11 +82,24 @@ StirProof StirProver::prove(
     round.input_degree_bound = current_degree_bound;
     round.input_polynomial = current_polynomial;
 
+    const auto encode_start = std::chrono::steady_clock::now();
     const auto input_oracle =
         swgr::poly_utils::rs_encode(current_domain, current_polynomial);
-    const auto input_root = swgr::fri::commit_oracle(ctx, input_oracle);
+    encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
+    const auto commit_start = std::chrono::steady_clock::now();
+    const auto input_merkle_start = std::chrono::steady_clock::now();
+    const auto input_tree =
+        swgr::fri::build_oracle_tree(params_.hash_profile, ctx, input_oracle,
+                                     params_.virtual_fold_factor);
+    merkle_ms +=
+        ElapsedMilliseconds(input_merkle_start, std::chrono::steady_clock::now());
+    const auto input_root = input_tree.root();
+    const auto transcript_start = std::chrono::steady_clock::now();
+    transcript.absorb_bytes(input_root);
     round.folding_alpha = swgr::fri::derive_round_challenge(
-        ctx, input_root, static_cast<std::uint64_t>(round_index));
+        transcript, ctx, RoundLabel("stir.fold_alpha", round_index));
+    transcript_ms +=
+        ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
 
     const Domain folded_domain =
         current_domain.pow_map(params_.virtual_fold_factor);
@@ -89,37 +109,66 @@ StirProof StirProver::prove(
     round.folded_degree_bound =
         folded_degree_bound(current_degree_bound, params_.virtual_fold_factor);
 
+    const auto fold_start = std::chrono::steady_clock::now();
     const auto folded_table = swgr::poly_utils::fold_table_k(
         current_domain, input_oracle, params_.virtual_fold_factor,
         round.folding_alpha);
+    fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
+    const auto interpolate_start = std::chrono::steady_clock::now();
     round.folded_polynomial =
         swgr::poly_utils::rs_interpolate(folded_domain, folded_table);
+    interpolate_ms +=
+        ElapsedMilliseconds(interpolate_start, std::chrono::steady_clock::now());
+    const auto shift_encode_start = std::chrono::steady_clock::now();
     round.shifted_oracle_evals =
         swgr::poly_utils::rs_encode(shift_domain, round.folded_polynomial);
+    encode_ms +=
+        ElapsedMilliseconds(shift_encode_start, std::chrono::steady_clock::now());
 
-    const auto oracle_root =
-        swgr::fri::commit_oracle(ctx, round.shifted_oracle_evals);
+    const auto shift_merkle_start = std::chrono::steady_clock::now();
+    const auto shift_tree = swgr::fri::build_oracle_tree(
+        params_.hash_profile, ctx, round.shifted_oracle_evals, 1);
+    merkle_ms +=
+        ElapsedMilliseconds(shift_merkle_start, std::chrono::steady_clock::now());
+    const auto oracle_root = shift_tree.root();
     proof.oracle_roots.push_back(oracle_root);
+    const auto transcript_shift_start = std::chrono::steady_clock::now();
+    transcript.absorb_bytes(oracle_root);
+    transcript_ms += ElapsedMilliseconds(transcript_shift_start,
+                                         std::chrono::steady_clock::now());
+    commit_ms += ElapsedMilliseconds(commit_start, std::chrono::steady_clock::now());
 
+    const auto query_start = std::chrono::steady_clock::now();
+    const auto ood_start = std::chrono::steady_clock::now();
     round.ood_points = derive_ood_points(
-        current_domain, shift_domain, folded_domain, oracle_root,
-        static_cast<std::uint64_t>(round_index), params_.ood_samples);
+        current_domain, shift_domain, folded_domain, transcript,
+        RoundLabel("stir.ood", round_index), params_.ood_samples);
     round.ood_answers.reserve(round.ood_points.size());
     for (const auto& point : round.ood_points) {
       round.ood_answers.push_back(round.folded_polynomial.evaluate(ctx, point));
     }
-
-    const auto combination_seed =
-        AppendSerializedElements(ctx, oracle_root, round.ood_answers);
+    ood_ms += ElapsedMilliseconds(ood_start, std::chrono::steady_clock::now());
+    const auto transcript_query_start = std::chrono::steady_clock::now();
+    for (const auto& answer : round.ood_answers) {
+      transcript.absorb_ring(ctx, answer);
+    }
     round.comb_randomness = swgr::fri::derive_round_challenge(
-        ctx, combination_seed,
-        static_cast<std::uint64_t>(round_index) + kCombinationTagOffset);
-
-    const auto shift_seed =
-        AppendSerializedElement(ctx, combination_seed, round.comb_randomness);
-    round.shift_query_positions = derive_unique_positions(
-        shift_seed, static_cast<std::uint64_t>(round_index) + kShiftTagOffset,
+        transcript, ctx, RoundLabel("stir.comb", round_index));
+    round.fold_query_positions = derive_unique_positions(
+        transcript, RoundLabel("stir.fold_query", round_index),
         folded_domain.size(), schedule[round_index]);
+    round.shift_query_positions = derive_unique_positions(
+        transcript, RoundLabel("stir.shift_query", round_index),
+        shift_domain.size(), schedule[round_index]);
+    transcript_ms += ElapsedMilliseconds(transcript_query_start,
+                                         std::chrono::steady_clock::now());
+
+    const auto open_start = std::chrono::steady_clock::now();
+    round.input_oracle_proof = input_tree.open(round.fold_query_positions);
+    round.shift_oracle_proof = shift_tree.open(round.shift_query_positions);
+    const double open_elapsed =
+        ElapsedMilliseconds(open_start, std::chrono::steady_clock::now());
+    query_open_ms += open_elapsed;
     round.shift_query_answers.reserve(round.shift_query_positions.size());
 
     std::vector<swgr::algebra::GRElem> answer_points = round.ood_points;
@@ -129,23 +178,34 @@ StirProof StirProver::prove(
                           round.shift_query_positions.size());
     for (const auto position : round.shift_query_positions) {
       round.shift_query_answers.push_back(
-          folded_table[static_cast<std::size_t>(position)]);
-      answer_points.push_back(folded_domain.element(position));
+          round.shifted_oracle_evals[static_cast<std::size_t>(position)]);
+      answer_points.push_back(shift_domain.element(position));
       answer_values.push_back(round.shift_query_answers.back());
     }
+    query_phase_ms +=
+        ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
 
+    const auto answer_start = std::chrono::steady_clock::now();
     round.answer_polynomial =
         swgr::poly_utils::answer_polynomial(ctx, answer_points, answer_values);
     round.vanishing_polynomial =
         swgr::poly_utils::vanishing_polynomial(ctx, answer_points);
+    answer_ms += ElapsedMilliseconds(answer_start, std::chrono::steady_clock::now());
+
+    const auto quotient_start = std::chrono::steady_clock::now();
     round.quotient_polynomial = swgr::poly_utils::quotient_polynomial_from_answers(
         ctx, round.folded_polynomial, answer_points, answer_values);
+    quotient_ms +=
+        ElapsedMilliseconds(quotient_start, std::chrono::steady_clock::now());
 
     const std::uint64_t quotient_degree_bound =
         SaturatingSubtract(round.folded_degree_bound, answer_points.size());
+    const auto degree_correction_start = std::chrono::steady_clock::now();
     round.next_polynomial = swgr::poly_utils::degree_correction_polynomial(
         ctx, round.quotient_polynomial, round.folded_degree_bound,
         quotient_degree_bound, round.comb_randomness);
+    degree_correction_ms += ElapsedMilliseconds(
+        degree_correction_start, std::chrono::steady_clock::now());
     if (round.next_polynomial.degree() > round.folded_degree_bound) {
       throw std::runtime_error(
           "stir::StirProver::prove degree correction exceeded target degree");
@@ -167,8 +227,23 @@ StirProof StirProver::prove(
         elem_bytes;
     serialized_bytes += static_cast<std::uint64_t>(oracle_root.size());
     serialized_bytes +=
+        static_cast<std::uint64_t>(round.fold_query_positions.size()) *
+        sizeof(std::uint64_t);
+    serialized_bytes +=
         static_cast<std::uint64_t>(round.shift_query_positions.size()) *
         sizeof(std::uint64_t);
+    for (const auto& payload : round.input_oracle_proof.leaf_payloads) {
+      serialized_bytes += static_cast<std::uint64_t>(payload.size());
+    }
+    for (const auto& sibling : round.input_oracle_proof.sibling_hashes) {
+      serialized_bytes += static_cast<std::uint64_t>(sibling.size());
+    }
+    for (const auto& payload : round.shift_oracle_proof.leaf_payloads) {
+      serialized_bytes += static_cast<std::uint64_t>(payload.size());
+    }
+    for (const auto& sibling : round.shift_oracle_proof.sibling_hashes) {
+      serialized_bytes += static_cast<std::uint64_t>(sibling.size());
+    }
 
     proof.rounds.push_back(round);
     current_domain = shift_domain;
@@ -188,6 +263,25 @@ StirProof StirProver::prove(
   proof.stats.prover_rounds = static_cast<std::uint64_t>(round_count);
   proof.stats.serialized_bytes = serialized_bytes;
   proof.stats.verifier_hashes = 0;
+  for (const auto& round : proof.rounds) {
+    proof.stats.verifier_hashes +=
+        static_cast<std::uint64_t>(round.input_oracle_proof.sibling_hashes.size() +
+                                   round.shift_oracle_proof.sibling_hashes.size());
+  }
+  proof.stats.commit_ms = commit_ms;
+  proof.stats.prove_query_phase_ms = query_phase_ms;
+  proof.stats.prover_encode_ms = encode_ms;
+  proof.stats.prover_merkle_ms = merkle_ms;
+  proof.stats.prover_transcript_ms = transcript_ms;
+  proof.stats.prover_fold_ms = fold_ms;
+  proof.stats.prover_interpolate_ms = interpolate_ms;
+  proof.stats.prover_query_open_ms = query_open_ms;
+  proof.stats.prover_ood_ms = ood_ms;
+  proof.stats.prover_answer_ms = answer_ms;
+  proof.stats.prover_quotient_ms = quotient_ms;
+  proof.stats.prover_degree_correction_ms = degree_correction_ms;
+  proof.stats.prover_total_ms =
+      ElapsedMilliseconds(prover_start, std::chrono::steady_clock::now());
   return proof;
 }
 

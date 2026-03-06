@@ -1,9 +1,14 @@
 #include "algebra/teichmuller.hpp"
 
 #include <NTL/ZZ.h>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <optional>
 #include <set>
 #include <stdexcept>
+#include <vector>
 
 #include <NTL/ZZ_pE.h>
 
@@ -14,11 +19,40 @@ using NTL::set;
 namespace swgr::algebra {
 namespace {
 
+constexpr std::uint64_t kFallbackSeed = 0xC0DEC0FFEE12345ULL;
+
 long CheckedLong(std::uint64_t value) {
   if (value > static_cast<std::uint64_t>(std::numeric_limits<long>::max())) {
     throw std::invalid_argument("subgroup size exceeds long");
   }
   return static_cast<long>(value);
+}
+
+std::uint64_t SplitMix64(std::uint64_t& state) {
+  state += 0x9E3779B97F4A7C15ULL;
+  std::uint64_t z = state;
+  z = (z ^ (z >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27U)) * 0x94D049BB133111EBULL;
+  return z ^ (z >> 31U);
+}
+
+std::vector<std::uint8_t> DeterministicCandidateBytes(const GRContext& ctx,
+                                                      std::uint64_t size,
+                                                      std::uint64_t attempt) {
+  std::vector<std::uint8_t> bytes(ctx.elem_bytes(), 0);
+  std::uint64_t state =
+      kFallbackSeed ^ (ctx.config().p << 48U) ^ (ctx.config().k_exp << 24U) ^
+      ctx.config().r ^ (size << 7U) ^ attempt;
+  for (std::size_t offset = 0; offset < bytes.size(); offset += sizeof(std::uint64_t)) {
+    const auto word = SplitMix64(state);
+    const std::size_t chunk =
+        std::min<std::size_t>(sizeof(std::uint64_t), bytes.size() - offset);
+    for (std::size_t i = 0; i < chunk; ++i) {
+      bytes[offset + i] =
+          static_cast<std::uint8_t>((word >> (8U * i)) & 0xFFU);
+    }
+  }
+  return bytes;
 }
 
 std::set<std::uint64_t> PrimeDivisors(std::uint64_t value) {
@@ -84,13 +118,41 @@ GRElem teichmuller_subgroup_generator(const GRContext& ctx,
   }
 
   return ctx.with_ntl_context([&] {
-    const ZZ exponent = teichmuller_group_order(ctx) / ZZ(size);
-    const GRElem generator = power(ctx.teich_generator(), exponent);
-    if (!element_has_exact_order(ctx, generator, size)) {
-      throw std::runtime_error(
-          "teichmuller_subgroup_generator produced incorrect order");
+    const ZZ teich_order = teichmuller_group_order(ctx);
+    const ZZ subgroup_exponent = teich_order / ZZ(size);
+    const ZZ projection_exponent =
+        power(ctx.prime(), CheckedLong(ctx.config().k_exp - 1));
+
+    const auto try_candidate = [&](const GRElem& base,
+                                   bool already_projected) -> std::optional<GRElem> {
+      const GRElem projected =
+          already_projected ? base : power(base, projection_exponent);
+      const GRElem candidate = power(projected, subgroup_exponent);
+      if (element_has_exact_order(ctx, candidate, size)) {
+        return candidate;
+      }
+      return std::nullopt;
+    };
+
+    if (const auto from_teich = try_candidate(ctx.teich_generator(), true);
+        from_teich.has_value()) {
+      return *from_teich;
     }
-    return generator;
+
+    for (std::uint64_t attempt = 0; attempt < 2048; ++attempt) {
+      const auto bytes = DeterministicCandidateBytes(ctx, size, attempt);
+      const GRElem base = ctx.deserialize(bytes);
+      if (base == ctx.zero()) {
+        continue;
+      }
+      if (const auto candidate = try_candidate(base, false);
+          candidate.has_value()) {
+        return *candidate;
+      }
+    }
+
+    throw std::runtime_error(
+        "teichmuller_subgroup_generator produced incorrect order");
   });
 }
 

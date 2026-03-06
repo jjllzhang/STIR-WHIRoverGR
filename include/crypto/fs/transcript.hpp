@@ -18,15 +18,19 @@ class Transcript {
   void absorb_bytes(std::span<const std::uint8_t> data);
   void absorb_ring(const algebra::GRContext& ctx, const algebra::GRElem& x);
   algebra::GRElem challenge_ring(const algebra::GRContext& ctx,
-                                 std::string_view label) const;
+                                 std::string_view label);
   std::uint64_t challenge_index(std::string_view label,
-                                std::uint64_t modulus) const;
+                                std::uint64_t modulus);
 
   const std::vector<std::uint8_t>& state() const { return state_; }
 
  private:
+  std::vector<std::uint8_t> squeeze_bytes(std::string_view label,
+                                          std::size_t byte_count);
+
   HashProfile profile_;
   std::vector<std::uint8_t> state_;
+  std::uint64_t squeeze_counter_ = 0;
 };
 
 }  // namespace swgr::crypto

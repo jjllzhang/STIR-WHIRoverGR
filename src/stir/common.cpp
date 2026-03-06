@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <stdexcept>
 #include <vector>
 
@@ -102,6 +103,13 @@ std::vector<std::uint64_t> derive_unique_positions(
   return unique_positions;
 }
 
+std::vector<std::uint64_t> derive_unique_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t requested_count) {
+  return swgr::fri::derive_unique_query_positions(
+      transcript, label_prefix, modulus, requested_count);
+}
+
 std::vector<swgr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
@@ -138,6 +146,46 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
   }
 
   throw std::runtime_error("derive_ood_points failed to find enough samples");
+}
+
+std::vector<swgr::algebra::GRElem> derive_ood_points(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    std::string_view label_prefix, std::uint64_t sample_count) {
+  if (sample_count == 0) {
+    return {};
+  }
+
+  const Domain candidate_domain = input_domain.scale_offset(1);
+  const auto shift_points = shift_domain.elements();
+  const auto folded_points = folded_domain.elements();
+  const auto& ctx = candidate_domain.context();
+
+  std::vector<swgr::algebra::GRElem> result;
+  result.reserve(static_cast<std::size_t>(sample_count));
+  for (std::uint64_t attempt = 0;
+       result.size() < static_cast<std::size_t>(sample_count) &&
+       attempt < candidate_domain.size() * 4;
+       ++attempt) {
+    const auto index = transcript.challenge_index(
+        std::string(label_prefix) + ":" + std::to_string(attempt),
+        candidate_domain.size());
+    const auto candidate = candidate_domain.element(index);
+    if (Contains(shift_points, candidate) || Contains(folded_points, candidate) ||
+        Contains(result, candidate)) {
+      continue;
+    }
+    if (!ExceptionalAgainst(ctx, candidate, folded_points) ||
+        !ExceptionalAgainst(ctx, candidate, result)) {
+      continue;
+    }
+    result.push_back(candidate);
+  }
+
+  if (result.size() != static_cast<std::size_t>(sample_count)) {
+    throw std::runtime_error("derive_ood_points failed to find enough samples");
+  }
+  return result;
 }
 
 }  // namespace swgr::stir

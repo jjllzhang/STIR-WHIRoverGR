@@ -1,5 +1,19 @@
 # STIR & WHIR over Galois Rings
 
+## 说明
+
+STIR: Reed–Solomon Proximity Testing with Fewer Queries：对 FRI 进行改进，提出 shift to improve rate 思想，代码实现：https://github.com/WizardOfMenlo/stir。
+
+WHIR: Reed–Solomon Proximity Testing with Super-Fast Verification：将 STIR 中的单变量多项式承诺方案推广到多变量多项式承诺方案，RS码推广到CRS码，代码实现：https://github.com/WizardOfMenlo/whir。
+
+BaseFold: Efficient Field-Agnostic Polynomial Commitment Schemes from Foldable Codes：提出foldable codes，将FRI需要的RS码推广到 foldable codes，不需要底层域满足smooth条件，代码地址：https://github.com/jjllzhang/BasefoldOverGR。
+
+Polynomial Commitments for Galois Rings and Applications to SNARKs Over $$\mathbb {Z}_{2^k}$$：将有限域上的FRI推广到 Galois ring上，代码实现：https://github.com/jjllzhang/z2kSNARK。
+
+Polylogarithmic Proofs for Multilinears over $\mathbb{Z}_{2^k}$：将Basefold 推广到 Galois ring上，将FRI over Galois ring 改进到 STIR/WHIR 版本，Basefold部分的代码实现：https://github.com/jjllzhang/BasefoldOverGR。
+
+目标：实现 STIR and WHIR over Galois ring。
+
 当前仓库先对齐 `stir-over-gr-implementation-plan.md` 的工程骨架，目标是：
 
 - 使用 **C++ / CMake** 建立主工程；
@@ -14,11 +28,11 @@
 - `GRContext`、ring element 序列化、`Domain`、`Polynomial`、GR 插值 wrapper 已给出第一版实现；
 - `Domain` 现已对 `offset`/`root` 做 fail-fast 校验，并检查 `root` 的 exact order；
 - `FFT3` / `inverse_fft3` 与 `folding` 已给出第一版语义正确实现，并补上基础 roundtrip / 对拍测试；
-- `FRI-3` / `FRI-9` baseline 已按 **Phase 4** 落地为 **in-memory oracle + deterministic mock transcript** 版本，包含 prover / verifier / proof size estimator；
+- `FRI-3` / `FRI-9` / `STIR(9->3)` 已接入 **真实 transcript + Merkle root/opening** 的 non-interactive 路径，并通过 honest / tamper 回归；
+- `crypto/hash`、`crypto/fs/transcript`、`crypto/merkle_tree` 已完成第一版实现；当前在无 `BLAKE3` 依赖的环境下，`STIR_NATIVE / WHIR_NATIVE` 先以 OpenSSL 后端做 role-separated fallback；
 - CMake target 命名已统一为 `galoisring_backend` 与 `stir_over_gr`；
 - Phase 1 域构造推荐从 `Domain::teichmuller_subgroup(...)` / `Domain::teichmuller_coset(...)` 进入；
-- `bench_proof_size_estimate` 现会并排输出 `FRI-3` 与 `FRI-9` 的估算结果，便于做 baseline 对照；
-- `STIR(9->3)` 与真实 `Merkle + Fiat–Shamir` hash/opening 仍待后续 Phase 继续实现。
+- `bench_proof_size_estimate` 与 `bench_time` 已支持 `FRI-3 / FRI-9 / STIR(9->3)` 对照输出，并补了 `scripts/run_bench_size.sh`、`scripts/run_bench_time.sh` 与 `scripts/plot_bench_results.py`。
 
 ## 构建
 
@@ -28,19 +42,24 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-### Phase 4 快速验证
+### Phase 6 快速验证
 
 ```bash
-ctest --test-dir build --output-on-failure -R test_fri
-./build/bench_proof_size_estimate
+ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri|test_stir'
+./build/bench_proof_size_estimate --protocol all --format csv
+./build/bench_time --protocol all --format csv
+./scripts/run_bench_size.sh --output results/size_latest.csv
+./scripts/run_bench_time.sh --output results/time_latest.csv
 ```
 
 说明：
 
-- 当前 `FRI-3` / `FRI-9` verifier 使用 mock transcript 重新派生 round challenge 与 query positions；
-- proof 仍走 in-memory oracle，不依赖真实 `MerkleTree::open(...)`；
-- `bench_proof_size_estimate` 会顺序打印 `protocol=fri3` 与 `protocol=fri9` 两段结果，使用同一组 ring / domain / degree 参数做初步对照；
-- 当前输出仍是 Phase 4 口径下的估算值，不是最终真实序列化 proof 大小。
+- 当前 `FRI-3` / `FRI-9` / `STIR(9->3)` prover/verifier 已使用真实 `Transcript` 与 `MerkleTree::open(...)`；
+- `bench_proof_size_estimate` 仍按计划输出 **compiled argument size estimator**，不是逐字节真实序列化 proof 大小；
+- `bench_time` 支持 `--warmup` / `--reps`；headline 时间字段按 measured reps 求均值；
+- `bench_time` 会输出 `commit_ms / prove_query_phase_ms / prover_total_ms / verify_ms / verifier_hashes_actual`；
+- 细粒度 profile 同时给出 `profile_*_total_ms`（measured reps 累积）与 `profile_*_mean_ms`（单次 measured rep 均值），并补 `profile_*_accounted_*` / `profile_*_unaccounted_*` 便于对账；
+- `plot_bench_results.py` 依赖 `matplotlib`；若本机未安装，可先执行 `python3 -m pip install matplotlib`。
 
 ## 目录
 

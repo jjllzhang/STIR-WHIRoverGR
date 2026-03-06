@@ -1,19 +1,51 @@
 #include "fri/verifier.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include "crypto/fs/transcript.hpp"
+#include "crypto/merkle_tree/merkle_tree.hpp"
+
+#include <algorithm>
+#include <utility>
 
 #include "poly_utils/folding.hpp"
 #include "poly_utils/interpolation.hpp"
 
 namespace swgr::fri {
+namespace {
+
+std::vector<std::uint64_t> UniqueSorted(const std::vector<std::uint64_t>& values) {
+  std::vector<std::uint64_t> unique = values;
+  std::sort(unique.begin(), unique.end());
+  unique.erase(std::unique(unique.begin(), unique.end()), unique.end());
+  return unique;
+}
+
+std::string RoundLabel(const char* prefix, std::size_t round_index) {
+  return std::string(prefix) + ":" + std::to_string(round_index);
+}
+
+double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
+                           std::chrono::steady_clock::time_point end) {
+  return std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(
+             end - start)
+      .count();
+}
+
+}  // namespace
 
 FriVerifier::FriVerifier(FriParameters params) : params_(std::move(params)) {}
 
 bool FriVerifier::verify(const FriInstance& instance,
-                         const FriProof& proof) const {
+                         const FriProof& proof,
+                         swgr::ProofStatistics* stats) const {
+  swgr::ProofStatistics local_stats;
+  const auto verify_start = std::chrono::steady_clock::now();
   try {
     if (!validate(params_, instance)) {
       return false;
@@ -30,12 +62,20 @@ bool FriVerifier::verify(const FriInstance& instance,
     const auto schedule = query_schedule(fold_rounds, params_.query_repetitions);
     Domain current_domain = instance.domain;
     std::uint64_t current_degree = instance.claimed_degree;
+    swgr::crypto::Transcript transcript(params_.hash_profile);
 
     for (std::size_t round_index = 0; round_index < proof.rounds.size();
          ++round_index) {
       const auto& round = proof.rounds[round_index];
-      const auto recomputed_commitment =
-          commit_oracle(current_domain.context(), round.oracle_evals);
+      const bool is_terminal = (round_index == fold_rounds);
+      const std::uint64_t bundle_size = is_terminal ? 1 : params_.fold_factor;
+      const auto merkle_start = std::chrono::steady_clock::now();
+      const auto oracle_tree = build_oracle_tree(
+          params_.hash_profile, current_domain.context(), round.oracle_evals,
+          bundle_size);
+      const auto recomputed_commitment = oracle_tree.root();
+      local_stats.verifier_merkle_ms +=
+          ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
       if (round.round_index != round_index ||
           round.domain_size != current_domain.size() ||
           round.oracle_evals.size() != current_domain.size() ||
@@ -43,20 +83,29 @@ bool FriVerifier::verify(const FriInstance& instance,
         return false;
       }
 
-      const bool is_terminal = (round_index == fold_rounds);
       if (is_terminal) {
         if (!round.query_positions.empty() ||
             proof.final_polynomial.degree() > current_degree) {
           return false;
         }
+        const auto algebra_start = std::chrono::steady_clock::now();
         const auto expected_terminal =
             swgr::poly_utils::rs_encode(current_domain, proof.final_polynomial);
+        local_stats.verifier_algebra_ms +=
+            ElapsedMilliseconds(algebra_start, std::chrono::steady_clock::now());
+        local_stats.verifier_total_ms =
+            ElapsedMilliseconds(verify_start, std::chrono::steady_clock::now());
+        if (stats != nullptr) {
+          *stats = local_stats;
+        }
         return expected_terminal == round.oracle_evals;
       }
 
+      const auto transcript_start = std::chrono::steady_clock::now();
+      transcript.absorb_bytes(proof.oracle_roots[round_index]);
       const auto expected_alpha = derive_round_challenge(
-          current_domain.context(), proof.oracle_roots[round_index],
-          static_cast<std::uint64_t>(round_index));
+          transcript, current_domain.context(),
+          RoundLabel("fri.fold_alpha", round_index));
       if (round.folding_alpha != expected_alpha) {
         return false;
       }
@@ -64,11 +113,32 @@ bool FriVerifier::verify(const FriInstance& instance,
       const std::uint64_t next_domain_size =
           current_domain.size() / params_.fold_factor;
       const auto expected_queries = derive_query_positions(
-          proof.oracle_roots[round_index],
-          static_cast<std::uint64_t>(round_index), next_domain_size,
+          transcript, RoundLabel("fri.query", round_index), next_domain_size,
           schedule[round_index]);
+      local_stats.verifier_transcript_ms += ElapsedMilliseconds(
+          transcript_start, std::chrono::steady_clock::now());
       if (round.query_positions != expected_queries) {
         return false;
+      }
+      const auto expected_unique_queries = UniqueSorted(expected_queries);
+      const auto verify_merkle_start = std::chrono::steady_clock::now();
+      if (round.oracle_proof.queried_indices != expected_unique_queries ||
+          round.oracle_proof.leaf_payloads.size() != expected_unique_queries.size() ||
+          !swgr::crypto::MerkleTree::verify(
+              params_.hash_profile, next_domain_size,
+              proof.oracle_roots[round_index], round.oracle_proof)) {
+        return false;
+      }
+      local_stats.verifier_merkle_ms += ElapsedMilliseconds(
+          verify_merkle_start, std::chrono::steady_clock::now());
+      const auto algebra_start = std::chrono::steady_clock::now();
+      for (std::size_t i = 0; i < expected_unique_queries.size(); ++i) {
+        if (round.oracle_proof.leaf_payloads[i] !=
+            serialize_oracle_bundle(current_domain.context(), round.oracle_evals,
+                                   params_.fold_factor,
+                                   expected_unique_queries[i])) {
+          return false;
+        }
       }
 
       const auto& next_round = proof.rounds[round_index + 1];
@@ -77,6 +147,7 @@ bool FriVerifier::verify(const FriInstance& instance,
         return false;
       }
 
+      const auto query_phase_start = std::chrono::steady_clock::now();
       for (const auto base_index : round.query_positions) {
         std::vector<swgr::algebra::GRElem> fiber_points;
         std::vector<swgr::algebra::GRElem> fiber_values;
@@ -102,6 +173,10 @@ bool FriVerifier::verify(const FriInstance& instance,
           return false;
         }
       }
+      local_stats.verifier_query_phase_ms += ElapsedMilliseconds(
+          query_phase_start, std::chrono::steady_clock::now());
+      local_stats.verifier_algebra_ms +=
+          ElapsedMilliseconds(algebra_start, query_phase_start);
 
       current_domain = current_domain.pow_map(params_.fold_factor);
       current_degree /= params_.fold_factor;
@@ -110,6 +185,11 @@ bool FriVerifier::verify(const FriInstance& instance,
     return false;
   }
 
+  local_stats.verifier_total_ms =
+      ElapsedMilliseconds(verify_start, std::chrono::steady_clock::now());
+  if (stats != nullptr) {
+    *stats = local_stats;
+  }
   return false;
 }
 

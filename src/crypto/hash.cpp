@@ -1,71 +1,73 @@
 #include "crypto/hash.hpp"
 
-#include <array>
-#include <cstdint>
-#include <vector>
+#include <openssl/evp.h>
 
-#include "utils.hpp"
+#include <cstdint>
+#include <span>
+#include <stdexcept>
+#include <vector>
 
 namespace swgr::crypto {
 namespace {
 
-std::uint64_t profile_seed(HashProfile profile) {
+const EVP_MD* ResolveHash(HashProfile profile, HashRole role) {
   switch (profile) {
     case HashProfile::STIR_NATIVE:
-      return 0x535449524E415449ULL;
+      return role == HashRole::Merkle ? EVP_sha3_256() : EVP_sha256();
     case HashProfile::WHIR_NATIVE:
-      return 0x574849524E415449ULL;
+      return role == HashRole::Merkle ? EVP_sha256() : EVP_sha3_256();
   }
-  return 0x9E3779B97F4A7C15ULL;
+  throw std::invalid_argument("unknown HashProfile");
 }
 
-std::uint64_t splitmix64(std::uint64_t& state) {
-  state += 0x9E3779B97F4A7C15ULL;
-  std::uint64_t z = state;
-  z = (z ^ (z >> 30U)) * 0xBF58476D1CE4E5B9ULL;
-  z = (z ^ (z >> 27U)) * 0x94D049BB133111EBULL;
-  return z ^ (z >> 31U);
-}
-
-void mix_bytes(std::uint64_t& state, const std::vector<std::uint8_t>& data) {
-  for (const auto byte : data) {
-    state ^= static_cast<std::uint64_t>(byte) + 0x9E3779B97F4A7C15ULL +
-             (state << 6U) + (state >> 2U);
+std::vector<std::uint8_t> ComputeDigest(const EVP_MD* md,
+                                        std::span<const std::uint8_t> data) {
+  if (md == nullptr) {
+    throw std::runtime_error("OpenSSL returned null EVP_MD");
   }
+
+  std::vector<std::uint8_t> out(
+      static_cast<std::size_t>(EVP_MD_get_size(md)), 0);
+  EVP_MD_CTX* const ctx = EVP_MD_CTX_new();
+  if (ctx == nullptr) {
+    throw std::runtime_error("EVP_MD_CTX_new failed");
+  }
+
+  unsigned int out_size = 0;
+  const bool ok =
+      EVP_DigestInit_ex(ctx, md, nullptr) == 1 &&
+      EVP_DigestUpdate(ctx, data.data(), data.size()) == 1 &&
+      EVP_DigestFinal_ex(ctx, out.data(), &out_size) == 1;
+  EVP_MD_CTX_free(ctx);
+  if (!ok || out_size != out.size()) {
+    throw std::runtime_error("OpenSSL digest computation failed");
+  }
+  return out;
 }
 
 }  // namespace
 
 std::size_t digest_bytes(HashProfile profile) {
-  switch (profile) {
-    case HashProfile::STIR_NATIVE:
-    case HashProfile::WHIR_NATIVE:
-      return 32;
-  }
-  return 32;
+  return digest_bytes(profile, HashRole::Merkle);
+}
+
+std::size_t digest_bytes(HashProfile profile, HashRole role) {
+  return static_cast<std::size_t>(EVP_MD_get_size(ResolveHash(profile, role)));
+}
+
+std::vector<std::uint8_t> hash_bytes(HashProfile profile, HashRole role,
+                                     std::span<const std::uint8_t> data) {
+  return ComputeDigest(ResolveHash(profile, role), data);
+}
+
+std::vector<std::uint8_t> hash_bytes(HashProfile profile,
+                                     std::span<const std::uint8_t> data) {
+  return hash_bytes(profile, HashRole::Transcript, data);
 }
 
 std::vector<std::uint8_t> hash_bytes(HashProfile profile,
                                      const std::vector<std::uint8_t>& data) {
-  const std::size_t digest_size = digest_bytes(profile);
-  std::vector<std::uint8_t> out(digest_size, 0);
-
-  std::uint64_t state = profile_seed(profile);
-  mix_bytes(state, data);
-  state ^= static_cast<std::uint64_t>(data.size()) * 0xA24BAED4963EE407ULL;
-
-  for (std::size_t offset = 0; offset < digest_size; offset += sizeof(std::uint64_t)) {
-    const std::uint64_t word = splitmix64(state);
-    const std::size_t remaining = digest_size - offset;
-    const std::size_t chunk =
-        remaining < sizeof(std::uint64_t) ? remaining : sizeof(std::uint64_t);
-    for (std::size_t i = 0; i < chunk; ++i) {
-      out[offset + i] =
-          static_cast<std::uint8_t>((word >> (8U * i)) & 0xFFU);
-    }
-  }
-
-  return out;
+  return hash_bytes(profile, std::span<const std::uint8_t>(data));
 }
 
 }  // namespace swgr::crypto

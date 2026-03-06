@@ -3,9 +3,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "crypto/fs/transcript.hpp"
+#include "crypto/merkle_tree/merkle_tree.hpp"
 #include "domain.hpp"
 #include "ldt.hpp"
 #include "poly_utils/polynomial.hpp"
@@ -28,6 +31,7 @@ struct FriRoundProof {
   swgr::algebra::GRElem folding_alpha;
   std::vector<std::uint64_t> query_positions;
   std::vector<swgr::algebra::GRElem> oracle_evals;
+  swgr::crypto::MerkleProof oracle_proof;
 };
 
 struct FriProof {
@@ -48,15 +52,45 @@ std::vector<std::uint8_t> commit_oracle(
     const swgr::algebra::GRContext& ctx,
     const std::vector<swgr::algebra::GRElem>& oracle_evals);
 
+std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
+    const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    std::uint64_t bundle_size);
+
+std::vector<std::uint8_t> serialize_oracle_bundle(
+    const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    std::uint64_t bundle_size, std::uint64_t bundle_index);
+
+std::vector<swgr::algebra::GRElem> deserialize_oracle_bundle(
+    const swgr::algebra::GRContext& ctx, std::span<const std::uint8_t> bytes);
+
+swgr::crypto::MerkleTree build_oracle_tree(
+    swgr::HashProfile profile, const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    std::uint64_t bundle_size);
+
 swgr::algebra::GRElem derive_round_challenge(
     const swgr::algebra::GRContext& ctx,
     const std::vector<std::uint8_t>& oracle_commitment,
     std::uint64_t round_index);
 
+swgr::algebra::GRElem derive_round_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label);
+
 std::vector<std::uint64_t> derive_query_positions(
     const std::vector<std::uint8_t>& oracle_commitment,
     std::uint64_t round_index, std::uint64_t modulus,
     std::uint64_t query_count);
+
+std::vector<std::uint64_t> derive_query_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t query_count);
+
+std::vector<std::uint64_t> derive_unique_query_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t query_count);
 
 std::string estimate_breakdown_json(
     const std::vector<std::string>& round_entries,

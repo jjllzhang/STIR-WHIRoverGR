@@ -17,7 +17,9 @@
 using NTL::BytesFromZZ;
 using NTL::NumBits;
 using NTL::ProbPrime;
+using NTL::RandomStreamPush;
 using NTL::SetCoeff;
+using NTL::SetSeed;
 using NTL::ZZ;
 using NTL::ZZFromBytes;
 using NTL::ZZ_p;
@@ -65,6 +67,24 @@ std::vector<long> ExportPolynomialCoefficients(const ZZ_pX& poly) {
   std::vector<long> coefficients;
   ZZpX2long(poly, coefficients);
   return coefficients;
+}
+
+ZZ DeterministicPrimitivePolySeed(const GRConfig& cfg) {
+  std::vector<unsigned char> bytes;
+  bytes.reserve(sizeof(std::uint64_t) * 4);
+  const std::uint64_t words[] = {
+      0x5357475247524354ULL,
+      cfg.p,
+      cfg.k_exp,
+      cfg.r,
+  };
+  for (const auto word : words) {
+    for (std::size_t i = 0; i < sizeof(word); ++i) {
+      bytes.push_back(
+          static_cast<unsigned char>((word >> (8U * i)) & 0xFFU));
+    }
+  }
+  return ZZFromBytes(bytes.data(), static_cast<long>(bytes.size()));
 }
 
 }  // namespace
@@ -206,6 +226,8 @@ void GRContext::ensure_backend_initialized() const {
   const long r_long = CheckedLong(cfg_.r, "r");
   {
     ZZ_pPush mod_p_push(prime_);
+    RandomStreamPush seed_push;
+    SetSeed(DeterministicPrimitivePolySeed(cfg_));
     FindPrimitivePoly(base_irreducible_mod_p_, prime_, r_long);
   }
 

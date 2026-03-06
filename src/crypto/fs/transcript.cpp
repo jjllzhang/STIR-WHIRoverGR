@@ -1,11 +1,10 @@
 #include "crypto/fs/transcript.hpp"
 
-#include <algorithm>
 #include <cstdint>
-#include <string>
-#include <vector>
-
+#include <limits>
 #include <stdexcept>
+#include <string_view>
+#include <vector>
 
 #include "algebra/gr_serialization.hpp"
 #include "crypto/hash.hpp"
@@ -13,21 +12,37 @@
 namespace swgr::crypto {
 namespace {
 
-std::vector<std::uint8_t> make_labelled_input(
-    std::span<const std::uint8_t> state, std::string_view label,
-    std::uint8_t tag) {
-  std::vector<std::uint8_t> input;
-  input.reserve(state.size() + label.size() + 2);
-  input.insert(input.end(), state.begin(), state.end());
-  input.push_back(tag);
-  input.insert(input.end(), label.begin(), label.end());
-  return input;
+constexpr char kInitDomain[] = "swgr.fs.init.v1";
+constexpr char kAbsorbDomain[] = "swgr.fs.absorb.v1";
+constexpr char kSqueezeDomain[] = "swgr.fs.squeeze.v1";
+constexpr char kRatchetDomain[] = "swgr.fs.ratchet.v1";
+
+void AppendU64Le(std::vector<std::uint8_t>& out, std::uint64_t value) {
+  for (std::size_t i = 0; i < sizeof(value); ++i) {
+    out.push_back(static_cast<std::uint8_t>((value >> (8U * i)) & 0xFFU));
+  }
 }
 
-std::uint64_t read_u64_le(std::span<const std::uint8_t> bytes) {
+void AppendTaggedBytes(std::vector<std::uint8_t>& out, std::string_view label,
+                       std::span<const std::uint8_t> bytes) {
+  AppendU64Le(out, static_cast<std::uint64_t>(label.size()));
+  out.insert(out.end(), label.begin(), label.end());
+  AppendU64Le(out, static_cast<std::uint64_t>(bytes.size()));
+  out.insert(out.end(), bytes.begin(), bytes.end());
+}
+
+void AppendTaggedString(std::vector<std::uint8_t>& out, std::string_view label,
+                        std::string_view value) {
+  AppendU64Le(out, static_cast<std::uint64_t>(label.size()));
+  out.insert(out.end(), label.begin(), label.end());
+  AppendU64Le(out, static_cast<std::uint64_t>(value.size()));
+  out.insert(out.end(), value.begin(), value.end());
+}
+
+std::uint64_t ReadU64Le(std::span<const std::uint8_t> bytes) {
   std::uint64_t value = 0;
   const std::size_t width =
-      std::min<std::size_t>(bytes.size(), sizeof(std::uint64_t));
+      bytes.size() < sizeof(std::uint64_t) ? bytes.size() : sizeof(std::uint64_t);
   for (std::size_t i = 0; i < width; ++i) {
     value |= static_cast<std::uint64_t>(bytes[i]) << (8U * i);
   }
@@ -36,10 +51,21 @@ std::uint64_t read_u64_le(std::span<const std::uint8_t> bytes) {
 
 }  // namespace
 
-Transcript::Transcript(HashProfile profile) : profile_(profile) {}
+Transcript::Transcript(HashProfile profile) : profile_(profile) {
+  const auto init_bytes =
+      std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(
+                                        kInitDomain),
+                                    sizeof(kInitDomain) - 1U);
+  state_ = hash_bytes(profile_, HashRole::Transcript, init_bytes);
+}
 
 void Transcript::absorb_bytes(std::span<const std::uint8_t> data) {
-  state_.insert(state_.end(), data.begin(), data.end());
+  std::vector<std::uint8_t> framed;
+  framed.reserve(state_.size() + data.size() + 64);
+  AppendTaggedString(framed, "domain", kAbsorbDomain);
+  AppendTaggedBytes(framed, "state", state_);
+  AppendTaggedBytes(framed, "message", data);
+  state_ = hash_bytes(profile_, HashRole::Transcript, framed);
 }
 
 void Transcript::absorb_ring(const algebra::GRContext& ctx,
@@ -48,40 +74,61 @@ void Transcript::absorb_ring(const algebra::GRContext& ctx,
   absorb_bytes(bytes);
 }
 
-algebra::GRElem Transcript::challenge_ring(const algebra::GRContext& ctx,
-                                           std::string_view label) const {
-  const std::size_t elem_bytes = ctx.elem_bytes();
-  std::vector<std::uint8_t> bytes;
-  bytes.reserve(elem_bytes);
+std::vector<std::uint8_t> Transcript::squeeze_bytes(std::string_view label,
+                                                    std::size_t byte_count) {
+  std::vector<std::uint8_t> out;
+  out.reserve(byte_count);
 
-  std::vector<std::uint8_t> seed =
-      make_labelled_input(state_, label, static_cast<std::uint8_t>(0xA1));
-  std::uint64_t counter = 0;
-  while (bytes.size() < elem_bytes) {
-    std::vector<std::uint8_t> block_input = seed;
-    for (std::size_t i = 0; i < sizeof(counter); ++i) {
-      block_input.push_back(
-          static_cast<std::uint8_t>((counter >> (8U * i)) & 0xFFU));
-    }
-    const auto block = hash_bytes(profile_, block_input);
-    const std::size_t to_copy =
-        std::min(block.size(), elem_bytes - bytes.size());
-    bytes.insert(bytes.end(), block.begin(), block.begin() + to_copy);
-    ++counter;
+  std::uint64_t block_counter = 0;
+  while (out.size() < byte_count) {
+    std::vector<std::uint8_t> framed;
+    framed.reserve(state_.size() + label.size() + 96);
+    AppendTaggedString(framed, "domain", kSqueezeDomain);
+    AppendTaggedBytes(framed, "state", state_);
+    AppendTaggedString(framed, "label", label);
+    AppendU64Le(framed, squeeze_counter_);
+    AppendU64Le(framed, block_counter);
+    const auto block = hash_bytes(profile_, HashRole::Transcript, framed);
+    const std::size_t remaining = byte_count - out.size();
+    const std::size_t chunk = remaining < block.size() ? remaining : block.size();
+    out.insert(out.end(), block.begin(), block.begin() + chunk);
+    ++block_counter;
   }
 
+  std::vector<std::uint8_t> ratchet;
+  ratchet.reserve(state_.size() + out.size() + label.size() + 96);
+  AppendTaggedString(ratchet, "domain", kRatchetDomain);
+  AppendTaggedBytes(ratchet, "prev_state", state_);
+  AppendTaggedString(ratchet, "label", label);
+  AppendU64Le(ratchet, squeeze_counter_);
+  AppendTaggedBytes(ratchet, "output", out);
+  state_ = hash_bytes(profile_, HashRole::Transcript, ratchet);
+  ++squeeze_counter_;
+  return out;
+}
+
+algebra::GRElem Transcript::challenge_ring(const algebra::GRContext& ctx,
+                                           std::string_view label) {
+  const auto bytes = squeeze_bytes(label, ctx.elem_bytes());
   return algebra::deserialize_ring_element(ctx, bytes);
 }
 
 std::uint64_t Transcript::challenge_index(std::string_view label,
-                                          std::uint64_t modulus) const {
+                                          std::uint64_t modulus) {
   if (modulus == 0) {
     throw std::invalid_argument("challenge_index requires modulus > 0");
   }
-  const auto input =
-      make_labelled_input(state_, label, static_cast<std::uint8_t>(0xB2));
-  const auto digest = hash_bytes(profile_, input);
-  return read_u64_le(digest) % modulus;
+
+  const std::uint64_t limit =
+      std::numeric_limits<std::uint64_t>::max() -
+      (std::numeric_limits<std::uint64_t>::max() % modulus);
+  while (true) {
+    const auto bytes = squeeze_bytes(label, sizeof(std::uint64_t));
+    const auto candidate = ReadU64Le(bytes);
+    if (candidate < limit) {
+      return candidate % modulus;
+    }
+  }
 }
 
 }  // namespace swgr::crypto

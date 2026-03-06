@@ -5,9 +5,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "crypto/merkle_tree/merkle_tree.hpp"
 
 namespace swgr::fri {
 namespace {
@@ -44,6 +47,35 @@ std::array<std::uint8_t, sizeof(std::uint64_t)> to_bytes(std::uint64_t value) {
 void append_bytes(std::vector<std::uint8_t>& dst,
                   std::span<const std::uint8_t> src) {
   dst.insert(dst.end(), src.begin(), src.end());
+}
+
+std::vector<std::uint8_t> bundle_payload(
+    const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    std::uint64_t bundle_size, std::uint64_t bundle_index) {
+  if (bundle_size == 0) {
+    throw std::invalid_argument("bundle_payload requires bundle_size > 0");
+  }
+  if (oracle_evals.empty() || oracle_evals.size() % bundle_size != 0) {
+    throw std::invalid_argument(
+        "bundle_payload requires oracle size divisible by bundle_size");
+  }
+
+  const std::uint64_t bundle_count =
+      static_cast<std::uint64_t>(oracle_evals.size()) / bundle_size;
+  if (bundle_index >= bundle_count) {
+    throw std::out_of_range("bundle index exceeds oracle bundle count");
+  }
+
+  std::vector<std::uint8_t> bytes;
+  bytes.reserve(static_cast<std::size_t>(bundle_size) * ctx.elem_bytes());
+  for (std::uint64_t offset = 0; offset < bundle_size; ++offset) {
+    const std::uint64_t oracle_index = bundle_index + offset * bundle_count;
+    const auto serialized =
+        ctx.serialize(oracle_evals[static_cast<std::size_t>(oracle_index)]);
+    append_bytes(bytes, serialized);
+  }
+  return bytes;
 }
 
 std::vector<std::uint8_t> expand_seed(std::uint64_t seed,
@@ -114,6 +146,61 @@ std::vector<std::uint8_t> commit_oracle(
   return expand_seed(seed, 32);
 }
 
+std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
+    const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    std::uint64_t bundle_size) {
+  if (bundle_size == 0) {
+    throw std::invalid_argument("build_oracle_leaves requires bundle_size > 0");
+  }
+  if (oracle_evals.empty() || oracle_evals.size() % bundle_size != 0) {
+    throw std::invalid_argument(
+        "build_oracle_leaves requires oracle size divisible by bundle_size");
+  }
+
+  const std::uint64_t bundle_count =
+      static_cast<std::uint64_t>(oracle_evals.size()) / bundle_size;
+  std::vector<std::vector<std::uint8_t>> leaves;
+  leaves.reserve(static_cast<std::size_t>(bundle_count));
+  for (std::uint64_t bundle_index = 0; bundle_index < bundle_count;
+       ++bundle_index) {
+    leaves.push_back(bundle_payload(ctx, oracle_evals, bundle_size, bundle_index));
+  }
+  return leaves;
+}
+
+std::vector<std::uint8_t> serialize_oracle_bundle(
+    const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    std::uint64_t bundle_size, std::uint64_t bundle_index) {
+  return bundle_payload(ctx, oracle_evals, bundle_size, bundle_index);
+}
+
+std::vector<swgr::algebra::GRElem> deserialize_oracle_bundle(
+    const swgr::algebra::GRContext& ctx, std::span<const std::uint8_t> bytes) {
+  const std::size_t elem_bytes = ctx.elem_bytes();
+  if (elem_bytes == 0 || bytes.size() % elem_bytes != 0) {
+    throw std::invalid_argument(
+        "deserialize_oracle_bundle requires a whole-number element payload");
+  }
+
+  std::vector<swgr::algebra::GRElem> values;
+  values.reserve(bytes.size() / elem_bytes);
+  for (std::size_t offset = 0; offset < bytes.size(); offset += elem_bytes) {
+    values.push_back(
+        ctx.deserialize(bytes.subspan(offset, elem_bytes)));
+  }
+  return values;
+}
+
+swgr::crypto::MerkleTree build_oracle_tree(
+    swgr::HashProfile profile, const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    std::uint64_t bundle_size) {
+  return swgr::crypto::MerkleTree(
+      profile, build_oracle_leaves(ctx, oracle_evals, bundle_size));
+}
+
 swgr::algebra::GRElem derive_round_challenge(
     const swgr::algebra::GRContext& ctx,
     const std::vector<std::uint8_t>& oracle_commitment,
@@ -123,6 +210,12 @@ swgr::algebra::GRElem derive_round_challenge(
   append_bytes(seed_bytes, round_bytes);
   const std::uint64_t seed = fnv1a64(seed_bytes);
   return ctx.deserialize(expand_seed(seed, ctx.elem_bytes()));
+}
+
+swgr::algebra::GRElem derive_round_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label) {
+  return transcript.challenge_ring(ctx, label);
 }
 
 std::vector<std::uint64_t> derive_query_positions(
@@ -143,6 +236,44 @@ std::vector<std::uint64_t> derive_query_positions(
   positions.reserve(static_cast<std::size_t>(bounded_query_count));
   for (std::uint64_t i = 0; i < bounded_query_count; ++i) {
     positions.push_back(splitmix64(seed) % modulus);
+  }
+  return positions;
+}
+
+std::vector<std::uint64_t> derive_query_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t query_count) {
+  if (modulus == 0 || query_count == 0) {
+    return {};
+  }
+
+  std::vector<std::uint64_t> positions;
+  positions.reserve(static_cast<std::size_t>(query_count));
+  for (std::uint64_t i = 0; i < query_count; ++i) {
+    positions.push_back(transcript.challenge_index(
+        std::string(label_prefix) + ":" + std::to_string(i), modulus));
+  }
+  return positions;
+}
+
+std::vector<std::uint64_t> derive_unique_query_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t query_count) {
+  if (modulus == 0 || query_count == 0) {
+    return {};
+  }
+
+  const std::uint64_t capped_count = std::min(query_count, modulus);
+  std::vector<std::uint64_t> positions;
+  positions.reserve(static_cast<std::size_t>(capped_count));
+  for (std::uint64_t i = 0; positions.size() < static_cast<std::size_t>(capped_count);
+       ++i) {
+    const auto candidate = transcript.challenge_index(
+        std::string(label_prefix) + ":" + std::to_string(i), modulus);
+    if (std::find(positions.begin(), positions.end(), candidate) ==
+        positions.end()) {
+      positions.push_back(candidate);
+    }
   }
   return positions;
 }
