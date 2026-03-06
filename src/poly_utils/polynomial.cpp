@@ -9,7 +9,11 @@ using NTL::clear;
 namespace swgr::poly_utils {
 
 Polynomial::Polynomial(std::vector<algebra::GRElem> coefficients)
-    : coefficients_(std::move(coefficients)) {}
+    : coefficients_(std::move(coefficients)) {
+  while (!coefficients_.empty() && coefficients_.back() == 0) {
+    coefficients_.pop_back();
+  }
+}
 
 std::size_t Polynomial::degree() const {
   if (coefficients_.empty()) {

@@ -8,6 +8,8 @@
 
 namespace swgr::stir {
 
+struct StirInstance;
+
 struct StirParameters {
   std::uint64_t virtual_fold_factor = 9;
   std::uint64_t shift_power = 3;
@@ -21,6 +23,7 @@ struct StirParameters {
 };
 
 bool validate(const StirParameters& params);
+bool validate(const StirParameters& params, const StirInstance& instance);
 
 }  // namespace swgr::stir
 

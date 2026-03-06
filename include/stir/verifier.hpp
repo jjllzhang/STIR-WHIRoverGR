@@ -10,7 +10,7 @@ class StirVerifier {
  public:
   explicit StirVerifier(StirParameters params);
 
-  bool verify(const StirProof& proof) const;
+  bool verify(const StirInstance& instance, const StirProof& proof) const;
 
  private:
   StirParameters params_;

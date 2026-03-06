@@ -10,7 +10,8 @@ class StirProver {
  public:
   explicit StirProver(StirParameters params);
 
-  StirProof prove() const;
+  StirProof prove(const StirInstance& instance,
+                  const swgr::poly_utils::Polynomial& polynomial) const;
 
  private:
   StirParameters params_;
