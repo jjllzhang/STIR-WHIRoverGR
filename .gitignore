@@ -1,0 +1,100 @@
+# Build directories
+/build/
+/cmake-build-*/
+/out/
+/dist/
+/_deps/
+
+# CMake / Ninja / Make
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CMakeUserPresets.json
+CTestTestfile.cmake
+Testing/
+Makefile
+build.ninja
+.ninja_deps
+.ninja_log
+install_manifest.txt
+
+# Binaries and libraries
+*.o
+*.obj
+*.d
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.lib
+*.pdb
+*.dSYM/
+
+# Coverage / profiling
+*.gcda
+*.gcno
+*.gcov
+*.prof
+*.profraw
+*.profdata
+coverage/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+core
+core.*
+*.stackdump
+
+# Python helpers / plotting artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# IDE / editor files
+.idea/
+.vscode/
+*.code-workspace
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Benchmark / result artifacts
+results/**/*.png
+results/**/*.svg
+results/**/*.pdf
+results/**/*.log
+results/**/*.tmp
+results/**/*.tmp.*
+results/**/*.out
+results/**/*.trace
+results/**/*.profraw
+results/**/*.profdata
+results/generated/**
+results/tmp/**
+results/runs/**
+
+# Keep tracked benchmark baselines and docs
+!results/.gitkeep
+!results/README.md
+!results/baselines/
+!results/baselines/**
+!results/reference/
+!results/reference/**

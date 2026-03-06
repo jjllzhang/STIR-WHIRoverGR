@@ -1,0 +1,1 @@
+#include "stir/common.hpp"

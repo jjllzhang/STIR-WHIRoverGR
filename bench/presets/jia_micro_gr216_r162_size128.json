@@ -1,0 +1,10 @@
+{
+  "ring": "GR(2^16,162)",
+  "n": 243,
+  "d": 81,
+  "rho": "1/3",
+  "protocols": ["fri3", "fri9", "stir9to3"],
+  "lambda_target": 128,
+  "pow_bits": 22,
+  "threads": 1
+}
