@@ -23,6 +23,16 @@ using swgr::algebra::GRContext;
 using swgr::algebra::GRElem;
 using swgr::poly_utils::Polynomial;
 
+std::vector<GRElem> NaiveRSEncode(const Domain& domain, const Polynomial& poly) {
+  const auto points = domain.elements();
+  std::vector<GRElem> evals;
+  evals.reserve(points.size());
+  for (const auto& point : points) {
+    evals.push_back(poly.evaluate(domain.context(), point));
+  }
+  return evals;
+}
+
 GRElem SampleRandomRingElement(const GRContext& ctx, std::mt19937_64& rng) {
   return ctx.with_ntl_context([&] {
     NTL::SetSeed(NTL::to_ZZ(static_cast<long>(rng())));
@@ -73,7 +83,7 @@ Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
 
 void CheckFftMatchesRSEncode(const Domain& domain, const Polynomial& poly) {
   const auto fft_evals = swgr::poly_utils::fft3(domain, poly);
-  const auto expected = swgr::poly_utils::rs_encode(domain, poly);
+  const auto expected = NaiveRSEncode(domain, poly);
 
   CHECK_EQ(fft_evals.size(), expected.size());
   for (std::size_t i = 0; i < fft_evals.size(); ++i) {
@@ -98,7 +108,8 @@ void CheckInverseMatchesInterpolation(const Domain& domain,
                                       const Polynomial& poly) {
   const auto evals = swgr::poly_utils::fft3(domain, poly);
   const auto recovered = swgr::poly_utils::inverse_fft3(domain, evals);
-  const auto expected_poly = swgr::poly_utils::rs_interpolate(domain, evals);
+  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+      domain.context(), domain.elements(), evals);
   std::vector<GRElem> expected = expected_poly.coefficients();
   expected.resize(static_cast<std::size_t>(domain.size()),
                   domain.context().zero());
@@ -112,7 +123,8 @@ void CheckInverseMatchesInterpolation(const Domain& domain,
 void CheckInverseMatchesInterpolation(
     const Domain& domain, const std::vector<GRElem>& evals) {
   const auto recovered = swgr::poly_utils::inverse_fft3(domain, evals);
-  const auto expected_poly = swgr::poly_utils::rs_interpolate(domain, evals);
+  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+      domain.context(), domain.elements(), evals);
   std::vector<GRElem> expected = expected_poly.coefficients();
   expected.resize(static_cast<std::size_t>(domain.size()),
                   domain.context().zero());

@@ -68,6 +68,33 @@ void CheckFoldAgainstInterpolation(const Domain& domain, std::uint64_t k_fold,
   });
 }
 
+void CheckFoldAtFiberPoint(const Domain& domain, std::uint64_t k_fold,
+                           std::uint64_t base_index,
+                           std::uint64_t fiber_offset) {
+  const GRContext& ctx = domain.context();
+  const Polynomial poly = SamplePolynomial(ctx, domain);
+  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const std::uint64_t folded_size = domain.size() / k_fold;
+
+  ctx.with_ntl_context([&] {
+    std::vector<GRElem> fiber_points;
+    std::vector<GRElem> fiber_values;
+    fiber_points.reserve(static_cast<std::size_t>(k_fold));
+    fiber_values.reserve(static_cast<std::size_t>(k_fold));
+    for (std::uint64_t offset = 0; offset < k_fold; ++offset) {
+      const std::uint64_t index = base_index + offset * folded_size;
+      fiber_points.push_back(domain.element(index));
+      fiber_values.push_back(evals[static_cast<std::size_t>(index)]);
+    }
+
+    const GRElem alpha = fiber_points[static_cast<std::size_t>(fiber_offset)];
+    const GRElem direct =
+        swgr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
+    CHECK_EQ(direct, fiber_values[static_cast<std::size_t>(fiber_offset)]);
+    return 0;
+  });
+}
+
 void TestFoldingForK3AndK9() {
   testutil::PrintInfo("folding matches explicit interpolation for k=3 and k=9");
 
@@ -79,11 +106,22 @@ void TestFoldingForK3AndK9() {
   CheckFoldAgainstInterpolation(domain, 9, alpha);
 }
 
+void TestFoldEvalAtFiberPoint() {
+  testutil::PrintInfo("fold_eval_k hits exact fiber values when alpha is on the fiber");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const Domain domain = Domain::teichmuller_subgroup(ctx, 9);
+
+  CheckFoldAtFiberPoint(domain, 3, 1, 2);
+  CheckFoldAtFiberPoint(domain, 9, 0, 4);
+}
+
 }  // namespace
 
 int main() {
   try {
     RUN_TEST(TestFoldingForK3AndK9);
+    RUN_TEST(TestFoldEvalAtFiberPoint);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

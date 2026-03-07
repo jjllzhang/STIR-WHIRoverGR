@@ -1,6 +1,7 @@
 #include "crypto/merkle_tree/merkle_tree.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <set>
 #include <span>
 #include <stdexcept>
@@ -14,6 +15,7 @@ namespace {
 
 constexpr char kLeafDomain[] = "swgr.merkle.leaf.v1";
 constexpr char kNodeDomain[] = "swgr.merkle.node.v1";
+constexpr std::size_t kParallelMerkleThreshold = 128;
 
 void AppendU64Le(std::vector<std::uint8_t>& out, std::uint64_t value) {
   for (std::size_t i = 0; i < sizeof(value); ++i) {
@@ -74,21 +76,31 @@ MerkleTree::MerkleTree(std::vector<std::vector<std::uint8_t>> leaves,
     return;
   }
 
-  levels_.push_back({});
-  levels_.back().reserve(NextPowerOfTwo(static_cast<std::uint64_t>(leaves_.size())));
-  for (const auto& leaf : leaves_) {
-    levels_.back().push_back(HashLeaf(profile_, leaf));
+  const std::size_t padded_leaf_count = static_cast<std::size_t>(
+      NextPowerOfTwo(static_cast<std::uint64_t>(leaves_.size())));
+  levels_.push_back(std::vector<std::vector<std::uint8_t>>(padded_leaf_count));
+  auto& leaf_level = levels_.back();
+#if defined(SWGR_HAS_OPENMP)
+#pragma omp parallel for if(leaves_.size() >= kParallelMerkleThreshold) schedule(static)
+#endif
+  for (std::ptrdiff_t i = 0; i < static_cast<std::ptrdiff_t>(leaves_.size()); ++i) {
+    leaf_level[static_cast<std::size_t>(i)] =
+        HashLeaf(profile_, leaves_[static_cast<std::size_t>(i)]);
   }
-  while (levels_.back().size() & (levels_.back().size() - 1U)) {
-    levels_.back().push_back(levels_.back().back());
+  for (std::size_t i = leaves_.size(); i < padded_leaf_count; ++i) {
+    leaf_level[i] = leaf_level[leaves_.size() - 1U];
   }
 
   while (levels_.back().size() > 1U) {
     const auto& current = levels_.back();
-    std::vector<std::vector<std::uint8_t>> next;
-    next.reserve(current.size() / 2U);
-    for (std::size_t i = 0; i < current.size(); i += 2U) {
-      next.push_back(HashParent(profile_, current[i], current[i + 1U]));
+    std::vector<std::vector<std::uint8_t>> next(current.size() / 2U);
+#if defined(SWGR_HAS_OPENMP)
+#pragma omp parallel for if(next.size() >= kParallelMerkleThreshold) schedule(static)
+#endif
+    for (std::ptrdiff_t i = 0; i < static_cast<std::ptrdiff_t>(next.size()); ++i) {
+      const auto parent_index = static_cast<std::size_t>(i);
+      next[parent_index] = HashParent(
+          profile_, current[2U * parent_index], current[2U * parent_index + 1U]);
     }
     levels_.push_back(std::move(next));
   }
@@ -151,11 +163,16 @@ bool MerkleTree::verify(const std::vector<std::uint8_t>& root,
     }
   }
 
-  std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> current;
-  current.reserve(proof.queried_indices.size());
-  for (std::size_t i = 0; i < proof.queried_indices.size(); ++i) {
-    current.push_back(
-        {proof.queried_indices[i], HashLeaf(profile, proof.leaf_payloads[i])});
+  std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> current(
+      proof.queried_indices.size());
+#if defined(SWGR_HAS_OPENMP)
+#pragma omp parallel for if(proof.queried_indices.size() >= kParallelMerkleThreshold) schedule(static)
+#endif
+  for (std::ptrdiff_t i = 0;
+       i < static_cast<std::ptrdiff_t>(proof.queried_indices.size()); ++i) {
+    const auto index = static_cast<std::size_t>(i);
+    current[index] = {proof.queried_indices[index],
+                      HashLeaf(profile, proof.leaf_payloads[index])};
   }
   std::sort(current.begin(), current.end(),
             [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });

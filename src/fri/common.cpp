@@ -160,11 +160,12 @@ std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
 
   const std::uint64_t bundle_count =
       static_cast<std::uint64_t>(oracle_evals.size()) / bundle_size;
-  std::vector<std::vector<std::uint8_t>> leaves;
-  leaves.reserve(static_cast<std::size_t>(bundle_count));
+  std::vector<std::vector<std::uint8_t>> leaves(
+      static_cast<std::size_t>(bundle_count));
   for (std::uint64_t bundle_index = 0; bundle_index < bundle_count;
        ++bundle_index) {
-    leaves.push_back(bundle_payload(ctx, oracle_evals, bundle_size, bundle_index));
+    leaves[static_cast<std::size_t>(bundle_index)] =
+        bundle_payload(ctx, oracle_evals, bundle_size, bundle_index);
   }
   return leaves;
 }

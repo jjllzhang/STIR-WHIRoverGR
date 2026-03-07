@@ -4,6 +4,7 @@ project(STIRWhirOverGR VERSION 0.1.0 LANGUAGES CXX)
 
 option(SWGR_BUILD_TESTS "Build unit tests" ON)
 option(SWGR_BUILD_BENCH "Build benchmark entrypoints" ON)
+option(SWGR_USE_OPENMP "Enable optional OpenMP acceleration" ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -11,6 +12,14 @@ find_library(NTL_LIBRARY NAMES ntl REQUIRED)
 find_library(GMP_LIBRARY NAMES gmp REQUIRED)
 find_library(M_LIBRARY NAMES m)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+
+set(SWGR_OPENMP_ENABLED OFF)
+if(SWGR_USE_OPENMP)
+  find_package(OpenMP QUIET COMPONENTS CXX)
+  if(OpenMP_CXX_FOUND)
+    set(SWGR_OPENMP_ENABLED ON)
+  endif()
+endif()
 
 set(GALOIS_RING_BACKEND_SOURCES
     third_party/GaloisRing/src/GaloisRing/HenselLift.cpp
@@ -93,6 +102,11 @@ else()
 endif()
 
 target_link_libraries(stir_over_gr PUBLIC galoisring_backend OpenSSL::Crypto)
+
+if(SWGR_OPENMP_ENABLED)
+  target_compile_definitions(stir_over_gr PUBLIC SWGR_HAS_OPENMP=1)
+  target_link_libraries(stir_over_gr PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 if(SWGR_BUILD_TESTS)
   enable_testing()

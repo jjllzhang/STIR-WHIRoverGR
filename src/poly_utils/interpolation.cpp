@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "GaloisRing/utils.hpp"
+#include "poly_utils/fft3.hpp"
 
 using NTL::ZZ_pE;
 using NTL::ZZ_pEX;
@@ -18,6 +19,16 @@ using NTL::vec_ZZ_pE;
 
 namespace swgr::poly_utils {
 namespace {
+
+bool IsPowerOfThree(std::uint64_t value) {
+  if (value == 0) {
+    return false;
+  }
+  while (value % 3 == 0) {
+    value /= 3;
+  }
+  return value == 1;
+}
 
 long CheckedLong(std::uint64_t value, const char* label) {
   if (value > static_cast<std::uint64_t>(std::numeric_limits<long>::max())) {
@@ -53,6 +64,10 @@ std::vector<algebra::GRElem> FromNTLPolynomial(const ZZ_pEX& poly) {
 
 std::vector<algebra::GRElem> rs_encode(const Domain& domain,
                                        const Polynomial& poly) {
+  if (IsPowerOfThree(domain.size())) {
+    return fft3(domain, poly);
+  }
+
   const auto points = domain.elements();
   std::vector<algebra::GRElem> evals;
   evals.reserve(points.size());
@@ -64,6 +79,9 @@ std::vector<algebra::GRElem> rs_encode(const Domain& domain,
 
 Polynomial rs_interpolate(const Domain& domain,
                           const std::vector<algebra::GRElem>& evals) {
+  if (IsPowerOfThree(domain.size())) {
+    return Polynomial(inverse_fft3(domain, evals));
+  }
   return interpolate_for_gr_wrapper(domain.context(), domain.elements(), evals);
 }
 
