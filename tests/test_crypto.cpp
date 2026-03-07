@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <string>
@@ -6,6 +8,7 @@
 #include "algebra/gr_context.hpp"
 #include "crypto/fs/transcript.hpp"
 #include "crypto/merkle_tree/merkle_tree.hpp"
+#include "crypto/merkle_tree/proof_planner.hpp"
 #include "tests/test_common.hpp"
 
 int g_failures = 0;
@@ -14,6 +17,31 @@ namespace {
 
 using swgr::algebra::GRConfig;
 using swgr::algebra::GRContext;
+
+std::uint64_t NextPowerOfTwo(std::uint64_t value) {
+  std::uint64_t power = 1;
+  while (power < value) {
+    power <<= 1U;
+  }
+  return power;
+}
+
+std::uint64_t CeilLog2(std::uint64_t value) {
+  std::uint64_t result = 0;
+  std::uint64_t current = 1;
+  while (current < value) {
+    current <<= 1U;
+    ++result;
+  }
+  return result;
+}
+
+std::size_t UniqueCount(const std::vector<std::uint64_t>& values) {
+  std::vector<std::uint64_t> unique = values;
+  std::sort(unique.begin(), unique.end());
+  unique.erase(std::unique(unique.begin(), unique.end()), unique.end());
+  return unique.size();
+}
 
 void TestTranscriptIsDeterministicAndDomainSeparated() {
   testutil::PrintInfo(
@@ -61,12 +89,52 @@ void TestMerkleOpenVerifyAndRejectTamper() {
                                           tampered_sibling));
 }
 
+void TestProofPlannerMatchesUniqueQueriesAndUpperBound() {
+  testutil::PrintInfo(
+      "proof planner counts deduped leaves and stays under non-pruned upper bound");
+
+  const std::vector<std::uint64_t> queries = {4, 1, 4, 3, 1};
+  const auto plan = swgr::crypto::plan_pruned_multiproof(
+      5, queries, /*leaf_payload_bytes=*/18, /*digest_bytes=*/32);
+  const std::uint64_t unique_queries =
+      static_cast<std::uint64_t>(UniqueCount(queries));
+  const std::uint64_t padded_leaf_count = NextPowerOfTwo(5);
+  const std::uint64_t non_pruned_upper_bound =
+      unique_queries * CeilLog2(padded_leaf_count);
+
+  CHECK_EQ(plan.opened_leaf_count, unique_queries);
+  CHECK(plan.unique_sibling_count <= non_pruned_upper_bound);
+}
+
+void TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount() {
+  testutil::PrintInfo(
+      "non-power-of-two merkle tree keeps pruned multi-openings verifiable");
+
+  std::vector<std::vector<std::uint8_t>> leaves = {
+      {0x10, 0x11}, {0x20, 0x21}, {0x30, 0x31}, {0x40, 0x41}, {0x50, 0x51}};
+  const std::vector<std::uint64_t> queries = {4, 1, 4};
+  const swgr::crypto::MerkleTree tree(swgr::HashProfile::STIR_NATIVE, leaves);
+  const auto proof = tree.open(queries);
+  const auto plan = swgr::crypto::plan_pruned_multiproof(
+      leaves.size(), queries, /*leaf_payload_bytes=*/2, /*digest_bytes=*/32);
+
+  CHECK_EQ(proof.queried_indices.size(), UniqueCount(queries));
+  CHECK_EQ(proof.leaf_payloads.size(),
+           static_cast<std::size_t>(plan.opened_leaf_count));
+  CHECK_EQ(proof.sibling_hashes.size(),
+           static_cast<std::size_t>(plan.unique_sibling_count));
+  CHECK(swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+                                         leaves.size(), tree.root(), proof));
+}
+
 }  // namespace
 
 int main() {
   try {
     RUN_TEST(TestTranscriptIsDeterministicAndDomainSeparated);
     RUN_TEST(TestMerkleOpenVerifyAndRejectTamper);
+    RUN_TEST(TestProofPlannerMatchesUniqueQueriesAndUpperBound);
+    RUN_TEST(TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

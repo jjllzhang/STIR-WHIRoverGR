@@ -151,4 +151,7 @@ if(SWGR_BUILD_BENCH)
 
   add_executable(bench_batched_inv bench/bench_batched_inv.cpp)
   target_link_libraries(bench_batched_inv PRIVATE stir_over_gr)
+
+  add_executable(bench_merkle_open bench/bench_merkle_open.cpp)
+  target_link_libraries(bench_merkle_open PRIVATE stir_over_gr)
 endif()
