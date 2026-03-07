@@ -4,8 +4,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
-#include <string>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -17,6 +17,14 @@ namespace {
 
 constexpr std::uint64_t kFnvOffset = 1469598103934665603ULL;
 constexpr std::uint64_t kFnvPrime = 1099511628211ULL;
+constexpr std::uint64_t kParallelOracleLeafThreshold = 128;
+
+long CheckedLong(std::uint64_t value, const char* label) {
+  if (value > static_cast<std::uint64_t>(std::numeric_limits<long>::max())) {
+    throw std::invalid_argument(std::string(label) + " exceeds long");
+  }
+  return static_cast<long>(value);
+}
 
 std::uint64_t fnv1a64(std::span<const std::uint8_t> bytes,
                       std::uint64_t seed = kFnvOffset) {
@@ -49,6 +57,27 @@ void append_bytes(std::vector<std::uint8_t>& dst,
   dst.insert(dst.end(), src.begin(), src.end());
 }
 
+void append_serialized_in_current_ntl_context(
+    const swgr::algebra::GRContext& ctx, const swgr::algebra::GRElem& value,
+    std::vector<std::uint8_t>& out) {
+  const std::size_t width = ctx.coeff_bytes();
+  const long r = CheckedLong(ctx.config().r, "r");
+  const std::size_t base_offset = out.size();
+  out.resize(base_offset + ctx.elem_bytes(), 0);
+
+  const NTL::ZZ_pX poly = NTL::rep(value);
+  for (long i = 0; i < r; ++i) {
+    NTL::ZZ coeff_value = NTL::rep(NTL::coeff(poly, i));
+    coeff_value %= ctx.modulus();
+    if (coeff_value < 0) {
+      coeff_value += ctx.modulus();
+    }
+    NTL::BytesFromZZ(reinterpret_cast<unsigned char*>(out.data()) + base_offset +
+                        static_cast<std::size_t>(i) * width,
+                    coeff_value, static_cast<long>(width));
+  }
+}
+
 std::vector<std::uint8_t> bundle_payload(
     const swgr::algebra::GRContext& ctx,
     const std::vector<swgr::algebra::GRElem>& oracle_evals,
@@ -71,9 +100,8 @@ std::vector<std::uint8_t> bundle_payload(
   bytes.reserve(static_cast<std::size_t>(bundle_size) * ctx.elem_bytes());
   for (std::uint64_t offset = 0; offset < bundle_size; ++offset) {
     const std::uint64_t oracle_index = bundle_index + offset * bundle_count;
-    const auto serialized =
-        ctx.serialize(oracle_evals[static_cast<std::size_t>(oracle_index)]);
-    append_bytes(bytes, serialized);
+    append_serialized_in_current_ntl_context(
+        ctx, oracle_evals[static_cast<std::size_t>(oracle_index)], bytes);
   }
   return bytes;
 }
@@ -162,11 +190,14 @@ std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
       static_cast<std::uint64_t>(oracle_evals.size()) / bundle_size;
   std::vector<std::vector<std::uint8_t>> leaves(
       static_cast<std::size_t>(bundle_count));
-  for (std::uint64_t bundle_index = 0; bundle_index < bundle_count;
-       ++bundle_index) {
-    leaves[static_cast<std::size_t>(bundle_index)] =
-        bundle_payload(ctx, oracle_evals, bundle_size, bundle_index);
-  }
+  ctx.parallel_for_with_ntl_context(
+      static_cast<std::ptrdiff_t>(bundle_count),
+      bundle_count >= kParallelOracleLeafThreshold,
+      [&](std::ptrdiff_t bundle_index) {
+        leaves[static_cast<std::size_t>(bundle_index)] = bundle_payload(
+            ctx, oracle_evals, bundle_size,
+            static_cast<std::uint64_t>(bundle_index));
+      });
   return leaves;
 }
 
@@ -174,7 +205,8 @@ std::vector<std::uint8_t> serialize_oracle_bundle(
     const swgr::algebra::GRContext& ctx,
     const std::vector<swgr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size, std::uint64_t bundle_index) {
-  return bundle_payload(ctx, oracle_evals, bundle_size, bundle_index);
+  return ctx.with_ntl_context(
+      [&] { return bundle_payload(ctx, oracle_evals, bundle_size, bundle_index); });
 }
 
 std::vector<swgr::algebra::GRElem> deserialize_oracle_bundle(

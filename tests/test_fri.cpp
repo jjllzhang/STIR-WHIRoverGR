@@ -6,6 +6,7 @@
 
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
+#include "fri/common.hpp"
 #include "fri/proof_size_estimator.hpp"
 #include "fri/prover.hpp"
 #include "fri/verifier.hpp"
@@ -309,6 +310,47 @@ void TestFriQueriesAreCappedToBundleCount() {
         std::string::npos);
 }
 
+void TestBuildOracleLeavesMatchesBundleSerialization() {
+  testutil::PrintInfo(
+      "fri oracle leaf builder matches per-bundle serialization at parallel-sized bundle counts");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  constexpr std::uint64_t kBundleSize = 3;
+  constexpr std::uint64_t kBundleCount = 128;
+  const auto oracle_evals = ctx.with_ntl_context([&] {
+    std::vector<GRElem> values;
+    values.reserve(static_cast<std::size_t>(kBundleSize * kBundleCount));
+
+    GRElem current = ctx.one();
+    GRElem delta = ctx.one() + ctx.teich_generator();
+    for (std::uint64_t i = 0; i < kBundleSize * kBundleCount; ++i) {
+      values.push_back(current);
+      current += delta;
+    }
+    return values;
+  });
+
+  const auto leaves =
+      swgr::fri::build_oracle_leaves(ctx, oracle_evals, kBundleSize);
+  CHECK_EQ(leaves.size(), static_cast<std::size_t>(kBundleCount));
+
+  for (std::uint64_t bundle_index = 0; bundle_index < kBundleCount;
+       ++bundle_index) {
+    const auto serialized = swgr::fri::serialize_oracle_bundle(
+        ctx, oracle_evals, kBundleSize, bundle_index);
+    CHECK(leaves[static_cast<std::size_t>(bundle_index)] == serialized);
+
+    const auto decoded = swgr::fri::deserialize_oracle_bundle(
+        ctx, leaves[static_cast<std::size_t>(bundle_index)]);
+    CHECK_EQ(decoded.size(), static_cast<std::size_t>(kBundleSize));
+    for (std::uint64_t offset = 0; offset < kBundleSize; ++offset) {
+      const std::uint64_t oracle_index = bundle_index + offset * kBundleCount;
+      CHECK(ctx.serialize(decoded[static_cast<std::size_t>(offset)]) ==
+            ctx.serialize(oracle_evals[static_cast<std::size_t>(oracle_index)]));
+    }
+  }
+}
+
 void TestFriValidationRejectsBadInputs() {
   testutil::PrintInfo("fri parameter validation rejects zero queries and bad degree");
 
@@ -345,6 +387,7 @@ int main() {
     RUN_TEST(TestFri3EstimatorProducesStructuredOutput);
     RUN_TEST(TestFri9EstimatorProducesStructuredOutput);
     RUN_TEST(TestFriQueriesAreCappedToBundleCount);
+    RUN_TEST(TestBuildOracleLeavesMatchesBundleSerialization);
     RUN_TEST(TestFriValidationRejectsBadInputs);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
