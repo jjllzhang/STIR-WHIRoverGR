@@ -59,6 +59,10 @@ swgr::stir::StirParameters MakeParams(
   return params;
 }
 
+swgr::stir::StirParameters MakeAutoParams(std::uint64_t stop_degree = 3) {
+  return MakeParams({}, stop_degree);
+}
+
 swgr::stir::StirInstance MakeInstance(const GRContext& ctx,
                                       std::uint64_t domain_size = 27,
                                       std::uint64_t claimed_degree = 26) {
@@ -159,6 +163,74 @@ void TestStirMultiRoundCachesNextRoundInputOracle() {
     }
     return 0;
   });
+}
+
+void TestStirAutoScheduleMatchesConjectureCapacityDefault() {
+  testutil::PrintInfo(
+      "stir auto query schedule matches the default conjecture-capacity round shape");
+
+  const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
+  const auto instance = MakeInstance(ctx, 243, 161);
+  auto auto_params = MakeAutoParams(3);
+  auto_params.ood_samples = 1;
+  const auto polynomial = SamplePolynomial(
+      ctx, instance.domain, static_cast<std::size_t>(instance.claimed_degree + 1));
+
+  const swgr::stir::StirProver prover(auto_params);
+  const swgr::stir::StirVerifier verifier(auto_params);
+  const auto proof = prover.prove(instance, polynomial);
+
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(proof.rounds.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[0].fold_query_positions.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[1].fold_query_positions.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[1].shift_query_positions.size(), std::size_t{1});
+
+  const swgr::stir::StirProofSizeEstimator estimator(auto_params);
+  const auto estimate = estimator.estimate(instance);
+  CHECK(estimate.round_breakdown_json.find("\"query_count\":2") !=
+        std::string::npos);
+}
+
+void TestStirManualQueriesOverrideAutoSchedule() {
+  testutil::PrintInfo(
+      "stir manual query schedule overrides conjecture-capacity auto scheduling");
+
+  const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
+  const auto instance = MakeInstance(ctx, 243, 161);
+  const auto polynomial = SamplePolynomial(
+      ctx, instance.domain, static_cast<std::size_t>(instance.claimed_degree + 1));
+
+  auto auto_params = MakeAutoParams(3);
+  auto_params.ood_samples = 1;
+  auto manual_params = MakeParams({1, 1}, 3);
+  manual_params.ood_samples = 1;
+
+  const swgr::stir::StirProver auto_prover(auto_params);
+  const swgr::stir::StirVerifier auto_verifier(auto_params);
+  const auto auto_proof = auto_prover.prove(instance, polynomial);
+
+  const swgr::stir::StirProver manual_prover(manual_params);
+  const swgr::stir::StirVerifier manual_verifier(manual_params);
+  const auto manual_proof = manual_prover.prove(instance, polynomial);
+
+  CHECK(auto_verifier.verify(instance, auto_proof));
+  CHECK(manual_verifier.verify(instance, manual_proof));
+  CHECK_EQ(auto_proof.rounds[0].fold_query_positions.size(), std::size_t{2});
+  CHECK_EQ(auto_proof.rounds[0].shift_query_positions.size(), std::size_t{2});
+  CHECK_EQ(auto_proof.rounds[1].fold_query_positions.size(), std::size_t{1});
+  CHECK_EQ(auto_proof.rounds[1].shift_query_positions.size(), std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[0].fold_query_positions.size(), std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[0].shift_query_positions.size(), std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[1].fold_query_positions.size(), std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[1].shift_query_positions.size(), std::size_t{1});
+
+  const swgr::stir::StirProofSizeEstimator auto_estimator(auto_params);
+  const swgr::stir::StirProofSizeEstimator manual_estimator(manual_params);
+  const auto auto_estimate = auto_estimator.estimate(instance);
+  const auto manual_estimate = manual_estimator.estimate(instance);
+  CHECK(manual_estimate.argument_bytes < auto_estimate.argument_bytes);
 }
 
 void TestStirRejectsTamperedShiftedOracle() {
@@ -285,6 +357,8 @@ int main() {
   try {
     RUN_TEST(TestStir9to3HonestRoundtripAndRoundShape);
     RUN_TEST(TestStirMultiRoundCachesNextRoundInputOracle);
+    RUN_TEST(TestStirAutoScheduleMatchesConjectureCapacityDefault);
+    RUN_TEST(TestStirManualQueriesOverrideAutoSchedule);
     RUN_TEST(TestStirRejectsTamperedShiftedOracle);
     RUN_TEST(TestStirRejectsTamperedOodAnswer);
     RUN_TEST(TestStirRejectsTamperedDegreeCorrection);

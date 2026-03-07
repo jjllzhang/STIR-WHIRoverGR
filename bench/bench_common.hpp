@@ -39,7 +39,7 @@ struct ProofSizeBenchOptions {
   swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
   std::uint64_t stop_degree = 9;
   std::uint64_t ood_samples = 2;
-  std::vector<std::uint64_t> queries = {2};
+  std::vector<std::uint64_t> queries;
   std::uint64_t threads = 1;
   OutputFormat format = OutputFormat::Text;
 };
@@ -102,6 +102,15 @@ inline std::uint64_t ParseUint64(std::string_view flag_name,
 }
 
 inline std::vector<std::uint64_t> ParseQueries(std::string_view raw_value) {
+  if (raw_value.empty()) {
+    return {};
+  }
+
+  const std::string normalized = ToLowerCopy(raw_value);
+  if (normalized == "auto" || normalized == "default") {
+    return {};
+  }
+
   std::vector<std::uint64_t> queries;
   std::string owned(raw_value);
   std::size_t start = 0;
@@ -209,7 +218,7 @@ inline std::string ProofSizeBenchUsage(const char* binary_name) {
       << "  --sec-mode ConjectureCapacity|Conservative\n"
       << "  --hash-profile STIR_NATIVE|WHIR_NATIVE\n"
       << "  --stop-degree <uint> --ood-samples <uint>\n"
-      << "  --queries q0[,q1,...]\n"
+      << "  --queries auto|q0[,q1,...]\n"
       << "  --format text|csv|json\n";
   return oss.str();
 }

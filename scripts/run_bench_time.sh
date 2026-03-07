@@ -13,7 +13,7 @@ SEC_MODE="ConjectureCapacity"
 HASH_PROFILE="STIR_NATIVE"
 STOP_DEGREE="9"
 OOD_SAMPLES="2"
-QUERIES="2"
+QUERIES=""
 THREADS=""
 WARMUP="1"
 REPS="3"
@@ -48,7 +48,7 @@ Options:
   --hash-profile VALUE  Override hash profile (default: ${HASH_PROFILE})
   --stop-degree VALUE   Override stop degree (default: ${STOP_DEGREE})
   --ood-samples VALUE   Override OOD sample count (default: ${OOD_SAMPLES})
-  --queries VALUE       Override query schedule string (default: ${QUERIES})
+  --queries VALUE       Override query schedule string (default: auto; accepts auto or q0[,q1,...])
   --threads VALUE       Override threads
   --warmup VALUE        Override warmup iterations (default: ${WARMUP})
   --reps VALUE          Override measured repetitions (default: ${REPS})
@@ -196,6 +196,14 @@ print(f"PRESET_D={data['d']}")
 print(f"PRESET_LAMBDA={data.get('lambda_target', 128)}")
 print(f"PRESET_POW={data.get('pow_bits', data.get('pow_bits_time', 0))}")
 print(f"PRESET_THREADS={data.get('threads', 1)}")
+queries = data.get("queries")
+if isinstance(queries, list):
+    queries = ",".join(str(item) for item in queries)
+elif queries is None:
+    queries = ""
+else:
+    queries = str(queries)
+print(f"PRESET_QUERIES={queries}")
 print(f"PRESET_PROTOCOLS={','.join(protocols)}")
 PY
 )
@@ -211,6 +219,7 @@ D_VALUE=${D_VALUE:-$PRESET_D}
 LAMBDA_TARGET=${LAMBDA_TARGET:-$PRESET_LAMBDA}
 POW_BITS=${POW_BITS:-$PRESET_POW}
 THREADS=${THREADS:-$PRESET_THREADS}
+QUERIES=${QUERIES:-$PRESET_QUERIES}
 PROTOCOLS=${PROTOCOL_OVERRIDE:-$PRESET_PROTOCOLS}
 
 if [[ "${PROTOCOLS}" == "all" ]]; then
@@ -230,12 +239,15 @@ ARGS_COMMON=(
   --hash-profile "${HASH_PROFILE}"
   --stop-degree "${STOP_DEGREE}"
   --ood-samples "${OOD_SAMPLES}"
-  --queries "${QUERIES}"
   --threads "${THREADS}"
   --warmup "${WARMUP}"
   --reps "${REPS}"
   --format "${FORMAT}"
 )
+
+if [[ -n "${QUERIES}" ]]; then
+  ARGS_COMMON+=(--queries "${QUERIES}")
+fi
 
 if [[ "${FORMAT}" == "csv" ]]; then
   : > "${OUTPUT_PATH}"

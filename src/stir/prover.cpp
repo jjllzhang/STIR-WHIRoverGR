@@ -56,8 +56,7 @@ StirProof StirProver::prove(
   swgr::crypto::Transcript transcript(params_.hash_profile);
 
   const std::size_t round_count = folding_round_count(instance, params_);
-  const auto schedule =
-      swgr::fri::query_schedule(round_count, params_.query_repetitions);
+  const auto schedule = resolve_query_repetitions(params_, instance);
   const std::uint64_t elem_bytes =
       static_cast<std::uint64_t>(ctx.elem_bytes());
   std::uint64_t serialized_bytes = 0;

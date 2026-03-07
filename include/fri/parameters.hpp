@@ -22,6 +22,8 @@ struct FriParameters {
 
 bool validate(const FriParameters& params);
 bool validate(const FriParameters& params, const FriInstance& instance);
+std::vector<std::uint64_t> resolve_query_repetitions(
+    const FriParameters& params, const FriInstance& instance);
 
 }  // namespace swgr::fri
 

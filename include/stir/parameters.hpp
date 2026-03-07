@@ -24,6 +24,8 @@ struct StirParameters {
 
 bool validate(const StirParameters& params);
 bool validate(const StirParameters& params, const StirInstance& instance);
+std::vector<std::uint64_t> resolve_query_repetitions(
+    const StirParameters& params, const StirInstance& instance);
 
 }  // namespace swgr::stir
 

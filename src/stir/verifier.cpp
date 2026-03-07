@@ -44,6 +44,13 @@ bool SameVector(const std::vector<T>& lhs, const std::vector<T>& rhs) {
   return lhs == rhs;
 }
 
+std::vector<std::uint64_t> SortedPositions(
+    const std::vector<std::uint64_t>& values) {
+  auto sorted = values;
+  std::sort(sorted.begin(), sorted.end());
+  return sorted;
+}
+
 }  // namespace
 
 StirVerifier::StirVerifier(StirParameters params) : params_(std::move(params)) {}
@@ -65,8 +72,7 @@ bool StirVerifier::verify(const StirInstance& instance,
       return false;
     }
 
-    const auto schedule =
-        swgr::fri::query_schedule(round_count, params_.query_repetitions);
+    const auto schedule = resolve_query_repetitions(params_, instance);
     Domain current_domain = instance.domain;
     std::uint64_t current_degree_bound = instance.claimed_degree;
     swgr::poly_utils::Polynomial expected_current_polynomial =
@@ -188,6 +194,9 @@ bool StirVerifier::verify(const StirInstance& instance,
       const auto expected_shift_positions = derive_unique_positions(
           transcript, RoundLabel("stir.shift_query", round_index),
           shift_domain.size(), schedule[round_index]);
+      const auto sorted_fold_positions = SortedPositions(expected_fold_positions);
+      const auto sorted_shift_positions =
+          SortedPositions(expected_shift_positions);
       local_stats.verifier_transcript_ms += ElapsedMilliseconds(
           transcript_query_start, std::chrono::steady_clock::now());
       if (round.fold_query_positions != expected_fold_positions ||
@@ -195,8 +204,8 @@ bool StirVerifier::verify(const StirInstance& instance,
         return false;
       }
       const auto verify_merkle_start = std::chrono::steady_clock::now();
-      if (round.input_oracle_proof.queried_indices != expected_fold_positions ||
-          round.shift_oracle_proof.queried_indices != expected_shift_positions ||
+      if (round.input_oracle_proof.queried_indices != sorted_fold_positions ||
+          round.shift_oracle_proof.queried_indices != sorted_shift_positions ||
           !swgr::crypto::MerkleTree::verify(
               params_.hash_profile, folded_domain.size(), input_root,
               round.input_oracle_proof) ||
@@ -211,8 +220,8 @@ bool StirVerifier::verify(const StirInstance& instance,
       std::vector<swgr::algebra::GRElem> expected_shift_answers;
       expected_shift_answers.reserve(expected_shift_positions.size());
       const auto query_phase_start = std::chrono::steady_clock::now();
-      for (std::size_t i = 0; i < expected_fold_positions.size(); ++i) {
-        const auto position = expected_fold_positions[i];
+      for (std::size_t i = 0; i < sorted_fold_positions.size(); ++i) {
+        const auto position = sorted_fold_positions[i];
         if (round.input_oracle_proof.leaf_payloads[i] !=
             swgr::fri::serialize_oracle_bundle(
                 ctx, *input_oracle, params_.virtual_fold_factor, position)) {
@@ -243,13 +252,15 @@ bool StirVerifier::verify(const StirInstance& instance,
 
       std::vector<swgr::algebra::GRElem> answer_points = expected_ood_points;
       std::vector<swgr::algebra::GRElem> answer_values = expected_ood_answers;
-      for (std::size_t i = 0; i < expected_shift_positions.size(); ++i) {
-        const auto position = expected_shift_positions[i];
+      for (std::size_t i = 0; i < sorted_shift_positions.size(); ++i) {
+        const auto position = sorted_shift_positions[i];
         if (round.shift_oracle_proof.leaf_payloads[i] !=
                 swgr::fri::serialize_oracle_bundle(ctx, expected_shifted_oracle, 1,
                                                    position)) {
           return false;
         }
+      }
+      for (const auto position : expected_shift_positions) {
         expected_shift_answers.push_back(
             expected_shifted_oracle[static_cast<std::size_t>(position)]);
         answer_points.push_back(shift_domain.element(position));

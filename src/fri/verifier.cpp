@@ -59,7 +59,7 @@ bool FriVerifier::verify(const FriInstance& instance,
       return false;
     }
 
-    const auto schedule = query_schedule(fold_rounds, params_.query_repetitions);
+    const auto schedule = resolve_query_repetitions(params_, instance);
     Domain current_domain = instance.domain;
     std::uint64_t current_degree = instance.claimed_degree;
     swgr::crypto::Transcript transcript(params_.hash_profile);

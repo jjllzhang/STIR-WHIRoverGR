@@ -1,8 +1,39 @@
 #include "fri/parameters.hpp"
 
+#include <algorithm>
+
 #include "utils.hpp"
 
 namespace swgr::fri {
+namespace {
+
+std::uint64_t EffectiveSecurityBits(const FriParameters& params) {
+  if (params.lambda_target > params.pow_bits) {
+    return params.lambda_target - params.pow_bits;
+  }
+  return 1;
+}
+
+double HeuristicEta(swgr::SecurityMode mode, double rho) {
+  const double clamped_rho = std::clamp(rho, 1.0 / 4096.0, 0.999999);
+  if (mode == swgr::SecurityMode::Conservative) {
+    return clamped_rho;
+  }
+  return std::clamp(clamped_rho / 2.0, 1.0 / 4096.0, 0.999999);
+}
+
+std::uint64_t HeuristicBaseQueryCount(const FriParameters& params, double rho) {
+  const double eta = HeuristicEta(params.sec_mode, rho);
+  std::uint64_t base_queries = eta >= (1.0 / 6.0) ? 2U : 1U;
+  if (params.sec_mode == swgr::SecurityMode::Conservative &&
+      EffectiveSecurityBits(params) >= 96 &&
+      eta >= (1.0 / 6.0)) {
+    base_queries = 3;
+  }
+  return base_queries;
+}
+
+}  // namespace
 
 bool validate(const FriParameters& params) {
   if ((params.fold_factor != 3 && params.fold_factor != 9) ||
@@ -16,6 +47,36 @@ bool validate(const FriParameters& params) {
     }
   }
   return true;
+}
+
+std::vector<std::uint64_t> resolve_query_repetitions(
+    const FriParameters& params, const FriInstance& instance) {
+  const std::size_t rounds =
+      folding_round_count(instance, params.fold_factor, params.stop_degree);
+  if (!params.query_repetitions.empty()) {
+    return query_schedule(rounds, params.query_repetitions);
+  }
+
+  std::vector<std::uint64_t> schedule;
+  schedule.reserve(rounds);
+  std::uint64_t current_domain_size = instance.domain.size();
+  std::uint64_t current_degree_bound = instance.claimed_degree;
+  for (std::size_t round_index = 0; round_index < rounds; ++round_index) {
+    const double rho = static_cast<double>(current_degree_bound + 1U) /
+                       static_cast<double>(current_domain_size);
+    const std::uint64_t bundle_count = current_domain_size / params.fold_factor;
+    const std::uint64_t base_queries =
+        HeuristicBaseQueryCount(params, rho);
+    const std::uint64_t decayed_queries =
+        base_queries > round_index ? base_queries - round_index : 1U;
+    const std::uint64_t query_count = std::min(
+        decayed_queries,
+        std::max<std::uint64_t>(1, bundle_count));
+    schedule.push_back(query_count);
+    current_domain_size /= params.fold_factor;
+    current_degree_bound /= params.fold_factor;
+  }
+  return schedule;
 }
 
 bool validate(const FriParameters& params, const FriInstance& instance) {
@@ -34,6 +95,15 @@ bool validate(const FriParameters& params, const FriInstance& instance) {
 
   std::uint64_t current_domain_size = instance.domain.size();
   std::uint64_t current_degree_bound = instance.claimed_degree;
+  try {
+    const auto schedule = resolve_query_repetitions(params, instance);
+    if (schedule.size() !=
+        folding_round_count(instance, params.fold_factor, params.stop_degree)) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
   while (current_degree_bound > params.stop_degree) {
     if (current_domain_size % params.fold_factor != 0) {
       return false;

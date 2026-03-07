@@ -33,7 +33,7 @@ struct TimeBenchOptions {
   swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
   std::uint64_t stop_degree = 9;
   std::uint64_t ood_samples = 2;
-  std::vector<std::uint64_t> queries = {2};
+  std::vector<std::uint64_t> queries;
   std::uint64_t threads = 1;
   std::uint64_t warmup = 1;
   std::uint64_t reps = 3;
@@ -128,7 +128,7 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --sec-mode ConjectureCapacity|Conservative\n"
          "  --hash-profile STIR_NATIVE|WHIR_NATIVE\n"
          "  --stop-degree <uint> --ood-samples <uint>\n"
-         "  --queries q0[,q1,...] --threads <uint>\n"
+         "  --queries auto|q0[,q1,...] --threads <uint>\n"
          "  --warmup <uint> --reps <uint>\n"
          "  --format text|csv|json\n";
 }

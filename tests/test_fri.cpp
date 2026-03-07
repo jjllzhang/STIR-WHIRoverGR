@@ -53,6 +53,11 @@ swgr::fri::FriParameters MakeParams(
   return params;
 }
 
+swgr::fri::FriParameters MakeAutoParams(std::uint64_t fold_factor,
+                                        std::uint64_t stop_degree = 1) {
+  return MakeParams(fold_factor, {}, stop_degree);
+}
+
 swgr::fri::FriInstance MakeInstance(const GRContext& ctx,
                                     std::uint64_t domain_size,
                                     std::uint64_t claimed_degree) {
@@ -172,6 +177,64 @@ void TestFri9RejectsTamperedOpening() {
   CHECK(!verifier.verify(instance, proof));
 }
 
+void TestFriAutoScheduleMatchesConjectureCapacityDefault() {
+  testutil::PrintInfo(
+      "fri auto query schedule matches the default conjecture-capacity round shape");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto auto_params = MakeAutoParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(auto_params);
+  const swgr::fri::FriVerifier verifier(auto_params);
+  const auto proof = prover.prove(instance, polynomial);
+
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(proof.rounds.size(), std::size_t{3});
+  CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[1].query_positions.size(), std::size_t{1});
+  CHECK(proof.rounds[2].query_positions.empty());
+
+  const swgr::fri::FriProofSizeEstimator estimator(auto_params);
+  const auto estimate = estimator.estimate(instance);
+  CHECK(estimate.round_breakdown_json.find("\"query_count\":2") !=
+        std::string::npos);
+}
+
+void TestFriManualQueriesOverrideAutoSchedule() {
+  testutil::PrintInfo(
+      "fri manual query schedule overrides conjecture-capacity auto scheduling");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const auto auto_params = MakeAutoParams(3);
+  const auto manual_params = MakeParams(3, {1, 1});
+
+  const swgr::fri::FriProver auto_prover(auto_params);
+  const swgr::fri::FriVerifier auto_verifier(auto_params);
+  const auto auto_proof = auto_prover.prove(instance, polynomial);
+
+  const swgr::fri::FriProver manual_prover(manual_params);
+  const swgr::fri::FriVerifier manual_verifier(manual_params);
+  const auto manual_proof = manual_prover.prove(instance, polynomial);
+
+  CHECK(auto_verifier.verify(instance, auto_proof));
+  CHECK(manual_verifier.verify(instance, manual_proof));
+  CHECK_EQ(auto_proof.rounds[0].query_positions.size(), std::size_t{2});
+  CHECK_EQ(auto_proof.rounds[1].query_positions.size(), std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[0].query_positions.size(), std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[1].query_positions.size(), std::size_t{1});
+
+  const swgr::fri::FriProofSizeEstimator auto_estimator(auto_params);
+  const swgr::fri::FriProofSizeEstimator manual_estimator(manual_params);
+  const auto auto_estimate = auto_estimator.estimate(instance);
+  const auto manual_estimate = manual_estimator.estimate(instance);
+  CHECK(manual_estimate.argument_bytes < auto_estimate.argument_bytes);
+}
+
 void TestFri3EstimatorProducesStructuredOutput() {
   testutil::PrintInfo("fri-3 estimator returns non-zero bytes, hashes, and json");
 
@@ -235,6 +298,8 @@ int main() {
     RUN_TEST(TestFri3RejectsTamperedFinalPolynomial);
     RUN_TEST(TestFri9HonestRoundtripAndRoundShape);
     RUN_TEST(TestFri9RejectsTamperedOpening);
+    RUN_TEST(TestFriAutoScheduleMatchesConjectureCapacityDefault);
+    RUN_TEST(TestFriManualQueriesOverrideAutoSchedule);
     RUN_TEST(TestFri3EstimatorProducesStructuredOutput);
     RUN_TEST(TestFri9EstimatorProducesStructuredOutput);
     RUN_TEST(TestFriValidationRejectsBadInputs);

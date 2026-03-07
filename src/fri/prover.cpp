@@ -62,7 +62,7 @@ FriProof FriProver::prove(
 
   const std::size_t fold_rounds =
       folding_round_count(instance, params_.fold_factor, params_.stop_degree);
-  const auto schedule = query_schedule(fold_rounds, params_.query_repetitions);
+  const auto schedule = resolve_query_repetitions(params_, instance);
 
   for (std::size_t round_index = 0; round_index < fold_rounds; ++round_index) {
     FriRoundProof round;

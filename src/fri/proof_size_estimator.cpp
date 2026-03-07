@@ -24,7 +24,7 @@ swgr::EstimateResult FriProofSizeEstimator::estimate(
   const auto& ctx = instance.domain.context();
   const std::size_t fold_rounds =
       folding_round_count(instance, params_.fold_factor, params_.stop_degree);
-  const auto schedule = query_schedule(fold_rounds, params_.query_repetitions);
+  const auto schedule = resolve_query_repetitions(params_, instance);
   const std::uint64_t digest_bytes =
       static_cast<std::uint64_t>(swgr::crypto::digest_bytes(params_.hash_profile));
   const std::uint64_t leaf_payload_bytes =
