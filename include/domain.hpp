@@ -12,12 +12,6 @@ namespace swgr {
 
 class Domain {
  public:
-  static Domain from_generator(const algebra::GRContext& ctx,
-                               algebra::GRElem offset, algebra::GRElem root,
-                               std::uint64_t size);
-  static Domain from_generator(std::shared_ptr<const algebra::GRContext> ctx,
-                               algebra::GRElem offset, algebra::GRElem root,
-                               std::uint64_t size);
   static Domain teichmuller_subgroup(const algebra::GRContext& ctx,
                                      std::uint64_t size);
   static Domain teichmuller_subgroup(
@@ -28,11 +22,6 @@ class Domain {
   static Domain teichmuller_coset(
       std::shared_ptr<const algebra::GRContext> ctx, algebra::GRElem offset,
       std::uint64_t size);
-
-  Domain(const algebra::GRContext& ctx, algebra::GRElem offset,
-         algebra::GRElem root, std::uint64_t size);
-  Domain(std::shared_ptr<const algebra::GRContext> ctx, algebra::GRElem offset,
-         algebra::GRElem root, std::uint64_t size);
 
   const algebra::GRContext& context() const { return *ctx_; }
   const std::shared_ptr<const algebra::GRContext>& context_ptr() const {
@@ -51,6 +40,11 @@ class Domain {
   bool disjoint_with(const Domain& other) const;
 
  private:
+  Domain(const algebra::GRContext& ctx, algebra::GRElem offset,
+         algebra::GRElem root, std::uint64_t size);
+  Domain(std::shared_ptr<const algebra::GRContext> ctx, algebra::GRElem offset,
+         algebra::GRElem root, std::uint64_t size);
+
   std::shared_ptr<const algebra::GRContext> ctx_;
   algebra::GRElem offset_;
   algebra::GRElem root_;

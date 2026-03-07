@@ -25,18 +25,6 @@ long CheckedLong(std::uint64_t value, const char* label) {
 
 }  // namespace
 
-Domain Domain::from_generator(const algebra::GRContext& ctx,
-                              algebra::GRElem offset, algebra::GRElem root,
-                              std::uint64_t size) {
-  return Domain(ctx, std::move(offset), std::move(root), size);
-}
-
-Domain Domain::from_generator(std::shared_ptr<const algebra::GRContext> ctx,
-                              algebra::GRElem offset, algebra::GRElem root,
-                              std::uint64_t size) {
-  return Domain(std::move(ctx), std::move(offset), std::move(root), size);
-}
-
 Domain Domain::teichmuller_subgroup(const algebra::GRContext& ctx,
                                     std::uint64_t size) {
   return teichmuller_subgroup(std::make_shared<algebra::GRContext>(ctx), size);

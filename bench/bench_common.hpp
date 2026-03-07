@@ -54,6 +54,11 @@ struct ProofSizeBenchRow {
   std::uint64_t pow_bits = 0;
   std::string sec_mode;
   std::string hash_profile;
+  std::string soundness_model;
+  std::string query_policy;
+  std::string pow_policy;
+  std::uint64_t effective_security_bits = 0;
+  std::string soundness_notes;
   std::uint64_t fold = 0;
   std::uint64_t shift_power = 0;
   std::uint64_t stop_degree = 0;
@@ -357,6 +362,12 @@ inline void PrintRowsText(const std::vector<ProofSizeBenchRow>& rows) {
     std::cout << "pow_bits=" << row.pow_bits << "\n";
     std::cout << "sec_mode=" << row.sec_mode << "\n";
     std::cout << "hash_profile=" << row.hash_profile << "\n";
+    std::cout << "soundness_model=" << row.soundness_model << "\n";
+    std::cout << "query_policy=" << row.query_policy << "\n";
+    std::cout << "pow_policy=" << row.pow_policy << "\n";
+    std::cout << "effective_security_bits=" << row.effective_security_bits
+              << "\n";
+    std::cout << "soundness_notes=" << row.soundness_notes << "\n";
     std::cout << "fold=" << row.fold << "\n";
     std::cout << "shift_power=" << row.shift_power << "\n";
     std::cout << "stop_degree=" << row.stop_degree << "\n";
@@ -383,7 +394,9 @@ inline void PrintRowsText(const std::vector<ProofSizeBenchRow>& rows) {
 inline void PrintRowsCsv(const std::vector<ProofSizeBenchRow>& rows) {
   std::cout
       << "protocol,ring,n,d,rho,lambda_target,pow_bits,sec_mode,hash_profile,"
-         "fold,shift_power,stop_degree,ood_samples,estimated_argument_bytes,"
+         "soundness_model,query_policy,pow_policy,effective_security_bits,"
+         "soundness_notes,fold,shift_power,stop_degree,ood_samples,"
+         "estimated_argument_bytes,"
          "estimated_argument_kib,estimated_verifier_hashes,"
          "transcript_challenge_count,transcript_bytes_estimated,"
          "pow_nonce_bytes,round_breakdown_json\n";
@@ -392,7 +405,12 @@ inline void PrintRowsCsv(const std::vector<ProofSizeBenchRow>& rows) {
               << row.n << "," << row.d << "," << CsvEscape(row.rho) << ","
               << row.lambda_target << "," << row.pow_bits << ","
               << CsvEscape(row.sec_mode) << "," << CsvEscape(row.hash_profile)
-              << "," << row.fold << "," << row.shift_power << ","
+              << "," << CsvEscape(row.soundness_model) << ","
+              << CsvEscape(row.query_policy) << ","
+              << CsvEscape(row.pow_policy) << ","
+              << row.effective_security_bits << ","
+              << CsvEscape(row.soundness_notes) << "," << row.fold << ","
+              << row.shift_power << ","
               << row.stop_degree << "," << row.ood_samples << ","
               << row.estimated_argument_bytes << "," << std::fixed
               << std::setprecision(3) << row.estimated_argument_kib << ","
@@ -420,6 +438,16 @@ inline void PrintRowsJson(const std::vector<ProofSizeBenchRow>& rows) {
     std::cout << "    \"sec_mode\": \"" << JsonEscape(row.sec_mode) << "\",\n";
     std::cout << "    \"hash_profile\": \"" << JsonEscape(row.hash_profile)
               << "\",\n";
+    std::cout << "    \"soundness_model\": \""
+              << JsonEscape(row.soundness_model) << "\",\n";
+    std::cout << "    \"query_policy\": \"" << JsonEscape(row.query_policy)
+              << "\",\n";
+    std::cout << "    \"pow_policy\": \"" << JsonEscape(row.pow_policy)
+              << "\",\n";
+    std::cout << "    \"effective_security_bits\": "
+              << row.effective_security_bits << ",\n";
+    std::cout << "    \"soundness_notes\": \""
+              << JsonEscape(row.soundness_notes) << "\",\n";
     std::cout << "    \"fold\": " << row.fold << ",\n";
     std::cout << "    \"shift_power\": " << row.shift_power << ",\n";
     std::cout << "    \"stop_degree\": " << row.stop_degree << ",\n";

@@ -8,9 +8,34 @@
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
 #include "fri/proof_size_estimator.hpp"
+#include "soundness/configurator.hpp"
 #include "stir/proof_size_estimator.hpp"
 
 namespace {
+
+std::string JoinNotes(const std::vector<std::string>& notes) {
+  std::string joined;
+  for (std::size_t index = 0; index < notes.size(); ++index) {
+    if (!joined.empty()) {
+      joined += " | ";
+    }
+    joined += notes[index];
+  }
+  return joined;
+}
+
+void FillSoundnessMetadata(
+    swgr::bench::ProofSizeBenchRow& row, swgr::SecurityMode sec_mode,
+    std::uint64_t lambda_target, std::uint64_t pow_bits,
+    const std::vector<std::uint64_t>& query_repetitions, double rho) {
+  const auto heuristic = swgr::soundness::engineering_heuristic_result(
+      sec_mode, lambda_target, pow_bits, !query_repetitions.empty(), rho);
+  row.soundness_model = heuristic.model;
+  row.query_policy = heuristic.query_policy;
+  row.pow_policy = heuristic.pow_policy;
+  row.effective_security_bits = heuristic.effective_security_bits;
+  row.soundness_notes = JoinNotes(heuristic.notes);
+}
 
 void PrintQueryWarnings(
     std::string_view protocol,
@@ -74,6 +99,10 @@ swgr::bench::ProofSizeBenchRow MakeFriRow(
   row.pow_bits = options.pow_bits;
   row.sec_mode = swgr::to_string(options.sec_mode);
   row.hash_profile = swgr::to_string(options.hash_profile);
+  FillSoundnessMetadata(row, options.sec_mode, options.lambda_target,
+                        options.pow_bits, options.queries,
+                        static_cast<double>(options.d + 1U) /
+                            static_cast<double>(options.n));
   row.fold = fold_factor;
   row.shift_power = 0;
   row.stop_degree = options.stop_degree;
@@ -122,6 +151,10 @@ swgr::bench::ProofSizeBenchRow MakeStirRow(
   row.pow_bits = options.pow_bits;
   row.sec_mode = swgr::to_string(options.sec_mode);
   row.hash_profile = swgr::to_string(options.hash_profile);
+  FillSoundnessMetadata(row, options.sec_mode, options.lambda_target,
+                        options.pow_bits, options.queries,
+                        static_cast<double>(options.d + 1U) /
+                            static_cast<double>(options.n));
   row.fold = 9;
   row.shift_power = 3;
   row.stop_degree = options.stop_degree;

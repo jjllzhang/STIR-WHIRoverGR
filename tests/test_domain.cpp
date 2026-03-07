@@ -57,24 +57,24 @@ void TestDomainRootOrderAndPowMap() {
   CHECK_EQ(pow9.element(0), ctx.one());
 }
 
-void TestDomainRejectsInvalidGenerator() {
-  testutil::PrintInfo("domain construction fails fast on non-unit offset or wrong root order");
+void TestDomainRejectsInvalidTeichmullerInputs() {
+  testutil::PrintInfo(
+      "teichmuller-only domain construction fails fast on invalid size or coset offset");
 
   const swgr::algebra::GRContext ctx(
       swgr::algebra::GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const swgr::Domain valid = swgr::Domain::teichmuller_subgroup(ctx, 9);
 
-  bool bad_root_threw = false;
+  bool bad_size_threw = false;
   try {
-    (void)swgr::Domain::from_generator(ctx, ctx.one(), valid.scale(3).root(), 9);
+    (void)swgr::Domain::teichmuller_subgroup(ctx, 10);
   } catch (const std::invalid_argument&) {
-    bad_root_threw = true;
+    bad_size_threw = true;
   }
-  CHECK(bad_root_threw);
+  CHECK(bad_size_threw);
 
   bool bad_offset_threw = false;
   try {
-    (void)swgr::Domain::from_generator(ctx, ctx.zero(), valid.root(), 9);
+    (void)swgr::Domain::teichmuller_coset(ctx, ctx.zero(), 9);
   } catch (const std::invalid_argument&) {
     bad_offset_threw = true;
   }
@@ -158,7 +158,7 @@ int main() {
   try {
     RUN_TEST(TestDomainBasicShape);
     RUN_TEST(TestDomainRootOrderAndPowMap);
-    RUN_TEST(TestDomainRejectsInvalidGenerator);
+    RUN_TEST(TestDomainRejectsInvalidTeichmullerInputs);
     RUN_TEST(TestLargeExtensionTeichGeneratorFallback);
     RUN_TEST(TestMidExtensionPrimitiveTeichGeneratorPath);
     RUN_TEST(TestMidExtensionTeichGeneratorFallback);

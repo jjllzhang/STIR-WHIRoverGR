@@ -30,6 +30,7 @@ set(STIR_OVER_GR_SOURCES
     src/domain.cpp
     src/ldt.cpp
     src/parameters.cpp
+    src/soundness/configurator.cpp
     src/utils.cpp
     src/algebra/gr_context.cpp
     src/algebra/gr_serialization.cpp
@@ -160,6 +161,9 @@ if(SWGR_BUILD_TESTS)
   add_executable(test_stir tests/test_stir.cpp)
   target_link_libraries(test_stir PRIVATE stir_over_gr)
   target_include_directories(test_stir PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(test_soundness_configurator tests/test_soundness_configurator.cpp)
+  target_link_libraries(test_soundness_configurator PRIVATE stir_over_gr)
+  target_include_directories(test_soundness_configurator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
   add_test(NAME test_gr_basic COMMAND $<TARGET_FILE:test_gr_basic>)
   add_test(NAME test_domain COMMAND $<TARGET_FILE:test_domain>)
@@ -168,6 +172,7 @@ if(SWGR_BUILD_TESTS)
   add_test(NAME test_crypto COMMAND $<TARGET_FILE:test_crypto>)
   add_test(NAME test_fri COMMAND $<TARGET_FILE:test_fri>)
   add_test(NAME test_stir COMMAND $<TARGET_FILE:test_stir>)
+  add_test(NAME test_soundness_configurator COMMAND $<TARGET_FILE:test_soundness_configurator>)
 endif()
 
 if(SWGR_BUILD_BENCH)

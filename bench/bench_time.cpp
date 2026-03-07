@@ -15,6 +15,7 @@
 #include "fri/verifier.hpp"
 #include "ldt.hpp"
 #include "poly_utils/polynomial.hpp"
+#include "soundness/configurator.hpp"
 #include "stir/prover.hpp"
 #include "stir/verifier.hpp"
 
@@ -50,6 +51,11 @@ struct TimeBenchRow {
   std::uint64_t pow_bits = 0;
   std::string sec_mode;
   std::string hash_profile;
+  std::string soundness_model;
+  std::string query_policy;
+  std::string pow_policy;
+  std::uint64_t effective_security_bits = 0;
+  std::string soundness_notes;
   std::uint64_t fold = 0;
   std::uint64_t shift_power = 0;
   std::uint64_t stop_degree = 0;
@@ -61,6 +67,8 @@ struct TimeBenchRow {
   double prove_query_phase_ms = 0.0;
   double prover_total_ms = 0.0;
   double verify_ms = 0.0;
+  std::uint64_t serialized_bytes_actual = 0;
+  double serialized_kib_actual = 0.0;
   std::uint64_t verifier_hashes_actual = 0;
   double profile_prover_total_ms = 0.0;
   double profile_prover_encode_total_ms = 0.0;
@@ -86,6 +94,31 @@ double SafeMean(double total, std::uint64_t reps) {
 
 double ClampNonNegative(double value) {
   return value < 0.0 ? 0.0 : value;
+}
+
+std::string JoinNotes(const std::vector<std::string>& notes) {
+  std::string joined;
+  for (std::size_t index = 0; index < notes.size(); ++index) {
+    if (!joined.empty()) {
+      joined += " | ";
+    }
+    joined += notes[index];
+  }
+  return joined;
+}
+
+void FillSoundnessMetadata(TimeBenchRow& row, swgr::SecurityMode sec_mode,
+                           std::uint64_t lambda_target,
+                           std::uint64_t pow_bits,
+                           const std::vector<std::uint64_t>& query_repetitions,
+                           double rho) {
+  const auto heuristic = swgr::soundness::engineering_heuristic_result(
+      sec_mode, lambda_target, pow_bits, !query_repetitions.empty(), rho);
+  row.soundness_model = heuristic.model;
+  row.query_policy = heuristic.query_policy;
+  row.pow_policy = heuristic.pow_policy;
+  row.effective_security_bits = heuristic.effective_security_bits;
+  row.soundness_notes = JoinNotes(heuristic.notes);
 }
 
 double ProverProfileAccountedTotal(const TimeBenchRow& row) {
@@ -229,6 +262,7 @@ void AddRunStats(TimeBenchRow& row, const swgr::ProofStatistics& prover_stats,
   row.prove_query_phase_ms += prover_stats.prove_query_phase_ms;
   row.prover_total_ms += prover_stats.prover_total_ms;
   row.verify_ms += verifier_stats.verifier_total_ms;
+  row.serialized_bytes_actual = prover_stats.serialized_bytes;
   row.profile_prover_total_ms += prover_stats.prover_total_ms;
   row.profile_prover_encode_total_ms += prover_stats.prover_encode_ms;
   row.profile_prover_merkle_total_ms += prover_stats.prover_merkle_ms;
@@ -253,6 +287,8 @@ void FinalizeMeans(TimeBenchRow& row) {
   row.prove_query_phase_ms = SafeMean(row.prove_query_phase_ms, row.reps);
   row.prover_total_ms = SafeMean(row.prover_total_ms, row.reps);
   row.verify_ms = SafeMean(row.verify_ms, row.reps);
+  row.serialized_kib_actual =
+      static_cast<double>(row.serialized_bytes_actual) / 1024.0;
 }
 
 void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
@@ -267,6 +303,12 @@ void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
     std::cout << "pow_bits=" << row.pow_bits << "\n";
     std::cout << "sec_mode=" << row.sec_mode << "\n";
     std::cout << "hash_profile=" << row.hash_profile << "\n";
+    std::cout << "soundness_model=" << row.soundness_model << "\n";
+    std::cout << "query_policy=" << row.query_policy << "\n";
+    std::cout << "pow_policy=" << row.pow_policy << "\n";
+    std::cout << "effective_security_bits=" << row.effective_security_bits
+              << "\n";
+    std::cout << "soundness_notes=" << row.soundness_notes << "\n";
     std::cout << "fold=" << row.fold << "\n";
     std::cout << "shift_power=" << row.shift_power << "\n";
     std::cout << "stop_degree=" << row.stop_degree << "\n";
@@ -279,6 +321,9 @@ void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
               << "prove_query_phase_ms=" << row.prove_query_phase_ms << "\n"
               << "prover_total_ms=" << row.prover_total_ms << "\n"
               << "verify_ms=" << row.verify_ms << "\n"
+              << "serialized_bytes_actual=" << row.serialized_bytes_actual
+              << "\n"
+              << "serialized_kib_actual=" << row.serialized_kib_actual << "\n"
               << "profile_prover_total_ms=" << row.profile_prover_total_ms
               << "\n"
               << "profile_prover_encode_total_ms="
@@ -377,8 +422,10 @@ void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
 void PrintRowsCsv(const std::vector<TimeBenchRow>& rows) {
   std::cout
       << "protocol,ring,n,d,rho,lambda_target,pow_bits,sec_mode,hash_profile,"
-         "fold,shift_power,stop_degree,ood_samples,threads,warmup,reps,"
-         "commit_ms,prove_query_phase_ms,prover_total_ms,verify_ms,"
+         "soundness_model,query_policy,pow_policy,effective_security_bits,"
+         "soundness_notes,fold,shift_power,stop_degree,ood_samples,threads,"
+         "warmup,reps,commit_ms,prove_query_phase_ms,prover_total_ms,"
+         "verify_ms,serialized_bytes_actual,serialized_kib_actual,"
          "verifier_hashes_actual,profile_prover_total_ms,"
          "profile_prover_encode_total_ms,profile_prover_merkle_total_ms,"
          "profile_prover_transcript_total_ms,profile_prover_fold_total_ms,"
@@ -410,12 +457,20 @@ void PrintRowsCsv(const std::vector<TimeBenchRow>& rows) {
               << row.d << "," << swgr::bench::CsvEscape(row.rho) << ","
               << row.lambda_target << "," << row.pow_bits << ","
               << swgr::bench::CsvEscape(row.sec_mode) << ","
-              << swgr::bench::CsvEscape(row.hash_profile) << "," << row.fold
-              << "," << row.shift_power << "," << row.stop_degree << ","
+              << swgr::bench::CsvEscape(row.hash_profile) << ","
+              << swgr::bench::CsvEscape(row.soundness_model) << ","
+              << swgr::bench::CsvEscape(row.query_policy) << ","
+              << swgr::bench::CsvEscape(row.pow_policy) << ","
+              << row.effective_security_bits << ","
+              << swgr::bench::CsvEscape(row.soundness_notes) << ","
+              << row.fold << "," << row.shift_power << "," << row.stop_degree
+              << ","
               << row.ood_samples << "," << row.threads << "," << row.warmup
               << "," << row.reps << "," << std::fixed << std::setprecision(3)
               << row.commit_ms << "," << row.prove_query_phase_ms << ","
               << row.prover_total_ms << "," << row.verify_ms << ","
+              << row.serialized_bytes_actual << ","
+              << row.serialized_kib_actual << ","
               << row.verifier_hashes_actual << ","
               << row.profile_prover_total_ms << ","
               << row.profile_prover_encode_total_ms << ","
@@ -486,6 +541,16 @@ void PrintRowsJson(const std::vector<TimeBenchRow>& rows) {
               << "\",\n";
     std::cout << "    \"hash_profile\": \""
               << swgr::bench::JsonEscape(row.hash_profile) << "\",\n";
+    std::cout << "    \"soundness_model\": \""
+              << swgr::bench::JsonEscape(row.soundness_model) << "\",\n";
+    std::cout << "    \"query_policy\": \""
+              << swgr::bench::JsonEscape(row.query_policy) << "\",\n";
+    std::cout << "    \"pow_policy\": \""
+              << swgr::bench::JsonEscape(row.pow_policy) << "\",\n";
+    std::cout << "    \"effective_security_bits\": "
+              << row.effective_security_bits << ",\n";
+    std::cout << "    \"soundness_notes\": \""
+              << swgr::bench::JsonEscape(row.soundness_notes) << "\",\n";
     std::cout << "    \"fold\": " << row.fold << ",\n";
     std::cout << "    \"shift_power\": " << row.shift_power << ",\n";
     std::cout << "    \"stop_degree\": " << row.stop_degree << ",\n";
@@ -499,6 +564,10 @@ void PrintRowsJson(const std::vector<TimeBenchRow>& rows) {
               << ",\n"
               << "    \"prover_total_ms\": " << row.prover_total_ms << ",\n"
               << "    \"verify_ms\": " << row.verify_ms << ",\n"
+              << "    \"serialized_bytes_actual\": "
+              << row.serialized_bytes_actual << ",\n"
+              << "    \"serialized_kib_actual\": "
+              << row.serialized_kib_actual << ",\n"
               << "    \"profile_prover_total_ms\": "
               << row.profile_prover_total_ms << ",\n"
               << "    \"profile_prover_encode_total_ms\": "
@@ -663,6 +732,10 @@ TimeBenchRow RunBenchLoop(const TimeBenchOptions& options, std::string protocol,
   row.pow_bits = options.pow_bits;
   row.sec_mode = swgr::to_string(options.sec_mode);
   row.hash_profile = swgr::to_string(options.hash_profile);
+  FillSoundnessMetadata(row, options.sec_mode, options.lambda_target,
+                        options.pow_bits, options.queries,
+                        static_cast<double>(options.d + 1U) /
+                            static_cast<double>(options.n));
   row.fold = fold;
   row.shift_power = shift_power;
   row.stop_degree = options.stop_degree;

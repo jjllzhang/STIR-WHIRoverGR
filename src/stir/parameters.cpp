@@ -3,38 +3,10 @@
 #include <algorithm>
 
 #include "fri/common.hpp"
+#include "soundness/configurator.hpp"
 #include "stir/common.hpp"
 
 namespace swgr::stir {
-namespace {
-
-std::uint64_t EffectiveSecurityBits(const StirParameters& params) {
-  if (params.lambda_target > params.pow_bits) {
-    return params.lambda_target - params.pow_bits;
-  }
-  return 1;
-}
-
-double HeuristicEta(swgr::SecurityMode mode, double rho) {
-  const double clamped_rho = std::clamp(rho, 1.0 / 4096.0, 0.999999);
-  if (mode == swgr::SecurityMode::Conservative) {
-    return clamped_rho;
-  }
-  return std::clamp(clamped_rho / 2.0, 1.0 / 4096.0, 0.999999);
-}
-
-std::uint64_t HeuristicBaseQueryCount(const StirParameters& params, double rho) {
-  const double eta = HeuristicEta(params.sec_mode, rho);
-  std::uint64_t base_queries = eta >= (1.0 / 6.0) ? 2U : 1U;
-  if (params.sec_mode == swgr::SecurityMode::Conservative &&
-      EffectiveSecurityBits(params) >= 96 &&
-      eta >= (1.0 / 6.0)) {
-    base_queries = 3;
-  }
-  return base_queries;
-}
-
-}  // namespace
 
 bool validate(const StirParameters& params) {
   if (params.virtual_fold_factor != 9 || params.shift_power != 3 ||
@@ -42,12 +14,7 @@ bool validate(const StirParameters& params) {
     return false;
   }
 
-  for (const auto query_count : params.query_repetitions) {
-    if (query_count == 0) {
-      return false;
-    }
-  }
-  return true;
+  return swgr::soundness::validate_manual_queries(params.query_repetitions);
 }
 
 std::vector<std::uint64_t> resolve_query_repetitions(
@@ -80,9 +47,9 @@ std::vector<RoundQueryScheduleMetadata> resolve_query_schedule_metadata(
     } else {
       const double rho = static_cast<double>(current_degree_bound + 1U) /
                          static_cast<double>(current_domain_size);
-      const std::uint64_t base_queries = HeuristicBaseQueryCount(params, rho);
-      requested_query_count =
-          base_queries > round_index ? base_queries - round_index : 1U;
+      requested_query_count = swgr::soundness::auto_query_count_for_round(
+          params.sec_mode, params.lambda_target, params.pow_bits, rho,
+          round_index);
     }
 
     const std::uint64_t bundle_count =
