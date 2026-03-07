@@ -250,8 +250,8 @@ if [[ -n "${QUERIES}" ]]; then
 fi
 
 CMD=("${BENCH_BIN}" --protocol "${PROTOCOLS}" "${ARGS_COMMON[@]}")
-echo "[time] ${CMD[*]}" >&2
-"${CMD[@]}" > "${OUTPUT_PATH}"
+echo "[time] OMP_NUM_THREADS=${THREADS} OMP_DYNAMIC=false ${CMD[*]}" >&2
+OMP_NUM_THREADS="${THREADS}" OMP_DYNAMIC=false "${CMD[@]}" > "${OUTPUT_PATH}"
 
 echo "[time] wrote ${OUTPUT_PATH}" >&2
 printf '%s\n' "${OUTPUT_PATH}"

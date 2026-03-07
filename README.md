@@ -67,7 +67,7 @@ ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri|test_stir'
 ./scripts/run_bench_time.sh --output results/time_latest.csv
 ./scripts/run_search.sh --n-values 81,243 --rho-values 1/3,1/9 --soundness 128:22:ConjectureCapacity:auto
 ./scripts/run_bench_size.sh --preset bench/presets/ci_gr216_r54.json --build-dir build --output results/preset0_size.csv
-OMP_NUM_THREADS=1 ./scripts/run_bench_time.sh --preset bench/presets/jia_micro_gr216_r162.json --build-dir build-release --output results/preset1_time.csv --warmup 1 --reps 3
+./scripts/run_bench_time.sh --preset bench/presets/jia_micro_gr216_r162.json --build-dir build-release --threads 1 --output results/preset1_time.csv --warmup 1 --reps 3
 ```
 
 说明：
@@ -79,6 +79,7 @@ OMP_NUM_THREADS=1 ./scripts/run_bench_time.sh --preset bench/presets/jia_micro_g
 - Batch 4 的归档 smoke/result 证据已落在 `results/preset0_{size,time}.csv` 与 `results/preset1_{size,time}.csv`；复现命令见 `results/README.md`；
 - Batch 5 已补 `results/preset2_{size,time}.csv`；该组在 `GR(2^16,486), n=729, d=243` 上覆盖两轮 STIR estimator 与 time bench，但当前口径下 `stir9to3` 既未在 size 上优于 `fri9`（`36.570 KiB` vs `29.926 KiB`），在 time 侧也更重（`prover_total_ms = 7370.485` vs `3930.196`，`verify_ms = 8240.489` vs `324.210`），因此仍作为参数/趋势归档，而非第一版主图；
 - `--queries` 支持 `auto` 或显式 `q0[,q1,...]`；若某轮请求值被 cap，`bench_proof_size_estimate` / `bench_time` 会在 `stderr` 打 warning，estimator 的 `round_breakdown_json` 会写出 `requested_query_count / effective_query_count / cap_applied`；
+- `bench_time --threads` 现会直接控制 OpenMP 运行时线程数；`scripts/run_bench_time.sh` 会同步注入 `OMP_NUM_THREADS=<threads>` 与 `OMP_DYNAMIC=false`，不再只是输出元数据；
 - `bench_time` 支持 `--warmup` / `--reps`；headline 时间字段按 measured reps 求均值；
 - `bench_time` 会输出 `commit_ms / prove_query_phase_ms / prover_total_ms / verify_ms / verifier_hashes_actual`，并额外带上 `serialized_bytes_actual / serialized_kib_actual`；
 - `bench_batched_inv` 默认对齐 `GR(2^16,162), n=243, d=81, fold=9`，并分别报告 `interpolate_for_gr_wrapper` 与 generic `fold_eval_k` 的 baseline/batched 平均耗时与 speedup；默认 `warmup=1, reps=1`，做性能结论请使用 `build-release/`；

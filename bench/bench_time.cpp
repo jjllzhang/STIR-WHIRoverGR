@@ -5,9 +5,14 @@
 #include <exception>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#if defined(SWGR_HAS_OPENMP)
+#include <omp.h>
+#endif
 
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
@@ -105,6 +110,29 @@ std::string JoinNotes(const std::vector<std::string>& notes) {
     joined += notes[index];
   }
   return joined;
+}
+
+void ApplyThreadControl(std::uint64_t requested_threads) {
+#if defined(SWGR_HAS_OPENMP)
+  int requested = std::numeric_limits<int>::max();
+  if (requested_threads <=
+      static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+    requested = static_cast<int>(requested_threads);
+  } else {
+    std::cerr << "warning: --threads=" << requested_threads
+              << " exceeds OpenMP int limit; capping to " << requested << "\n";
+  }
+
+  omp_set_dynamic(0);
+  omp_set_num_threads(requested);
+  const int effective_threads = omp_get_max_threads();
+  std::cerr << "info: OpenMP thread control enabled (requested="
+            << requested_threads << ", effective=" << effective_threads << ")\n";
+#else
+  (void)requested_threads;
+  std::cerr
+      << "warning: OpenMP is disabled in this build; --threads cannot affect runtime\n";
+#endif
 }
 
 void FillSoundnessMetadata(TimeBenchRow& row, swgr::SecurityMode sec_mode,
@@ -839,6 +867,7 @@ int main(int argc, char** argv) {
     }
 
     const auto options = ParseTimeBenchOptions(argc, argv);
+    ApplyThreadControl(options.threads);
     auto ctx = std::make_shared<swgr::algebra::GRContext>(swgr::algebra::GRConfig{
         .p = options.p,
         .k_exp = options.k_exp,
