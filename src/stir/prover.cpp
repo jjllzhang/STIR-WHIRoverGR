@@ -74,6 +74,8 @@ StirProof StirProver::prove(
   double degree_correction_ms = 0.0;
   double commit_ms = 0.0;
   double query_phase_ms = 0.0;
+  std::vector<swgr::algebra::GRElem> cached_input_oracle;
+  bool has_cached_input_oracle = false;
 
   for (std::size_t round_index = 0; round_index < round_count; ++round_index) {
     StirRoundProof round;
@@ -82,14 +84,19 @@ StirProof StirProver::prove(
     round.input_degree_bound = current_degree_bound;
     round.input_polynomial = current_polynomial;
 
+    std::vector<swgr::algebra::GRElem> computed_input_oracle;
     const auto encode_start = std::chrono::steady_clock::now();
-    const auto input_oracle =
-        swgr::poly_utils::rs_encode(current_domain, current_polynomial);
+    const auto* input_oracle = &cached_input_oracle;
+    if (!has_cached_input_oracle) {
+      computed_input_oracle =
+          swgr::poly_utils::rs_encode(current_domain, current_polynomial);
+      input_oracle = &computed_input_oracle;
+    }
     encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
     const auto commit_start = std::chrono::steady_clock::now();
     const auto input_merkle_start = std::chrono::steady_clock::now();
     const auto input_tree =
-        swgr::fri::build_oracle_tree(params_.hash_profile, ctx, input_oracle,
+        swgr::fri::build_oracle_tree(params_.hash_profile, ctx, *input_oracle,
                                      params_.virtual_fold_factor);
     merkle_ms +=
         ElapsedMilliseconds(input_merkle_start, std::chrono::steady_clock::now());
@@ -111,7 +118,7 @@ StirProof StirProver::prove(
 
     const auto fold_start = std::chrono::steady_clock::now();
     const auto folded_table = swgr::poly_utils::fold_table_k(
-        current_domain, input_oracle, params_.virtual_fold_factor,
+        current_domain, *input_oracle, params_.virtual_fold_factor,
         round.folding_alpha);
     fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
     const auto interpolate_start = std::chrono::steady_clock::now();
@@ -211,6 +218,24 @@ StirProof StirProver::prove(
           "stir::StirProver::prove degree correction exceeded target degree");
     }
 
+    std::vector<swgr::algebra::GRElem> next_input_oracle;
+    bool has_next_input_oracle = false;
+    if (round_index + 1U < round_count) {
+      const auto next_encode_start = std::chrono::steady_clock::now();
+      has_next_input_oracle = try_reuse_next_round_input_oracle(
+          shift_domain, round.shifted_oracle_evals, round.answer_polynomial,
+          round.vanishing_polynomial, round.quotient_polynomial,
+          round.comb_randomness, round.folded_degree_bound,
+          quotient_degree_bound, &next_input_oracle);
+      if (!has_next_input_oracle) {
+        next_input_oracle =
+            swgr::poly_utils::rs_encode(shift_domain, round.next_polynomial);
+        has_next_input_oracle = true;
+      }
+      encode_ms += ElapsedMilliseconds(next_encode_start,
+                                       std::chrono::steady_clock::now());
+    }
+
     serialized_bytes +=
         static_cast<std::uint64_t>(round.shifted_oracle_evals.size()) * elem_bytes;
     serialized_bytes +=
@@ -249,6 +274,8 @@ StirProof StirProver::prove(
     current_domain = shift_domain;
     current_degree_bound = proof.rounds.back().folded_degree_bound;
     current_polynomial = proof.rounds.back().next_polynomial;
+    cached_input_oracle = std::move(next_input_oracle);
+    has_cached_input_oracle = has_next_input_oracle;
   }
 
   proof.final_polynomial = current_polynomial;

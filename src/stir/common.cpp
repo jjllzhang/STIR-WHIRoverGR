@@ -1,13 +1,19 @@
 #include "stir/common.hpp"
 
+#include <NTL/ZZ_pE.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <stdexcept>
+#include <span>
 #include <vector>
 
 #include "fri/common.hpp"
+
+using NTL::clear;
+using NTL::set;
 
 namespace swgr::stir {
 namespace {
@@ -38,6 +44,61 @@ bool ExceptionalAgainst(const algebra::GRContext& ctx,
     }
     return true;
   });
+}
+
+algebra::GRElem HornerEvaluate(
+    std::span<const swgr::algebra::GRElem> coefficients,
+    const swgr::algebra::GRElem& point) {
+  swgr::algebra::GRElem acc;
+  clear(acc);
+  for (auto it = coefficients.rbegin(); it != coefficients.rend(); ++it) {
+    acc *= point;
+    acc += *it;
+  }
+  return acc;
+}
+
+std::vector<swgr::algebra::GRElem> BatchHornerEvaluate(
+    std::span<const swgr::algebra::GRElem> coefficients,
+    std::span<const swgr::algebra::GRElem> points) {
+  std::vector<swgr::algebra::GRElem> values(points.size());
+  for (std::size_t point_index = 0; point_index < points.size();
+       ++point_index) {
+    values[point_index] = HornerEvaluate(coefficients, points[point_index]);
+  }
+  return values;
+}
+
+std::vector<swgr::algebra::GRElem> BatchScalingValues(
+    std::span<const swgr::algebra::GRElem> points,
+    const swgr::algebra::GRElem& comb_randomness, std::uint64_t gap) {
+  std::vector<swgr::algebra::GRElem> out(points.size());
+  for (std::size_t point_index = 0; point_index < points.size();
+       ++point_index) {
+    const auto common_factor = points[point_index] * comb_randomness;
+    swgr::algebra::GRElem term;
+    set(term);
+    swgr::algebra::GRElem total;
+    clear(total);
+    for (std::uint64_t exponent = 0; exponent <= gap; ++exponent) {
+      total += term;
+      term *= common_factor;
+    }
+    out[point_index] = total;
+  }
+  return out;
+}
+
+std::vector<swgr::algebra::GRElem> EnumerateDomainPoints(const Domain& domain) {
+  std::vector<swgr::algebra::GRElem> points;
+  points.reserve(static_cast<std::size_t>(domain.size()));
+
+  auto current = domain.offset();
+  for (std::uint64_t index = 0; index < domain.size(); ++index) {
+    points.push_back(current);
+    current *= domain.root();
+  }
+  return points;
 }
 
 }  // namespace
@@ -186,6 +247,81 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
     throw std::runtime_error("derive_ood_points failed to find enough samples");
   }
   return result;
+}
+
+bool try_reuse_next_round_input_oracle(
+    const Domain& domain,
+    const std::vector<swgr::algebra::GRElem>& shifted_oracle_evals,
+    const swgr::poly_utils::Polynomial& answer_polynomial,
+    const swgr::poly_utils::Polynomial& vanishing_polynomial,
+    const swgr::poly_utils::Polynomial& quotient_polynomial,
+    const swgr::algebra::GRElem& comb_randomness,
+    std::uint64_t target_degree_bound, std::uint64_t current_degree_bound,
+    std::vector<swgr::algebra::GRElem>* next_oracle_evals) {
+  if (next_oracle_evals == nullptr) {
+    throw std::invalid_argument(
+        "try_reuse_next_round_input_oracle requires output storage");
+  }
+  if (shifted_oracle_evals.size() != domain.size()) {
+    throw std::invalid_argument(
+        "try_reuse_next_round_input_oracle requires eval count == domain size");
+  }
+  if (current_degree_bound > target_degree_bound) {
+    throw std::invalid_argument(
+        "try_reuse_next_round_input_oracle requires current <= target degree");
+  }
+
+  const auto& ctx = domain.context();
+  return ctx.with_ntl_context([&] {
+    const auto points = EnumerateDomainPoints(domain);
+    const auto answer_values =
+        BatchHornerEvaluate(answer_polynomial.coefficients(), points);
+    const auto vanishing_values =
+        BatchHornerEvaluate(vanishing_polynomial.coefficients(), points);
+    const std::uint64_t gap = target_degree_bound - current_degree_bound;
+    const auto scaling_values =
+        BatchScalingValues(points, comb_randomness, gap);
+
+    std::vector<swgr::algebra::GRElem> invertible_denominators;
+    invertible_denominators.reserve(points.size());
+    for (std::size_t point_index = 0; point_index < points.size();
+         ++point_index) {
+      if (vanishing_values[point_index] == 0) {
+        continue;
+      }
+      if (!ctx.is_unit(vanishing_values[point_index])) {
+        return false;
+      }
+      invertible_denominators.push_back(vanishing_values[point_index]);
+    }
+
+    std::vector<swgr::algebra::GRElem> denominator_inverses;
+    if (!invertible_denominators.empty()) {
+      try {
+        denominator_inverses = ctx.batch_inv(invertible_denominators);
+      } catch (const std::invalid_argument&) {
+        return false;
+      }
+    }
+
+    next_oracle_evals->resize(points.size());
+    std::size_t denominator_index = 0;
+    for (std::size_t point_index = 0; point_index < points.size();
+         ++point_index) {
+      swgr::algebra::GRElem quotient_value;
+      if (vanishing_values[point_index] == 0) {
+        quotient_value = HornerEvaluate(
+            quotient_polynomial.coefficients(), points[point_index]);
+      } else {
+        quotient_value =
+            (shifted_oracle_evals[point_index] - answer_values[point_index]) *
+            denominator_inverses[denominator_index++];
+      }
+      (*next_oracle_evals)[point_index] =
+          quotient_value * scaling_values[point_index];
+    }
+    return true;
+  });
 }
 
 }  // namespace swgr::stir

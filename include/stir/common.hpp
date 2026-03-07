@@ -88,6 +88,16 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
     const Domain& folded_domain, swgr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count);
 
+bool try_reuse_next_round_input_oracle(
+    const Domain& domain,
+    const std::vector<swgr::algebra::GRElem>& shifted_oracle_evals,
+    const swgr::poly_utils::Polynomial& answer_polynomial,
+    const swgr::poly_utils::Polynomial& vanishing_polynomial,
+    const swgr::poly_utils::Polynomial& quotient_polynomial,
+    const swgr::algebra::GRElem& comb_randomness,
+    std::uint64_t target_degree_bound, std::uint64_t current_degree_bound,
+    std::vector<swgr::algebra::GRElem>* next_oracle_evals);
+
 }  // namespace swgr::stir
 
 #endif  // SWGR_STIR_COMMON_HPP_

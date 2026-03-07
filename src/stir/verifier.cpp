@@ -73,6 +73,8 @@ bool StirVerifier::verify(const StirInstance& instance,
         proof.rounds.empty() ? proof.final_polynomial
                              : proof.rounds.front().input_polynomial;
     swgr::crypto::Transcript transcript(params_.hash_profile);
+    std::vector<swgr::algebra::GRElem> cached_input_oracle;
+    bool has_cached_input_oracle = false;
 
     for (std::size_t round_index = 0; round_index < round_count; ++round_index) {
       const auto& round = proof.rounds[round_index];
@@ -86,13 +88,18 @@ bool StirVerifier::verify(const StirInstance& instance,
 
       const auto& ctx = current_domain.context();
       const auto algebra_start = std::chrono::steady_clock::now();
-      const auto input_oracle =
-          swgr::poly_utils::rs_encode(current_domain, round.input_polynomial);
+      std::vector<swgr::algebra::GRElem> computed_input_oracle;
+      const auto* input_oracle = &cached_input_oracle;
+      if (!has_cached_input_oracle) {
+        computed_input_oracle =
+            swgr::poly_utils::rs_encode(current_domain, round.input_polynomial);
+        input_oracle = &computed_input_oracle;
+      }
       local_stats.verifier_algebra_ms +=
           ElapsedMilliseconds(algebra_start, std::chrono::steady_clock::now());
       const auto merkle_start = std::chrono::steady_clock::now();
       const auto input_tree = swgr::fri::build_oracle_tree(
-          params_.hash_profile, ctx, input_oracle, params_.virtual_fold_factor);
+          params_.hash_profile, ctx, *input_oracle, params_.virtual_fold_factor);
       const auto input_root = input_tree.root();
       local_stats.verifier_merkle_ms +=
           ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
@@ -119,7 +126,7 @@ bool StirVerifier::verify(const StirInstance& instance,
 
       const auto algebra_round_start = std::chrono::steady_clock::now();
       const auto folded_table = swgr::poly_utils::fold_table_k(
-          current_domain, input_oracle, params_.virtual_fold_factor,
+          current_domain, *input_oracle, params_.virtual_fold_factor,
           round.folding_alpha);
       const auto expected_folded_polynomial =
           swgr::poly_utils::rs_interpolate(folded_domain, folded_table);
@@ -208,7 +215,7 @@ bool StirVerifier::verify(const StirInstance& instance,
         const auto position = expected_fold_positions[i];
         if (round.input_oracle_proof.leaf_payloads[i] !=
             swgr::fri::serialize_oracle_bundle(
-                ctx, input_oracle, params_.virtual_fold_factor, position)) {
+                ctx, *input_oracle, params_.virtual_fold_factor, position)) {
           return false;
         }
         const auto fiber_values = swgr::fri::deserialize_oracle_bundle(
@@ -229,7 +236,7 @@ bool StirVerifier::verify(const StirInstance& instance,
               fiber_points, fiber_values, expected_alpha);
         });
         if (folded_value !=
-            expected_folded_polynomial.evaluate(ctx, folded_domain.element(position))) {
+            folded_table[static_cast<std::size_t>(position)]) {
           return false;
         }
       }
@@ -280,6 +287,20 @@ bool StirVerifier::verify(const StirInstance& instance,
           round.next_polynomial.degree() > next_degree_bound) {
         return false;
       }
+      std::vector<swgr::algebra::GRElem> next_input_oracle;
+      bool has_next_input_oracle = false;
+      if (round_index + 1U < round_count) {
+        has_next_input_oracle = try_reuse_next_round_input_oracle(
+            shift_domain, expected_shifted_oracle, expected_answer_polynomial,
+            expected_vanishing_polynomial, expected_quotient_polynomial,
+            expected_combination, next_degree_bound, quotient_degree_bound,
+            &next_input_oracle);
+        if (!has_next_input_oracle) {
+          next_input_oracle =
+              swgr::poly_utils::rs_encode(shift_domain, expected_next_polynomial);
+          has_next_input_oracle = true;
+        }
+      }
       local_stats.verifier_algebra_ms +=
           ElapsedMilliseconds(algebra_round_start, query_phase_start) +
           ElapsedMilliseconds(algebra_tail_start, std::chrono::steady_clock::now());
@@ -287,6 +308,8 @@ bool StirVerifier::verify(const StirInstance& instance,
       expected_current_polynomial = expected_next_polynomial;
       current_domain = shift_domain;
       current_degree_bound = next_degree_bound;
+      cached_input_oracle = std::move(next_input_oracle);
+      has_cached_input_oracle = has_next_input_oracle;
     }
 
     const bool ok =

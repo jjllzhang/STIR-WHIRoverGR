@@ -8,7 +8,9 @@
 
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
+#include "fri/common.hpp"
 #include "fri/proof_size_estimator.hpp"
+#include "poly_utils/interpolation.hpp"
 #include "poly_utils/polynomial.hpp"
 #include "stir/proof_size_estimator.hpp"
 #include "stir/prover.hpp"
@@ -117,6 +119,46 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
   CHECK(proof.final_polynomial.degree() <= params.stop_degree);
   CHECK_EQ(proof.final_polynomial.coefficients(),
            proof.rounds[0].next_polynomial.coefficients());
+}
+
+void TestStirMultiRoundCachesNextRoundInputOracle() {
+  testutil::PrintInfo(
+      "multi-round stir keeps next polynomial and next input oracle payloads aligned");
+
+  const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
+  const auto instance = MakeInstance(ctx, 243, 161);
+  auto params = MakeParams({1, 1}, 3);
+  params.ood_samples = 1;
+  const auto polynomial = SamplePolynomial(
+      ctx, instance.domain, static_cast<std::size_t>(instance.claimed_degree + 1));
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  const auto proof = prover.prove(instance, polynomial);
+
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
+  CHECK_EQ(proof.rounds.size(), std::size_t{2});
+  ctx.with_ntl_context([&] {
+    CHECK_EQ(proof.rounds[1].input_polynomial.coefficients(),
+             proof.rounds[0].next_polynomial.coefficients());
+
+    const Domain round_one_shift_domain =
+        instance.domain.scale_offset(params.shift_power);
+    const auto expected_round_two_input_oracle =
+        swgr::poly_utils::rs_encode(round_one_shift_domain,
+                                    proof.rounds[1].input_polynomial);
+    CHECK_EQ(proof.rounds[1].input_oracle_proof.leaf_payloads.size(),
+             proof.rounds[1].fold_query_positions.size());
+    for (std::size_t i = 0; i < proof.rounds[1].fold_query_positions.size(); ++i) {
+      const auto position = proof.rounds[1].fold_query_positions[i];
+      CHECK_EQ(proof.rounds[1].input_oracle_proof.leaf_payloads[i],
+               swgr::fri::serialize_oracle_bundle(
+                   ctx, expected_round_two_input_oracle,
+                   params.virtual_fold_factor, position));
+    }
+    return 0;
+  });
 }
 
 void TestStirRejectsTamperedShiftedOracle() {
@@ -242,6 +284,7 @@ void TestStirValidationRejectsBadInputs() {
 int main() {
   try {
     RUN_TEST(TestStir9to3HonestRoundtripAndRoundShape);
+    RUN_TEST(TestStirMultiRoundCachesNextRoundInputOracle);
     RUN_TEST(TestStirRejectsTamperedShiftedOracle);
     RUN_TEST(TestStirRejectsTamperedOodAnswer);
     RUN_TEST(TestStirRejectsTamperedDegreeCorrection);
