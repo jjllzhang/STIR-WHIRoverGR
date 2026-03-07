@@ -1,0 +1,2 @@
+mode,ring,n,d,input_size,warmup,reps,mean_ms,checksum
+"encode","GR(2^16,162)",243,81,81,1,5,209.574,17634618731071157015

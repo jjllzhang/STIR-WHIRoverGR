@@ -191,6 +191,9 @@ if(SWGR_BUILD_BENCH)
   add_executable(bench_fold_table bench/bench_fold_table.cpp)
   target_link_libraries(bench_fold_table PRIVATE stir_over_gr)
 
+  add_executable(bench_fft3 bench/bench_fft3.cpp)
+  target_link_libraries(bench_fft3 PRIVATE stir_over_gr)
+
   add_executable(bench_hash_backend bench/bench_hash_backend.cpp)
   target_link_libraries(bench_hash_backend PRIVATE stir_over_gr)
 endif()

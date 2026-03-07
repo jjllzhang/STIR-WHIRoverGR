@@ -1,0 +1,2 @@
+mode,ring,n,d,input_size,warmup,reps,mean_ms,checksum
+"interpolate","GR(2^16,486)",729,243,729,1,5,1487.052,6394904769582110993

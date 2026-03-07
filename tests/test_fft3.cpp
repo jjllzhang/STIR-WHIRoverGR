@@ -277,6 +277,47 @@ void TestInverseFft3RandomDifferential() {
   }
 }
 
+void TestFft3LargeDomainDifferential() {
+  testutil::PrintInfo(
+      "fft3 and inverse_fft3 match large-domain baselines on size-243 subgroup and coset");
+
+  std::mt19937_64 rng(0x243F7AULL);
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(ctx, 243);
+  const Domain coset243 =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 243);
+
+  const Polynomial poly = SampleRandomPolynomial(ctx, 121, rng);
+  const auto evals = SampleRandomEvaluations(ctx, 243, rng);
+
+  CheckFftMatchesRSEncode(subgroup243, poly);
+  CheckFftMatchesRSEncode(coset243, poly);
+  CheckInverseMatchesInterpolation(subgroup243, evals);
+  CheckInverseMatchesInterpolation(coset243, evals);
+}
+
+void TestFft3SharedContextStabilityOnSize243() {
+  testutil::PrintInfo(
+      "fft3 and inverse_fft3 remain stable across repeated size-243 calls on a shared GRContext");
+
+  std::mt19937_64 rng(0x5A1E243ULL);
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(ctx, 243);
+  const Domain coset243 =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 243);
+
+  for (int trial = 0; trial < 4; ++trial) {
+    const std::size_t term_count =
+        81U + static_cast<std::size_t>(rng() % 81U);
+    const Polynomial poly = SampleRandomPolynomial(ctx, term_count, rng);
+
+    CheckFftMatchesRSEncode(subgroup243, poly);
+    CheckInverseRoundtrip(subgroup243, poly);
+    CheckFftMatchesRSEncode(coset243, poly);
+    CheckInverseRoundtrip(coset243, poly);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -288,6 +329,8 @@ int main() {
     RUN_TEST(TestFft3RejectsNonThreeSmoothDomain);
     RUN_TEST(TestFft3RandomDifferential);
     RUN_TEST(TestInverseFft3RandomDifferential);
+    RUN_TEST(TestFft3LargeDomainDifferential);
+    RUN_TEST(TestFft3SharedContextStabilityOnSize243);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;
