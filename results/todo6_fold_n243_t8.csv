@@ -1,0 +1,2 @@
+ring,n,folded_n,fold,warmup,reps,mean_ms,checksum
+"GR(2^16,162)",243,27,9,1,5,32.081,6350165810735399646

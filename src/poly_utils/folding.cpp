@@ -2,12 +2,18 @@
 
 #include <NTL/ZZ_pE.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
 #include "GaloisRing/Inverse.hpp"
+
+#if defined(SWGR_HAS_OPENMP)
+#include <omp.h>
+#endif
 
 using NTL::ZZ_pE;
 using NTL::clear;
@@ -17,8 +23,25 @@ using NTL::power;
 namespace swgr::poly_utils {
 namespace {
 
+constexpr std::uint64_t kParallelFoldThreshold = 27U;
+
 long CurrentExtensionDegree() {
   return deg(ZZ_pE::modulus());
+}
+
+std::ptrdiff_t CheckedPtrdiff(std::uint64_t value, const char* label) {
+  if (value >
+      static_cast<std::uint64_t>(std::numeric_limits<std::ptrdiff_t>::max())) {
+    throw std::invalid_argument(std::string(label) + " exceeds ptrdiff_t");
+  }
+  return static_cast<std::ptrdiff_t>(value);
+}
+
+long CheckedLong(std::uint64_t value, const char* label) {
+  if (value > static_cast<std::uint64_t>(std::numeric_limits<long>::max())) {
+    throw std::invalid_argument(std::string(label) + " exceeds long");
+  }
+  return static_cast<long>(value);
 }
 
 algebra::GRElem ConstantFromUint64(std::uint64_t value) {
@@ -217,6 +240,22 @@ algebra::GRElem EvaluateGenericFiber(
   return result;
 }
 
+std::ptrdiff_t ChooseFoldChunkSize(std::uint64_t folded_size,
+                                   std::uint64_t k_fold) {
+  std::uint64_t chunk_size = std::max<std::uint64_t>(1U, k_fold);
+#if defined(SWGR_HAS_OPENMP)
+  const int max_threads = omp_get_max_threads();
+  if (max_threads > 0) {
+    const std::uint64_t target_chunks =
+        static_cast<std::uint64_t>(max_threads) * 4U;
+    const std::uint64_t dynamic_chunk =
+        (folded_size + target_chunks - 1U) / target_chunks;
+    chunk_size = std::max(chunk_size, dynamic_chunk);
+  }
+#endif
+  return CheckedPtrdiff(chunk_size, "fold chunk_size");
+}
+
 }  // namespace
 
 Polynomial poly_fold(const Polynomial& f, std::uint64_t folding_factor_k,
@@ -294,8 +333,7 @@ std::vector<algebra::GRElem> fold_table_k(
   }
 
   const std::uint64_t folded_size = domain.size() / k_fold;
-  std::vector<algebra::GRElem> out;
-  out.reserve(static_cast<std::size_t>(folded_size));
+  std::vector<algebra::GRElem> out(static_cast<std::size_t>(folded_size));
 
   return domain.context().with_ntl_context([&] {
     const long extension_degree = CurrentExtensionDegree();
@@ -304,24 +342,41 @@ std::vector<algebra::GRElem> fold_table_k(
     const StructuredFiberCache cache =
         BuildStructuredFiberCache(k_fold, fiber_root, extension_degree);
 
-    std::vector<algebra::GRElem> fiber_values(static_cast<std::size_t>(k_fold));
-    std::vector<algebra::GRElem> differences;
-    std::vector<algebra::GRElem> prefix_products;
-    std::vector<algebra::GRElem> suffix_products;
-
     const algebra::GRElem root_inverse = domain.context().inv(domain.root());
-    algebra::GRElem base_inverse = domain.context().inv(domain.offset());
-    for (std::uint64_t base = 0; base < folded_size; ++base) {
-      for (std::uint64_t offset = 0; offset < k_fold; ++offset) {
-        const std::uint64_t index = base + offset * folded_size;
-        fiber_values[static_cast<std::size_t>(offset)] =
-            evals[static_cast<std::size_t>(index)];
-      }
-      out.push_back(EvaluateStructuredFiber(
-          cache, fiber_values, alpha * base_inverse, &differences,
-          &prefix_products, &suffix_products));
-      base_inverse *= root_inverse;
-    }
+    const algebra::GRElem offset_inverse = domain.context().inv(domain.offset());
+    const std::ptrdiff_t folded_count =
+        CheckedPtrdiff(folded_size, "folded_size");
+    const std::ptrdiff_t chunk_size = ChooseFoldChunkSize(folded_size, k_fold);
+    const bool parallelize =
+        folded_size >= kParallelFoldThreshold && folded_count > chunk_size;
+
+    domain.context().parallel_for_chunks_with_ntl_context(
+        folded_count, chunk_size, parallelize,
+        [&](std::ptrdiff_t begin, std::ptrdiff_t end) {
+          std::vector<algebra::GRElem> fiber_values(
+              static_cast<std::size_t>(k_fold));
+          std::vector<algebra::GRElem> differences;
+          std::vector<algebra::GRElem> prefix_products;
+          std::vector<algebra::GRElem> suffix_products;
+
+          algebra::GRElem base_inverse =
+              offset_inverse *
+              power(root_inverse,
+                    CheckedLong(static_cast<std::uint64_t>(begin),
+                                "fold chunk begin"));
+          for (std::ptrdiff_t base = begin; base < end; ++base) {
+            for (std::uint64_t offset = 0; offset < k_fold; ++offset) {
+              const std::uint64_t index =
+                  static_cast<std::uint64_t>(base) + offset * folded_size;
+              fiber_values[static_cast<std::size_t>(offset)] =
+                  evals[static_cast<std::size_t>(index)];
+            }
+            out[static_cast<std::size_t>(base)] = EvaluateStructuredFiber(
+                cache, fiber_values, alpha * base_inverse, &differences,
+                &prefix_products, &suffix_products);
+            base_inverse *= root_inverse;
+          }
+        });
     return out;
   });
 }

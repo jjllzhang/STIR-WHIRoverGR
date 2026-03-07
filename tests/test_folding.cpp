@@ -31,10 +31,36 @@ Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain) {
   return Polynomial(coeffs);
 }
 
-void CheckFoldAgainstInterpolation(const Domain& domain, std::uint64_t k_fold,
+Polynomial SampleLongPolynomial(const GRContext& ctx, const Domain& domain,
+                                std::size_t term_count) {
+  const auto coeffs = ctx.with_ntl_context([&] {
+    std::vector<GRElem> values;
+    values.reserve(term_count);
+
+    GRElem root_power = ctx.one();
+    GRElem offset_power = ctx.one();
+    const GRElem twist = domain.element(5);
+    GRElem twist_power = ctx.one();
+    for (std::size_t i = 0; i < term_count; ++i) {
+      GRElem value = root_power + offset_power;
+      if ((i % 3U) == 1U) {
+        value += twist_power;
+      }
+      values.push_back(value);
+      root_power *= domain.root();
+      offset_power *= domain.offset();
+      twist_power *= twist;
+    }
+    values.back() = domain.root();
+    return values;
+  });
+  return Polynomial(coeffs);
+}
+
+void CheckFoldAgainstInterpolation(const Domain& domain, const Polynomial& poly,
+                                   std::uint64_t k_fold,
                                    const GRElem& alpha) {
   const GRContext& ctx = domain.context();
-  const Polynomial poly = SamplePolynomial(ctx, domain);
   const auto evals = swgr::poly_utils::rs_encode(domain, poly);
   const auto folded_table =
       swgr::poly_utils::fold_table_k(domain, evals, k_fold, alpha);
@@ -66,6 +92,12 @@ void CheckFoldAgainstInterpolation(const Domain& domain, std::uint64_t k_fold,
     }
     return 0;
   });
+}
+
+void CheckFoldAgainstInterpolation(const Domain& domain, std::uint64_t k_fold,
+                                   const GRElem& alpha) {
+  CheckFoldAgainstInterpolation(domain, SamplePolynomial(domain.context(), domain),
+                                k_fold, alpha);
 }
 
 void CheckFoldAtFiberPoint(const Domain& domain, std::uint64_t k_fold,
@@ -104,6 +136,55 @@ void TestFoldingForK3AndK9() {
 
   CheckFoldAgainstInterpolation(domain, 3, alpha);
   CheckFoldAgainstInterpolation(domain, 9, alpha);
+}
+
+void TestFoldTableKLargeRegression() {
+  testutil::PrintInfo(
+      "fold_table_k matches poly_fold + rs_encode on GR(2^16,162), n=243, k=9");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain domain = Domain::teichmuller_subgroup(ctx, 243);
+  const GRElem alpha =
+      ctx.with_ntl_context([&] { return ctx.one() + domain.element(1) + domain.element(11); });
+  const Polynomial poly =
+      SampleLongPolynomial(ctx, domain, static_cast<std::size_t>(domain.size()));
+
+  CheckFoldAgainstInterpolation(domain, poly, 9, alpha);
+}
+
+void TestFoldTableKRepeatedCallsStayStable() {
+  testutil::PrintInfo(
+      "fold_table_k stays stable across repeated calls on a shared GRContext");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain domain = Domain::teichmuller_subgroup(ctx, 243);
+  const Polynomial poly =
+      SampleLongPolynomial(ctx, domain, static_cast<std::size_t>(domain.size()));
+  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const GRElem alpha =
+      ctx.with_ntl_context([&] { return ctx.one() + domain.element(1) + domain.element(11); });
+  const Polynomial folded_poly =
+      ctx.with_ntl_context([&] { return swgr::poly_utils::poly_fold(poly, 9, alpha); });
+  const auto expected =
+      swgr::poly_utils::rs_encode(domain.pow_map(9), folded_poly);
+
+  std::vector<GRElem> first_result;
+  for (int iteration = 0; iteration < 6; ++iteration) {
+    const auto folded =
+        swgr::poly_utils::fold_table_k(domain, evals, 9, alpha);
+    CHECK_EQ(folded.size(), expected.size());
+    for (std::size_t i = 0; i < folded.size(); ++i) {
+      CHECK_EQ(folded[i], expected[i]);
+    }
+    if (iteration == 0) {
+      first_result = folded;
+      continue;
+    }
+    CHECK_EQ(folded.size(), first_result.size());
+    for (std::size_t i = 0; i < folded.size(); ++i) {
+      CHECK_EQ(folded[i], first_result[i]);
+    }
+  }
 }
 
 void TestFoldEvalAtFiberPoint() {
@@ -156,6 +237,8 @@ void TestFoldEvalGenericFallback() {
 int main() {
   try {
     RUN_TEST(TestFoldingForK3AndK9);
+    RUN_TEST(TestFoldTableKLargeRegression);
+    RUN_TEST(TestFoldTableKRepeatedCallsStayStable);
     RUN_TEST(TestFoldEvalAtFiberPoint);
     RUN_TEST(TestFoldEvalGenericFallback);
   } catch (const std::exception& ex) {
