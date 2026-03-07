@@ -1,7 +1,10 @@
+#include <atomic>
 #include <exception>
 #include <iostream>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "NTL/ZZ.h"
@@ -212,6 +215,72 @@ void TestPolynomialDegreeAndInterpolation() {
   }
 }
 
+void TestThreadSafeLazyInitializationOnSharedContext() {
+  testutil::PrintInfo(
+      "shared GRContext lazy initialization is safe under concurrent first use");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  constexpr std::size_t kThreadCount = 8;
+  constexpr std::size_t kIterationsPerThread = 8;
+  std::atomic<bool> start(false);
+  std::atomic<bool> failed(false);
+  std::mutex error_mutex;
+  std::string first_error;
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadCount);
+
+  for (std::size_t thread_index = 0; thread_index < kThreadCount; ++thread_index) {
+    threads.emplace_back([&, thread_index] {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+
+      try {
+        for (std::size_t iteration = 0; iteration < kIterationsPerThread;
+             ++iteration) {
+          if ((thread_index + iteration) % 2U == 0U) {
+            const auto generator = ctx.teich_generator();
+            if (!ctx.is_unit(generator)) {
+              throw std::runtime_error("teich generator should be a unit");
+            }
+          } else {
+            const auto encoded = ctx.serialize(ctx.one());
+            const auto decoded = ctx.deserialize(encoded);
+            if (decoded != ctx.one()) {
+              throw std::runtime_error(
+                  "shared context serialize/deserialize roundtrip failed");
+            }
+          }
+
+          (void)ctx.base_irreducible_mod_p();
+          (void)ctx.extension_polynomial();
+        }
+      } catch (const std::exception& ex) {
+        failed.store(true, std::memory_order_release);
+        std::lock_guard<std::mutex> lock(error_mutex);
+        if (first_error.empty()) {
+          first_error = ex.what();
+        }
+      } catch (...) {
+        failed.store(true, std::memory_order_release);
+        std::lock_guard<std::mutex> lock(error_mutex);
+        if (first_error.empty()) {
+          first_error = "non-std exception";
+        }
+      }
+    });
+  }
+
+  start.store(true, std::memory_order_release);
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  if (failed.load(std::memory_order_acquire)) {
+    throw std::runtime_error(first_error);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -225,6 +294,7 @@ int main() {
     RUN_TEST(TestBatchInverseRejectsNonUnit);
     RUN_TEST(TestInterpolationRejectsNonExceptionalPointSet);
     RUN_TEST(TestPolynomialDegreeAndInterpolation);
+    RUN_TEST(TestThreadSafeLazyInitializationOnSharedContext);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

@@ -8,6 +8,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <span>
 #include <utility>
 #include <vector>
@@ -50,11 +52,45 @@ class GRContext {
   decltype(auto) with_ntl_context(Fn&& fn) const {
     ensure_backend_initialized();
     NTL::ZZ_pPush mod_push(modulus_);
-    NTL::ZZ_pEPush ext_push(extension_polynomial_);
+    NTL::ZZ_pEPush ext_push(lazy_state_->extension_polynomial);
     return std::forward<Fn>(fn)();
   }
 
+  template <typename Fn>
+  void parallel_for_with_ntl_context(std::ptrdiff_t count, bool parallelize,
+                                     Fn&& fn) const {
+    if (count <= 0) {
+      return;
+    }
+#if defined(SWGR_HAS_OPENMP)
+#pragma omp parallel if(parallelize)
+    {
+      with_ntl_context([&] {
+#pragma omp for schedule(static)
+        for (std::ptrdiff_t i = 0; i < count; ++i) {
+          fn(i);
+        }
+      });
+    }
+#else
+    (void)parallelize;
+    with_ntl_context([&] {
+      for (std::ptrdiff_t i = 0; i < count; ++i) {
+        fn(i);
+      }
+    });
+#endif
+  }
+
  private:
+  struct LazyState {
+    std::once_flag backend_once;
+    std::once_flag teich_once;
+    NTL::ZZ_pX base_irreducible_mod_p;
+    NTL::ZZ_pX extension_polynomial;
+    GRElem teich_generator;
+  };
+
   void initialize();
   void ensure_backend_initialized() const;
   void ensure_teich_generator_initialized() const;
@@ -62,11 +98,7 @@ class GRContext {
   GRConfig cfg_;
   mutable NTL::ZZ prime_;
   mutable NTL::ZZ modulus_;
-  mutable NTL::ZZ_pX base_irreducible_mod_p_;
-  mutable NTL::ZZ_pX extension_polynomial_;
-  mutable GRElem teich_generator_;
-  mutable bool backend_initialized_ = false;
-  mutable bool teich_generator_initialized_ = false;
+  mutable std::shared_ptr<LazyState> lazy_state_;
 };
 
 }  // namespace swgr::algebra

@@ -94,12 +94,12 @@ GRContext::GRContext(const GRConfig& cfg) : cfg_(cfg) { initialize(); }
 
 const ZZ_pX& GRContext::base_irreducible_mod_p() const {
   ensure_backend_initialized();
-  return base_irreducible_mod_p_;
+  return lazy_state_->base_irreducible_mod_p;
 }
 
 const ZZ_pX& GRContext::extension_polynomial() const {
   ensure_backend_initialized();
-  return extension_polynomial_;
+  return lazy_state_->extension_polynomial;
 }
 
 std::size_t GRContext::coeff_bytes() const {
@@ -123,7 +123,7 @@ GRElem GRContext::one() const {
 
 GRElem GRContext::teich_generator() const {
   ensure_teich_generator_initialized();
-  return teich_generator_;
+  return lazy_state_->teich_generator;
 }
 
 bool GRContext::is_unit(const GRElem& x) const {
@@ -254,63 +254,56 @@ void GRContext::initialize() {
 
   const long k_long = CheckedLong(cfg_.k_exp, "k_exp");
   modulus_ = power(prime_, k_long);
+  lazy_state_ = std::make_shared<LazyState>();
 }
 
 void GRContext::ensure_backend_initialized() const {
-  if (backend_initialized_) {
-    return;
-  }
-
-  const long r_long = CheckedLong(cfg_.r, "r");
-  const long primitive_poly_degree_limit = 32;
-  {
-    ZZ_pPush mod_p_push(prime_);
-    RandomStreamPush seed_push;
-    SetSeed(DeterministicPrimitivePolySeed(cfg_));
-    if (r_long <= primitive_poly_degree_limit) {
-      FindPrimitivePoly(base_irreducible_mod_p_, prime_, r_long);
-    } else {
-      BuildIrred(base_irreducible_mod_p_, r_long);
+  std::call_once(lazy_state_->backend_once, [&] {
+    const long r_long = CheckedLong(cfg_.r, "r");
+    const long primitive_poly_degree_limit = 32;
+    {
+      ZZ_pPush mod_p_push(prime_);
+      RandomStreamPush seed_push;
+      SetSeed(DeterministicPrimitivePolySeed(cfg_));
+      if (r_long <= primitive_poly_degree_limit) {
+        FindPrimitivePoly(lazy_state_->base_irreducible_mod_p, prime_, r_long);
+      } else {
+        BuildIrred(lazy_state_->base_irreducible_mod_p, r_long);
+      }
     }
-  }
 
-  const std::vector<long> lifted_coefficients =
-      ExportPolynomialCoefficients(base_irreducible_mod_p_);
+    const std::vector<long> lifted_coefficients =
+        ExportPolynomialCoefficients(lazy_state_->base_irreducible_mod_p);
 
-  {
-    ZZ_pPush modulus_push(modulus_);
-    extension_polynomial_ = long2ZZpX(lifted_coefficients);
-  }
-
-  backend_initialized_ = true;
+    {
+      ZZ_pPush modulus_push(modulus_);
+      lazy_state_->extension_polynomial = long2ZZpX(lifted_coefficients);
+    }
+  });
 }
 
 void GRContext::ensure_teich_generator_initialized() const {
-  if (teich_generator_initialized_) {
-    return;
-  }
+  std::call_once(lazy_state_->teich_once, [&] {
+    ensure_backend_initialized();
 
-  ensure_backend_initialized();
+    const long k_long = CheckedLong(cfg_.k_exp, "k_exp");
+    const long r_long = CheckedLong(cfg_.r, "r");
+    const ZZ teich_order = power(prime_, r_long) - ZZ(1);
+    const long vendor_teich_order_bits_limit = 32;
 
-  const long k_long = CheckedLong(cfg_.k_exp, "k_exp");
-  const long r_long = CheckedLong(cfg_.r, "r");
-  const ZZ teich_order = power(prime_, r_long) - ZZ(1);
-  const long vendor_teich_order_bits_limit = 32;
-
-  if (NumBits(teich_order) <= vendor_teich_order_bits_limit) {
-    teich_generator_ =
-        FindTeichmullerGenerator(prime_, k_long, r_long, extension_polynomial_);
-  } else {
-    ZZ_pPush modulus_push(modulus_);
-    ZZ_pEPush ext_push(extension_polynomial_);
-    ZZ_pX x_poly;
-    SetCoeff(x_poly, 1, 1);
-    ZZ_pE x;
-    conv(x, x_poly);
-    teich_generator_ = power(x, power(prime_, k_long - 1));
-  }
-
-  teich_generator_initialized_ = true;
+    if (NumBits(teich_order) <= vendor_teich_order_bits_limit) {
+      lazy_state_->teich_generator = FindTeichmullerGenerator(
+          prime_, k_long, r_long, lazy_state_->extension_polynomial);
+    } else {
+      ZZ_pPush modulus_push(modulus_);
+      ZZ_pEPush ext_push(lazy_state_->extension_polynomial);
+      ZZ_pX x_poly;
+      SetCoeff(x_poly, 1, 1);
+      ZZ_pE x;
+      conv(x, x_poly);
+      lazy_state_->teich_generator = power(x, power(prime_, k_long - 1));
+    }
+  });
 }
 
 }  // namespace swgr::algebra
