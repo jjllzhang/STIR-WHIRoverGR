@@ -331,7 +331,8 @@ void TestStirEstimatorProducesStructuredOutput() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx);
-  const auto params = MakeParams();
+  auto params = MakeParams();
+  params.pow_bits = 22;
 
   const swgr::stir::StirProofSizeEstimator stir_estimator(params);
   const auto stir_estimate = stir_estimator.estimate(instance);
@@ -353,6 +354,13 @@ void TestStirEstimatorProducesStructuredOutput() {
 
   CHECK(stir_estimate.argument_bytes > 0);
   CHECK(stir_estimate.verifier_hashes > 0);
+  CHECK_EQ(stir_estimate.transcript_challenge_count, std::uint64_t{6});
+  CHECK_EQ(
+      stir_estimate.transcript_bytes_estimated,
+      2U * static_cast<std::uint64_t>(ctx.elem_bytes()) +
+          4U * static_cast<std::uint64_t>(sizeof(std::uint64_t)));
+  CHECK_EQ(stir_estimate.pow_nonce_bytes,
+           static_cast<std::uint64_t>(sizeof(std::uint64_t)));
   CHECK(stir_estimate.round_breakdown_json.find("\"rounds\"") !=
         std::string::npos);
   CHECK(stir_estimate.round_breakdown_json.find("\"fill_used\":false") !=
@@ -360,6 +368,8 @@ void TestStirEstimatorProducesStructuredOutput() {
   CHECK(stir_estimate.round_breakdown_json.find("\"final_polynomial_bytes\"") !=
         std::string::npos);
   CHECK(fri_estimate.argument_bytes > 0);
+  CHECK_EQ(fri_estimate.pow_nonce_bytes,
+           static_cast<std::uint64_t>(sizeof(std::uint64_t)));
 }
 
 void TestStirValidationRejectsBadInputs() {

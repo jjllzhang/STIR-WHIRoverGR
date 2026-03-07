@@ -81,6 +81,9 @@ swgr::bench::ProofSizeBenchRow MakeFriRow(
   row.estimated_argument_kib =
       static_cast<double>(estimate.argument_bytes) / 1024.0;
   row.estimated_verifier_hashes = estimate.verifier_hashes;
+  row.transcript_challenge_count = estimate.transcript_challenge_count;
+  row.transcript_bytes_estimated = estimate.transcript_bytes_estimated;
+  row.pow_nonce_bytes = estimate.pow_nonce_bytes;
   row.round_breakdown_json = estimate.round_breakdown_json;
   return row;
 }
@@ -126,6 +129,9 @@ swgr::bench::ProofSizeBenchRow MakeStirRow(
   row.estimated_argument_kib =
       static_cast<double>(estimate.argument_bytes) / 1024.0;
   row.estimated_verifier_hashes = estimate.verifier_hashes;
+  row.transcript_challenge_count = estimate.transcript_challenge_count;
+  row.transcript_bytes_estimated = estimate.transcript_bytes_estimated;
+  row.pow_nonce_bytes = estimate.pow_nonce_bytes;
   row.round_breakdown_json = estimate.round_breakdown_json;
   return row;
 }

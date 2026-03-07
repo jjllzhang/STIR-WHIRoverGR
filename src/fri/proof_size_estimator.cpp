@@ -27,9 +27,15 @@ swgr::EstimateResult FriProofSizeEstimator::estimate(
   const auto query_rounds = resolve_query_rounds_metadata(params_, instance);
   const std::uint64_t digest_bytes =
       static_cast<std::uint64_t>(swgr::crypto::digest_bytes(params_.hash_profile));
+  const std::uint64_t ring_challenge_bytes =
+      static_cast<std::uint64_t>(ctx.elem_bytes());
+  const std::uint64_t index_challenge_bytes =
+      static_cast<std::uint64_t>(sizeof(std::uint64_t));
   const std::uint64_t leaf_payload_bytes =
       static_cast<std::uint64_t>(params_.fold_factor) *
       static_cast<std::uint64_t>(ctx.elem_bytes());
+  result.pow_nonce_bytes =
+      params_.pow_bits == 0 ? 0 : static_cast<std::uint64_t>(sizeof(std::uint64_t));
 
   Domain current_domain = instance.domain;
   std::uint64_t current_degree = instance.claimed_degree;
@@ -53,6 +59,11 @@ swgr::EstimateResult FriProofSizeEstimator::estimate(
         stats.unique_sibling_count * digest_bytes;
     result.argument_bytes += round_argument_bytes;
     result.verifier_hashes += stats.verifier_hashes;
+    result.transcript_challenge_count +=
+        1U + round_meta.effective_query_count;
+    result.transcript_bytes_estimated +=
+        ring_challenge_bytes +
+        round_meta.effective_query_count * index_challenge_bytes;
 
     std::ostringstream oss;
     oss << "{\"round\":" << round_index

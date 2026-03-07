@@ -245,6 +245,12 @@ void TestFri3EstimatorProducesStructuredOutput() {
 
   CHECK(estimate.argument_bytes > 0);
   CHECK(estimate.verifier_hashes > 0);
+  CHECK_EQ(estimate.transcript_challenge_count, std::uint64_t{5});
+  CHECK_EQ(
+      estimate.transcript_bytes_estimated,
+      static_cast<std::uint64_t>(2 * ctx.elem_bytes()) +
+          3U * static_cast<std::uint64_t>(sizeof(std::uint64_t)));
+  CHECK_EQ(estimate.pow_nonce_bytes, std::uint64_t{0});
   CHECK(estimate.round_breakdown_json.find("\"rounds\"") != std::string::npos);
   CHECK(estimate.round_breakdown_json.find("\"final_polynomial_bytes\"") !=
         std::string::npos);
@@ -255,11 +261,20 @@ void TestFri9EstimatorProducesStructuredOutput() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx, 27, 8);
-  const swgr::fri::FriProofSizeEstimator estimator(MakeParams(9, {2}));
+  auto params = MakeParams(9, {2});
+  params.pow_bits = 22;
+  const swgr::fri::FriProofSizeEstimator estimator(params);
   const auto estimate = estimator.estimate(instance);
 
   CHECK(estimate.argument_bytes > 0);
   CHECK(estimate.verifier_hashes > 0);
+  CHECK_EQ(estimate.transcript_challenge_count, std::uint64_t{3});
+  CHECK_EQ(
+      estimate.transcript_bytes_estimated,
+      static_cast<std::uint64_t>(ctx.elem_bytes()) +
+          2U * static_cast<std::uint64_t>(sizeof(std::uint64_t)));
+  CHECK_EQ(estimate.pow_nonce_bytes,
+           static_cast<std::uint64_t>(sizeof(std::uint64_t)));
   CHECK(estimate.round_breakdown_json.find("\"rounds\"") != std::string::npos);
   CHECK(estimate.round_breakdown_json.find("\"bundle_count\":3") !=
         std::string::npos);

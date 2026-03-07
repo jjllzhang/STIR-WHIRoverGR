@@ -61,6 +61,9 @@ struct ProofSizeBenchRow {
   std::uint64_t estimated_argument_bytes = 0;
   double estimated_argument_kib = 0.0;
   std::uint64_t estimated_verifier_hashes = 0;
+  std::uint64_t transcript_challenge_count = 0;
+  std::uint64_t transcript_bytes_estimated = 0;
+  std::uint64_t pow_nonce_bytes = 0;
   std::string round_breakdown_json;
 };
 
@@ -365,6 +368,11 @@ inline void PrintRowsText(const std::vector<ProofSizeBenchRow>& rows) {
     std::cout.unsetf(std::ios::floatfield);
     std::cout << "estimated_verifier_hashes=" << row.estimated_verifier_hashes
               << "\n";
+    std::cout << "transcript_challenge_count="
+              << row.transcript_challenge_count << "\n";
+    std::cout << "transcript_bytes_estimated="
+              << row.transcript_bytes_estimated << "\n";
+    std::cout << "pow_nonce_bytes=" << row.pow_nonce_bytes << "\n";
     std::cout << "round_breakdown_json=" << row.round_breakdown_json << "\n";
     if (row_index + 1 != rows.size()) {
       std::cout << "\n";
@@ -376,7 +384,9 @@ inline void PrintRowsCsv(const std::vector<ProofSizeBenchRow>& rows) {
   std::cout
       << "protocol,ring,n,d,rho,lambda_target,pow_bits,sec_mode,hash_profile,"
          "fold,shift_power,stop_degree,ood_samples,estimated_argument_bytes,"
-         "estimated_argument_kib,estimated_verifier_hashes,round_breakdown_json\n";
+         "estimated_argument_kib,estimated_verifier_hashes,"
+         "transcript_challenge_count,transcript_bytes_estimated,"
+         "pow_nonce_bytes,round_breakdown_json\n";
   for (const auto& row : rows) {
     std::cout << CsvEscape(row.protocol) << "," << CsvEscape(row.ring) << ","
               << row.n << "," << row.d << "," << CsvEscape(row.rho) << ","
@@ -387,6 +397,9 @@ inline void PrintRowsCsv(const std::vector<ProofSizeBenchRow>& rows) {
               << row.estimated_argument_bytes << "," << std::fixed
               << std::setprecision(3) << row.estimated_argument_kib << ","
               << row.estimated_verifier_hashes << ","
+              << row.transcript_challenge_count << ","
+              << row.transcript_bytes_estimated << "," << row.pow_nonce_bytes
+              << ","
               << CsvEscape(row.round_breakdown_json) << "\n";
     std::cout.unsetf(std::ios::floatfield);
   }
@@ -419,6 +432,11 @@ inline void PrintRowsJson(const std::vector<ProofSizeBenchRow>& rows) {
     std::cout.unsetf(std::ios::floatfield);
     std::cout << "    \"estimated_verifier_hashes\": "
               << row.estimated_verifier_hashes << ",\n";
+    std::cout << "    \"transcript_challenge_count\": "
+              << row.transcript_challenge_count << ",\n";
+    std::cout << "    \"transcript_bytes_estimated\": "
+              << row.transcript_bytes_estimated << ",\n";
+    std::cout << "    \"pow_nonce_bytes\": " << row.pow_nonce_bytes << ",\n";
     std::cout << "    \"round_breakdown_json\": " << row.round_breakdown_json
               << "\n";
     std::cout << "  }";

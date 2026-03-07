@@ -30,8 +30,12 @@ swgr::EstimateResult StirProofSizeEstimator::estimate(
       static_cast<std::uint64_t>(swgr::crypto::digest_bytes(params_.hash_profile));
   const std::uint64_t elem_bytes =
       static_cast<std::uint64_t>(ctx.elem_bytes());
+  const std::uint64_t index_challenge_bytes =
+      static_cast<std::uint64_t>(sizeof(std::uint64_t));
   const std::uint64_t fold_leaf_payload_bytes =
       params_.virtual_fold_factor * elem_bytes;
+  result.pow_nonce_bytes =
+      params_.pow_bits == 0 ? 0 : static_cast<std::uint64_t>(sizeof(std::uint64_t));
 
   Domain current_domain = instance.domain;
   std::uint64_t current_degree_bound = instance.claimed_degree;
@@ -61,6 +65,12 @@ swgr::EstimateResult StirProofSizeEstimator::estimate(
 
     result.argument_bytes += round_argument_bytes;
     result.verifier_hashes += proof_plan.verifier_hashes;
+    result.transcript_challenge_count +=
+        2U + params_.ood_samples + 2U * effective_query_count;
+    result.transcript_bytes_estimated +=
+        2U * elem_bytes +
+        (params_.ood_samples + 2U * effective_query_count) *
+            index_challenge_bytes;
 
     std::ostringstream oss;
     oss << "{\"round\":" << round_index
