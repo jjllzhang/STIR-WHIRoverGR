@@ -45,7 +45,8 @@ void PrintQueryWarnings(
 
 swgr::bench::ProofSizeBenchRow MakeFriRow(
     std::string protocol, const swgr::bench::ProofSizeBenchOptions& options,
-    const swgr::algebra::GRContext& ctx, std::uint64_t fold_factor) {
+    const std::shared_ptr<const swgr::algebra::GRContext>& ctx,
+    std::uint64_t fold_factor) {
   swgr::fri::FriParameters params;
   params.fold_factor = fold_factor;
   params.stop_degree = options.stop_degree;
@@ -90,7 +91,7 @@ swgr::bench::ProofSizeBenchRow MakeFriRow(
 
 swgr::bench::ProofSizeBenchRow MakeStirRow(
     const swgr::bench::ProofSizeBenchOptions& options,
-    const swgr::algebra::GRContext& ctx) {
+    const std::shared_ptr<const swgr::algebra::GRContext>& ctx) {
   swgr::stir::StirParameters params;
   params.virtual_fold_factor = 9;
   params.shift_power = 3;
@@ -146,11 +147,12 @@ int main(int argc, char** argv) {
     }
 
     const auto options = swgr::bench::ParseProofSizeBenchOptions(argc, argv);
-    const swgr::algebra::GRContext ctx(swgr::algebra::GRConfig{
+    auto ctx = std::make_shared<swgr::algebra::GRContext>(swgr::algebra::GRConfig{
         .p = options.p,
         .k_exp = options.k_exp,
         .r = options.r,
     });
+    (void)ctx->teich_generator();
 
     std::vector<swgr::bench::ProofSizeBenchRow> rows;
     rows.reserve(options.protocols.size());

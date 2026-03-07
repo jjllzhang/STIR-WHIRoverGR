@@ -15,6 +15,7 @@
 #include "GaloisRing/utils.hpp"
 
 using NTL::BytesFromZZ;
+using NTL::BuildIrred;
 using NTL::NumBits;
 using NTL::ProbPrime;
 using NTL::RandomStreamPush;
@@ -261,11 +262,16 @@ void GRContext::ensure_backend_initialized() const {
   }
 
   const long r_long = CheckedLong(cfg_.r, "r");
+  const long primitive_poly_degree_limit = 32;
   {
     ZZ_pPush mod_p_push(prime_);
     RandomStreamPush seed_push;
     SetSeed(DeterministicPrimitivePolySeed(cfg_));
-    FindPrimitivePoly(base_irreducible_mod_p_, prime_, r_long);
+    if (r_long <= primitive_poly_degree_limit) {
+      FindPrimitivePoly(base_irreducible_mod_p_, prime_, r_long);
+    } else {
+      BuildIrred(base_irreducible_mod_p_, r_long);
+    }
   }
 
   const std::vector<long> lifted_coefficients =
@@ -288,10 +294,10 @@ void GRContext::ensure_teich_generator_initialized() const {
 
   const long k_long = CheckedLong(cfg_.k_exp, "k_exp");
   const long r_long = CheckedLong(cfg_.r, "r");
-  const long max_long_bits = static_cast<long>(8 * sizeof(long) - 1);
   const ZZ teich_order = power(prime_, r_long) - ZZ(1);
+  const long vendor_teich_order_bits_limit = 32;
 
-  if (NumBits(teich_order) <= max_long_bits) {
+  if (NumBits(teich_order) <= vendor_teich_order_bits_limit) {
     teich_generator_ =
         FindTeichmullerGenerator(prime_, k_long, r_long, extension_polynomial_);
   } else {

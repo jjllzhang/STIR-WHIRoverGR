@@ -682,7 +682,7 @@ TimeBenchRow RunBenchLoop(const TimeBenchOptions& options, std::string protocol,
 }
 
 TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
-                        const swgr::algebra::GRContext& ctx,
+                        const std::shared_ptr<const swgr::algebra::GRContext>& ctx,
                         std::uint64_t fold_factor) {
   swgr::fri::FriParameters params;
   params.fold_factor = fold_factor;
@@ -700,7 +700,7 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
   PrintQueryWarnings(fold_factor == 3 ? "fri3" : "fri9",
                      swgr::fri::resolve_query_rounds_metadata(params, instance));
   const auto polynomial =
-      SamplePolynomial(ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
+      SamplePolynomial(*ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
 
@@ -719,7 +719,7 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
 }
 
 TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
-                         const swgr::algebra::GRContext& ctx) {
+                         const std::shared_ptr<const swgr::algebra::GRContext>& ctx) {
   swgr::stir::StirParameters params;
   params.virtual_fold_factor = 9;
   params.shift_power = 3;
@@ -738,7 +738,7 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
   PrintQueryWarnings("stir9to3",
                      swgr::stir::resolve_query_schedule_metadata(params, instance));
   const auto polynomial =
-      SamplePolynomial(ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
+      SamplePolynomial(*ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
 
@@ -766,11 +766,12 @@ int main(int argc, char** argv) {
     }
 
     const auto options = ParseTimeBenchOptions(argc, argv);
-    const swgr::algebra::GRContext ctx(swgr::algebra::GRConfig{
+    auto ctx = std::make_shared<swgr::algebra::GRContext>(swgr::algebra::GRConfig{
         .p = options.p,
         .k_exp = options.k_exp,
         .r = options.r,
     });
+    (void)ctx->teich_generator();
 
     std::vector<TimeBenchRow> rows;
     rows.reserve(options.protocols.size());

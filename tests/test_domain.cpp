@@ -126,6 +126,32 @@ void TestMidExtensionPrimitiveTeichGeneratorPath() {
   CHECK_EQ(coset.offset(), offset);
 }
 
+void TestMidExtensionTeichGeneratorFallback() {
+  testutil::PrintInfo(
+      "mid-r teich fallback remains usable for preset-0 style subgroup construction");
+
+  const swgr::algebra::GRContext ctx(
+      swgr::algebra::GRConfig{.p = 2, .k_exp = 16, .r = 54});
+  CHECK(swgr::algebra::teichmuller_subgroup_size_supported(ctx, 81));
+
+  const auto offset = ctx.teich_generator();
+  CHECK(ctx.is_unit(offset));
+
+  const swgr::Domain subgroup = swgr::Domain::teichmuller_subgroup(ctx, 81);
+  const swgr::Domain coset = swgr::Domain::teichmuller_coset(ctx, offset, 81);
+
+  CHECK(swgr::algebra::has_exact_multiplicative_order(ctx, subgroup.root(), 81));
+  ctx.with_ntl_context([&] {
+    CHECK_EQ(NTL::power(subgroup.root(), 81L), ctx.one());
+    return 0;
+  });
+
+  CHECK_EQ(subgroup.size(), std::uint64_t{81});
+  CHECK_EQ(coset.size(), std::uint64_t{81});
+  CHECK_EQ(coset.root(), subgroup.root());
+  CHECK_EQ(coset.offset(), offset);
+}
+
 }  // namespace
 
 int main() {
@@ -135,6 +161,7 @@ int main() {
     RUN_TEST(TestDomainRejectsInvalidGenerator);
     RUN_TEST(TestLargeExtensionTeichGeneratorFallback);
     RUN_TEST(TestMidExtensionPrimitiveTeichGeneratorPath);
+    RUN_TEST(TestMidExtensionTeichGeneratorFallback);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

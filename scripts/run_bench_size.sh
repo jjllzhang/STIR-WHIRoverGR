@@ -231,58 +231,25 @@ if [[ -n "${QUERIES}" ]]; then
   ARGS_COMMON+=(--queries "${QUERIES}")
 fi
 
-if [[ "${FORMAT}" == "csv" ]]; then
-  : > "${OUTPUT_PATH}"
-fi
-
-for protocol in "${PROTOCOL_LIST[@]}"; do
-  if [[ -z "${protocol}" ]]; then
-    continue
-  fi
-  CMD=("${BENCH_BIN}" --protocol "${protocol}" "${ARGS_COMMON[@]}")
+if [[ "${FORMAT}" == "csv" || "${FORMAT}" == "json" ]]; then
+  CMD=("${BENCH_BIN}" --protocol "${PROTOCOLS}" "${ARGS_COMMON[@]}")
   echo "[size] ${CMD[*]}" >&2
-  if [[ "${FORMAT}" == "csv" ]]; then
-    TMP_OUT=$(mktemp)
-    "${CMD[@]}" > "${TMP_OUT}"
-    if [[ ! -s "${OUTPUT_PATH}" ]]; then
-      cat "${TMP_OUT}" >> "${OUTPUT_PATH}"
-    else
-      tail -n +2 "${TMP_OUT}" >> "${OUTPUT_PATH}"
+  "${CMD[@]}" > "${OUTPUT_PATH}"
+else
+  : > "${OUTPUT_PATH}"
+  for protocol in "${PROTOCOL_LIST[@]}"; do
+    if [[ -z "${protocol}" ]]; then
+      continue
     fi
-    rm -f "${TMP_OUT}"
-  elif [[ "${FORMAT}" == "json" ]]; then
-    TMP_OUT=$(mktemp)
-    "${CMD[@]}" > "${TMP_OUT}"
-    if [[ ! -s "${OUTPUT_PATH}" ]]; then
-      cat "${TMP_OUT}" > "${OUTPUT_PATH}"
-    else
-      python3 - "${OUTPUT_PATH}" "${TMP_OUT}" <<'PY'
-import json
-import pathlib
-import sys
-
-base = pathlib.Path(sys.argv[1])
-new = pathlib.Path(sys.argv[2])
-left = json.loads(base.read_text())
-right = json.loads(new.read_text())
-if isinstance(left, dict):
-    left = [left]
-if isinstance(right, dict):
-    right = [right]
-if not isinstance(left, list) or not isinstance(right, list):
-    raise SystemExit("Expected JSON object or array from bench output")
-base.write_text(json.dumps(left + right, indent=2) + "\n")
-PY
-    fi
-    rm -f "${TMP_OUT}"
-  else
+    CMD=("${BENCH_BIN}" --protocol "${protocol}" "${ARGS_COMMON[@]}")
+    echo "[size] ${CMD[*]}" >&2
     {
       echo "### protocol=${protocol}"
       "${CMD[@]}"
       echo
     } >> "${OUTPUT_PATH}"
-  fi
-done
+  done
+fi
 
 echo "[size] wrote ${OUTPUT_PATH}" >&2
 printf '%s\n' "${OUTPUT_PATH}"
