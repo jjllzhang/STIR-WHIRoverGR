@@ -116,12 +116,48 @@ void TestFoldEvalAtFiberPoint() {
   CheckFoldAtFiberPoint(domain, 9, 0, 4);
 }
 
+void TestFoldEvalGenericFallback() {
+  testutil::PrintInfo("fold_eval_k generic batched-inversion fallback matches interpolation");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  ctx.with_ntl_context([&] {
+    std::vector<GRElem> fiber_points;
+    std::vector<GRElem> fiber_values;
+
+    GRElem one = ctx.one();
+    GRElem x;
+    {
+      NTL::ZZ_pX poly;
+      NTL::SetCoeff(poly, 1, 1);
+      NTL::conv(x, poly);
+    }
+    const GRElem one_plus_x = one + x;
+
+    fiber_points.push_back(one);
+    fiber_points.push_back(x);
+    fiber_points.push_back(one_plus_x);
+
+    fiber_values.push_back(one);
+    fiber_values.push_back(one + one_plus_x);
+    fiber_values.push_back(x + one_plus_x);
+
+    const GRElem alpha = one + one + x;
+    const Polynomial interpolated = swgr::poly_utils::interpolate_for_gr_wrapper(
+        ctx, fiber_points, fiber_values);
+    const GRElem direct =
+        swgr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
+    CHECK_EQ(direct, interpolated.evaluate(ctx, alpha));
+    return 0;
+  });
+}
+
 }  // namespace
 
 int main() {
   try {
     RUN_TEST(TestFoldingForK3AndK9);
     RUN_TEST(TestFoldEvalAtFiberPoint);
+    RUN_TEST(TestFoldEvalGenericFallback);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

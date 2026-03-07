@@ -3,18 +3,17 @@
 #include <NTL/ZZ_pE.h>
 #include <NTL/ZZ_pEX.h>
 
-#include <limits>
+#include <cstdint>
 #include <stdexcept>
-#include <string>
 #include <vector>
 
-#include "GaloisRing/utils.hpp"
 #include "poly_utils/fft3.hpp"
 
 using NTL::ZZ_pE;
 using NTL::ZZ_pEX;
+using NTL::clear;
 using NTL::coeff;
-using NTL::deg;
+using NTL::set;
 using NTL::vec_ZZ_pE;
 
 namespace swgr::poly_utils {
@@ -30,11 +29,23 @@ bool IsPowerOfThree(std::uint64_t value) {
   return value == 1;
 }
 
-long CheckedLong(std::uint64_t value, const char* label) {
-  if (value > static_cast<std::uint64_t>(std::numeric_limits<long>::max())) {
-    throw std::invalid_argument(std::string(label) + " exceeds long");
+algebra::GRElem EncodeUnsigned(std::uint64_t value) {
+  algebra::GRElem result;
+  clear(result);
+  algebra::GRElem addend;
+  set(addend);
+
+  while (value > 0) {
+    if ((value & 1U) != 0U) {
+      result += addend;
+    }
+    value >>= 1U;
+    if (value != 0) {
+      addend += addend;
+    }
   }
-  return static_cast<long>(value);
+
+  return result;
 }
 
 vec_ZZ_pE ToNTLVector(const std::vector<algebra::GRElem>& values) {
@@ -46,8 +57,15 @@ vec_ZZ_pE ToNTLVector(const std::vector<algebra::GRElem>& values) {
   return out;
 }
 
+std::vector<algebra::GRElem> Trim(std::vector<algebra::GRElem> coefficients) {
+  while (!coefficients.empty() && coefficients.back() == 0) {
+    coefficients.pop_back();
+  }
+  return coefficients;
+}
+
 std::vector<algebra::GRElem> FromNTLPolynomial(const ZZ_pEX& poly) {
-  const long poly_degree = deg(poly);
+  const long poly_degree = NTL::deg(poly);
   if (poly_degree < 0) {
     return {};
   }
@@ -58,6 +76,63 @@ std::vector<algebra::GRElem> FromNTLPolynomial(const ZZ_pEX& poly) {
     out.push_back(coeff(poly, i));
   }
   return out;
+}
+
+std::vector<algebra::GRElem> MultiplyByMonicLinear(
+    const std::vector<algebra::GRElem>& coefficients,
+    const algebra::GRElem& root) {
+  std::vector<algebra::GRElem> next(coefficients.size() + 1U);
+  for (auto& coefficient : next) {
+    clear(coefficient);
+  }
+
+  for (std::size_t i = 0; i < coefficients.size(); ++i) {
+    next[i] -= coefficients[i] * root;
+    next[i + 1U] += coefficients[i];
+  }
+  return next;
+}
+
+std::vector<algebra::GRElem> DerivativeCoefficients(
+    const std::vector<algebra::GRElem>& coefficients) {
+  if (coefficients.size() <= 1U) {
+    return {};
+  }
+
+  std::vector<algebra::GRElem> derivative(coefficients.size() - 1U);
+  for (std::size_t i = 1; i < coefficients.size(); ++i) {
+    derivative[i - 1U] = coefficients[i] * EncodeUnsigned(i);
+  }
+  return Trim(std::move(derivative));
+}
+
+algebra::GRElem EvaluatePolynomial(
+    const std::vector<algebra::GRElem>& coefficients,
+    const algebra::GRElem& point) {
+  algebra::GRElem acc;
+  clear(acc);
+
+  for (auto it = coefficients.rbegin(); it != coefficients.rend(); ++it) {
+    acc *= point;
+    acc += *it;
+  }
+  return acc;
+}
+
+std::vector<algebra::GRElem> DivideByMonicLinear(
+    const std::vector<algebra::GRElem>& coefficients,
+    const algebra::GRElem& root) {
+  if (coefficients.size() <= 1U) {
+    return {};
+  }
+
+  const std::size_t quotient_size = coefficients.size() - 1U;
+  std::vector<algebra::GRElem> quotient(quotient_size);
+  quotient[quotient_size - 1U] = coefficients.back();
+  for (std::size_t i = quotient_size - 1U; i > 0; --i) {
+    quotient[i - 1U] = coefficients[i] + root * quotient[i];
+  }
+  return Trim(std::move(quotient));
 }
 
 }  // namespace
@@ -95,25 +170,61 @@ Polynomial interpolate_for_gr_wrapper(
     throw std::invalid_argument(
         "interpolate_for_gr_wrapper requires equal-sized inputs");
   }
-  for (std::size_t i = 0; i < points.size(); ++i) {
-    for (std::size_t j = i + 1; j < points.size(); ++j) {
-      const auto difference =
-          ctx.with_ntl_context([&] { return points[i] - points[j]; });
-      if (!ctx.is_unit(difference)) {
-        throw std::invalid_argument(
-            "interpolate_for_gr_wrapper requires an exceptional point set");
-      }
-    }
-  }
 
   return ctx.with_ntl_context([&] {
-    ZZ_pEX poly;
-    const vec_ZZ_pE a = ToNTLVector(points);
-    const vec_ZZ_pE b = ToNTLVector(values);
-    interpolate_for_GR(poly, a, b, ctx.prime(),
-                       CheckedLong(ctx.config().k_exp, "k_exp"),
-                       CheckedLong(ctx.config().r, "r"));
-    return Polynomial(FromNTLPolynomial(poly));
+    if (ctx.config().k_exp == 1U) {
+      for (std::size_t i = 0; i < points.size(); ++i) {
+        for (std::size_t j = i + 1U; j < points.size(); ++j) {
+          if (points[i] == points[j]) {
+            throw std::invalid_argument(
+                "interpolate_for_gr_wrapper requires an exceptional point set");
+          }
+        }
+      }
+
+      ZZ_pEX poly;
+      const vec_ZZ_pE a = ToNTLVector(points);
+      const vec_ZZ_pE b = ToNTLVector(values);
+      NTL::interpolate(poly, a, b);
+      return Polynomial(FromNTLPolynomial(poly));
+    }
+
+    std::vector<algebra::GRElem> vanishing;
+    vanishing.reserve(points.size() + 1U);
+    vanishing.emplace_back();
+    set(vanishing.front());
+    for (const auto& point : points) {
+      vanishing = MultiplyByMonicLinear(vanishing, point);
+    }
+
+    const auto derivative = DerivativeCoefficients(vanishing);
+    std::vector<algebra::GRElem> derivative_values;
+    derivative_values.reserve(points.size());
+    for (const auto& point : points) {
+      derivative_values.push_back(EvaluatePolynomial(derivative, point));
+    }
+
+    std::vector<algebra::GRElem> barycentric_weights;
+    try {
+      barycentric_weights = ctx.batch_inv(derivative_values);
+    } catch (const std::invalid_argument&) {
+      throw std::invalid_argument(
+          "interpolate_for_gr_wrapper requires an exceptional point set");
+    }
+
+    std::vector<algebra::GRElem> coefficients(points.size());
+    for (auto& coefficient : coefficients) {
+      clear(coefficient);
+    }
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      const auto basis = DivideByMonicLinear(vanishing, points[i]);
+      const auto scale = values[i] * barycentric_weights[i];
+      for (std::size_t j = 0; j < basis.size(); ++j) {
+        coefficients[j] += basis[j] * scale;
+      }
+    }
+
+    return Polynomial(Trim(std::move(coefficients)));
   });
 }
 

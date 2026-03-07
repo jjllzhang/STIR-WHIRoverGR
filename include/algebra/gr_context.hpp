@@ -41,6 +41,7 @@ class GRContext {
 
   bool is_unit(const GRElem& x) const;
   GRElem inv(const GRElem& x) const;
+  std::vector<GRElem> batch_inv(std::span<const GRElem> xs) const;
 
   std::vector<std::uint8_t> serialize(const GRElem& x) const;
   GRElem deserialize(std::span<const std::uint8_t> bytes) const;

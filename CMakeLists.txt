@@ -148,4 +148,7 @@ if(SWGR_BUILD_BENCH)
 
   add_executable(bench_time bench/bench_time.cpp)
   target_link_libraries(bench_time PRIVATE stir_over_gr)
+
+  add_executable(bench_batched_inv bench/bench_batched_inv.cpp)
+  target_link_libraries(bench_batched_inv PRIVATE stir_over_gr)
 endif()

@@ -145,6 +145,43 @@ GRElem GRContext::inv(const GRElem& x) const {
   });
 }
 
+std::vector<GRElem> GRContext::batch_inv(std::span<const GRElem> xs) const {
+  if (xs.empty()) {
+    return {};
+  }
+
+  return with_ntl_context([&] {
+    const long r = CheckedLong(cfg_.r, "r");
+    std::vector<GRElem> prefix_products(xs.size());
+
+    GRElem running_product;
+    set(running_product);
+    for (std::size_t i = 0; i < xs.size(); ++i) {
+      if (!IsUnitByReductionModP(xs[i], prime_, r)) {
+        throw std::invalid_argument("GRContext::batch_inv requires unit inputs; "
+                                    "found non-unit at index " +
+                                    std::to_string(i));
+      }
+      prefix_products[i] = running_product;
+      running_product *= xs[i];
+    }
+
+    GRElem total_inverse = Inv(running_product, r);
+    if (total_inverse == 0) {
+      throw std::runtime_error(
+          "GRContext::batch_inv failed to invert unit product");
+    }
+
+    std::vector<GRElem> inverses(xs.size());
+    GRElem suffix_inverse = total_inverse;
+    for (std::size_t i = xs.size(); i > 0; --i) {
+      inverses[i - 1U] = prefix_products[i - 1U] * suffix_inverse;
+      suffix_inverse *= xs[i - 1U];
+    }
+    return inverses;
+  });
+}
+
 std::vector<std::uint8_t> GRContext::serialize(const GRElem& x) const {
   return with_ntl_context([&] {
     const std::size_t width = coeff_bytes();

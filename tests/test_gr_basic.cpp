@@ -1,6 +1,7 @@
 #include <exception>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "NTL/ZZ.h"
@@ -83,6 +84,108 @@ void TestInverseRejectsNonUnit() {
   CHECK(threw);
 }
 
+void TestBatchInverse() {
+  testutil::PrintInfo("batch_inv computes inverses with one API call");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
+  const auto units = ctx.with_ntl_context([&] {
+    std::vector<GRElem> values;
+
+    NTL::ZZ_pX poly0;
+    NTL::SetCoeff(poly0, 0, 1);
+    NTL::SetCoeff(poly0, 1, 1);
+    GRElem value0;
+    NTL::conv(value0, poly0);
+    values.push_back(value0);
+
+    NTL::ZZ_pX poly1;
+    NTL::SetCoeff(poly1, 0, 3);
+    NTL::SetCoeff(poly1, 1, 2);
+    GRElem value1;
+    NTL::conv(value1, poly1);
+    values.push_back(value1);
+
+    NTL::ZZ_pX poly2;
+    NTL::SetCoeff(poly2, 0, 5);
+    NTL::SetCoeff(poly2, 1, 7);
+    GRElem value2;
+    NTL::conv(value2, poly2);
+    values.push_back(value2);
+
+    return values;
+  });
+
+  const auto inverses = ctx.batch_inv(units);
+  CHECK_EQ(inverses.size(), units.size());
+  ctx.with_ntl_context([&] {
+    for (std::size_t i = 0; i < units.size(); ++i) {
+      CHECK_EQ(units[i] * inverses[i], ctx.one());
+    }
+    return 0;
+  });
+}
+
+void TestBatchInverseEmpty() {
+  testutil::PrintInfo("batch_inv preserves empty inputs");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
+  const std::vector<GRElem> empty;
+  const auto inverses = ctx.batch_inv(empty);
+  CHECK(inverses.empty());
+}
+
+void TestBatchInverseRejectsNonUnit() {
+  testutil::PrintInfo("batch_inv rejects non-units with a clear error");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
+  const auto inputs = ctx.with_ntl_context([&] {
+    std::vector<GRElem> values;
+    values.push_back(ctx.one());
+    values.push_back(ctx.zero());
+    return values;
+  });
+
+  bool threw = false;
+  try {
+    (void)ctx.batch_inv(inputs);
+  } catch (const std::invalid_argument& ex) {
+    threw = true;
+    CHECK(std::string(ex.what()).find("unit") != std::string::npos);
+  }
+  CHECK(threw);
+}
+
+void TestInterpolationRejectsNonExceptionalPointSet() {
+  testutil::PrintInfo(
+      "interpolation rejects ring point sets whose pairwise difference is a non-unit");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
+  const auto [points, values] = ctx.with_ntl_context([&] {
+    std::vector<GRElem> test_points;
+    std::vector<GRElem> test_values;
+
+    const GRElem one = ctx.one();
+    const GRElem two = one + one;
+    const GRElem three = two + one;
+
+    test_points.push_back(one);
+    test_points.push_back(three);
+    test_values.push_back(one);
+    test_values.push_back(two);
+    return std::pair(std::move(test_points), std::move(test_values));
+  });
+
+  bool threw = false;
+  try {
+    (void)swgr::poly_utils::interpolate_for_gr_wrapper(ctx, points, values);
+  } catch (const std::invalid_argument& ex) {
+    threw = true;
+    CHECK(std::string(ex.what()).find("exceptional point set") !=
+          std::string::npos);
+  }
+  CHECK(threw);
+}
+
 void TestPolynomialDegreeAndInterpolation() {
   testutil::PrintInfo("polynomial degree trims zeros and interpolation roundtrips");
 
@@ -117,6 +220,10 @@ int main() {
     RUN_TEST(TestInitGR216R162);
     RUN_TEST(TestInverseAndSerialization);
     RUN_TEST(TestInverseRejectsNonUnit);
+    RUN_TEST(TestBatchInverse);
+    RUN_TEST(TestBatchInverseEmpty);
+    RUN_TEST(TestBatchInverseRejectsNonUnit);
+    RUN_TEST(TestInterpolationRejectsNonExceptionalPointSet);
     RUN_TEST(TestPolynomialDegreeAndInterpolation);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";

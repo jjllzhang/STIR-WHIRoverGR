@@ -106,6 +106,31 @@ algebra::GRElem EvaluateStructuredFiber(
   return result;
 }
 
+std::vector<algebra::GRElem> BatchInvertOrThrow(
+    const std::vector<algebra::GRElem>& values, long extension_degree,
+    const char* error_message) {
+  std::vector<algebra::GRElem> prefix_products(values.size());
+  algebra::GRElem total_product;
+  NTL::set(total_product);
+  for (std::size_t i = 0; i < values.size(); ++i) {
+    prefix_products[i] = total_product;
+    total_product *= values[i];
+  }
+
+  const algebra::GRElem total_inverse = Inv(total_product, extension_degree);
+  if (total_inverse == 0) {
+    throw std::invalid_argument(error_message);
+  }
+
+  std::vector<algebra::GRElem> inverses(values.size());
+  algebra::GRElem suffix_inverse = total_inverse;
+  for (std::size_t i = values.size(); i > 0; --i) {
+    inverses[i - 1U] = prefix_products[i - 1U] * suffix_inverse;
+    suffix_inverse *= values[i - 1U];
+  }
+  return inverses;
+}
+
 bool TryBuildStructuredFiberCache(
     const std::vector<algebra::GRElem>& fiber_points, long extension_degree,
     algebra::GRElem* base_inverse, StructuredFiberCache* cache) {
@@ -145,33 +170,50 @@ bool TryBuildStructuredFiberCache(
   return true;
 }
 
-algebra::GRElem FoldEvalNaive(
+algebra::GRElem EvaluateGenericFiber(
     const std::vector<algebra::GRElem>& fiber_points,
     const std::vector<algebra::GRElem>& fiber_values,
     const algebra::GRElem& alpha, long extension_degree) {
-  algebra::GRElem result;
-  clear(result);
+  const std::size_t fiber_size = fiber_points.size();
+  std::vector<algebra::GRElem> differences(fiber_size);
+  std::vector<algebra::GRElem> prefix_products(fiber_size + 1U);
+  std::vector<algebra::GRElem> suffix_products(fiber_size + 1U);
+  std::vector<algebra::GRElem> denominator_products(fiber_size);
 
-  for (std::size_t i = 0; i < fiber_points.size(); ++i) {
-    algebra::GRElem basis;
-    NTL::set(basis);
-
-    for (std::size_t j = 0; j < fiber_points.size(); ++j) {
+  for (std::size_t i = 0; i < fiber_size; ++i) {
+    differences[i] = alpha - fiber_points[i];
+    algebra::GRElem denominator_product;
+    NTL::set(denominator_product);
+    for (std::size_t j = 0; j < fiber_size; ++j) {
       if (i == j) {
         continue;
       }
-
-      const algebra::GRElem denominator = fiber_points[i] - fiber_points[j];
-      const algebra::GRElem denominator_inv = Inv(denominator, extension_degree);
-      if (denominator_inv == 0) {
-        throw std::invalid_argument("fold_eval_k requires exceptional fiber");
-      }
-      basis *= (alpha - fiber_points[j]) * denominator_inv;
+      denominator_product *= fiber_points[i] - fiber_points[j];
     }
-
-    result += fiber_values[i] * basis;
+    denominator_products[i] = denominator_product;
   }
 
+  const std::vector<algebra::GRElem> denominator_inverses = BatchInvertOrThrow(
+      denominator_products, extension_degree,
+      "fold_eval_k requires exceptional fiber");
+
+  NTL::set(prefix_products[0]);
+  for (std::size_t i = 0; i < fiber_size; ++i) {
+    prefix_products[i + 1U] = prefix_products[i] * differences[i];
+  }
+
+  NTL::set(suffix_products[fiber_size]);
+  for (std::size_t i = fiber_size; i > 0; --i) {
+    suffix_products[i - 1U] = suffix_products[i] * differences[i - 1U];
+  }
+
+  algebra::GRElem result;
+  clear(result);
+  for (std::size_t i = 0; i < fiber_size; ++i) {
+    const algebra::GRElem numerator =
+        prefix_products[i] * suffix_products[i + 1U];
+    result += fiber_values[i] * numerator * denominator_inverses[i];
+  }
   return result;
 }
 
@@ -235,7 +277,7 @@ algebra::GRElem fold_eval_k(
                                    &suffix_products);
   }
 
-  return FoldEvalNaive(fiber_points, fiber_values, alpha, extension_degree);
+  return EvaluateGenericFiber(fiber_points, fiber_values, alpha, extension_degree);
 }
 
 std::vector<algebra::GRElem> fold_table_k(
