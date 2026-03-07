@@ -11,6 +11,7 @@
 #include <memory>
 #include <mutex>
 #include <span>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -77,6 +78,46 @@ class GRContext {
     with_ntl_context([&] {
       for (std::ptrdiff_t i = 0; i < count; ++i) {
         fn(i);
+      }
+    });
+#endif
+  }
+
+  template <typename Fn>
+  void parallel_for_chunks_with_ntl_context(std::ptrdiff_t count,
+                                            std::ptrdiff_t chunk_size,
+                                            bool parallelize, Fn&& fn) const {
+    if (count <= 0) {
+      return;
+    }
+    if (chunk_size <= 0) {
+      throw std::invalid_argument("chunk_size must be > 0");
+    }
+
+    const std::ptrdiff_t chunk_count = (count + chunk_size - 1) / chunk_size;
+#if defined(SWGR_HAS_OPENMP)
+#pragma omp parallel if(parallelize)
+    {
+      with_ntl_context([&] {
+#pragma omp for schedule(static)
+        for (std::ptrdiff_t chunk_index = 0; chunk_index < chunk_count;
+             ++chunk_index) {
+          const std::ptrdiff_t begin = chunk_index * chunk_size;
+          const std::ptrdiff_t end =
+              begin + chunk_size < count ? begin + chunk_size : count;
+          fn(begin, end);
+        }
+      });
+    }
+#else
+    (void)parallelize;
+    with_ntl_context([&] {
+      for (std::ptrdiff_t chunk_index = 0; chunk_index < chunk_count;
+           ++chunk_index) {
+        const std::ptrdiff_t begin = chunk_index * chunk_size;
+        const std::ptrdiff_t end =
+            begin + chunk_size < count ? begin + chunk_size : count;
+        fn(begin, end);
       }
     });
 #endif
