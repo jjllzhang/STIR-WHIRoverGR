@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "algebra/gr_context.hpp"
+#include "crypto/hash.hpp"
 #include "crypto/fs/transcript.hpp"
 #include "crypto/merkle_tree/merkle_tree.hpp"
 #include "crypto/merkle_tree/proof_planner.hpp"
@@ -61,6 +62,26 @@ void TestTranscriptIsDeterministicAndDomainSeparated() {
   swgr::crypto::Transcript different(swgr::HashProfile::STIR_NATIVE);
   different.absorb_bytes(std::vector<std::uint8_t>{1, 2, 3, 9});
   CHECK(!(different.challenge_ring(ctx, "alpha") == lhs_ring));
+}
+
+void TestHashBackendIsBlake3Only() {
+  testutil::PrintInfo(
+      "selected hash backend is blake3 and all hash paths use blake3");
+
+  const std::vector<std::uint8_t> payload = {1, 2, 3, 4, 5, 6, 7, 8};
+  const auto blake3 =
+      swgr::crypto::hash_bytes(swgr::crypto::HashBackend::Blake3, payload);
+  const auto blake3_again =
+      swgr::crypto::hash_bytes(swgr::crypto::HashBackend::Blake3, payload);
+  const auto different =
+      swgr::crypto::hash_bytes(swgr::crypto::HashBackend::Blake3,
+                               std::vector<std::uint8_t>{1, 2, 3, 4, 5, 6, 7, 9});
+
+  CHECK_EQ(swgr::crypto::selected_hash_backend(),
+           swgr::crypto::HashBackend::Blake3);
+  CHECK_EQ(blake3.size(), std::size_t{32});
+  CHECK_EQ(blake3, blake3_again);
+  CHECK(blake3 != different);
 }
 
 void TestMerkleOpenVerifyAndRejectTamper() {
@@ -131,6 +152,7 @@ void TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount() {
 
 int main() {
   try {
+    RUN_TEST(TestHashBackendIsBlake3Only);
     RUN_TEST(TestTranscriptIsDeterministicAndDomainSeparated);
     RUN_TEST(TestMerkleOpenVerifyAndRejectTamper);
     RUN_TEST(TestProofPlannerMatchesUniqueQueriesAndUpperBound);

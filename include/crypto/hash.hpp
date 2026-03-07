@@ -4,16 +4,28 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "parameters.hpp"
 
 namespace swgr::crypto {
 
+enum class HashBackend {
+  Blake3,
+};
+
 enum class HashRole {
   Transcript,
   Merkle,
 };
+
+std::string to_string(HashBackend backend);
+HashBackend selected_hash_backend();
+
+std::size_t digest_bytes(HashBackend backend);
+std::vector<std::uint8_t> hash_bytes(HashBackend backend,
+                                     std::span<const std::uint8_t> data);
 
 std::size_t digest_bytes(HashProfile profile);
 std::size_t digest_bytes(HashProfile profile, HashRole role);

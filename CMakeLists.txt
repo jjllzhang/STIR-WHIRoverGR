@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(STIRWhirOverGR VERSION 0.1.0 LANGUAGES CXX)
+project(STIRWhirOverGR VERSION 0.1.0 LANGUAGES C CXX ASM)
 
 option(SWGR_BUILD_TESTS "Build unit tests" ON)
 option(SWGR_BUILD_BENCH "Build benchmark entrypoints" ON)
@@ -11,7 +11,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_library(NTL_LIBRARY NAMES ntl REQUIRED)
 find_library(GMP_LIBRARY NAMES gmp REQUIRED)
 find_library(M_LIBRARY NAMES m)
-find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 set(SWGR_OPENMP_ENABLED OFF)
 if(SWGR_USE_OPENMP)
@@ -84,6 +83,35 @@ if(M_LIBRARY)
   target_link_libraries(galoisring_backend PUBLIC ${M_LIBRARY})
 endif()
 
+set(SWGR_BLAKE3_SOURCES
+    third_party/blake3/blake3.c
+    third_party/blake3/blake3_dispatch.c
+    third_party/blake3/blake3_portable.c)
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|X86_64|amd64|AMD64)$" AND UNIX AND
+   (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang"))
+  list(APPEND SWGR_BLAKE3_SOURCES
+       third_party/blake3/blake3_avx2_x86-64_unix.S
+       third_party/blake3/blake3_avx512_x86-64_unix.S
+       third_party/blake3/blake3_sse2_x86-64_unix.S
+       third_party/blake3/blake3_sse41_x86-64_unix.S)
+endif()
+
+add_library(swgr_blake3 STATIC ${SWGR_BLAKE3_SOURCES})
+add_library(swgr::blake3 ALIAS swgr_blake3)
+target_include_directories(swgr_blake3 PUBLIC
+                           ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blake3)
+target_compile_features(swgr_blake3 PUBLIC c_std_99)
+
+if(NOT (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|X86_64|amd64|AMD64)$" AND UNIX AND
+        (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")))
+  target_compile_definitions(swgr_blake3 PRIVATE BLAKE3_USE_NEON=0
+                                                 BLAKE3_NO_SSE2
+                                                 BLAKE3_NO_SSE41
+                                                 BLAKE3_NO_AVX2
+                                                 BLAKE3_NO_AVX512)
+endif()
+
 add_library(stir_over_gr STATIC ${STIR_OVER_GR_SOURCES})
 add_library(swgr::stir_over_gr ALIAS stir_over_gr)
 add_library(swgr::swgr ALIAS stir_over_gr)
@@ -101,7 +129,7 @@ else()
   target_compile_options(stir_over_gr PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-target_link_libraries(stir_over_gr PUBLIC galoisring_backend OpenSSL::Crypto)
+target_link_libraries(stir_over_gr PUBLIC galoisring_backend swgr_blake3)
 
 if(SWGR_OPENMP_ENABLED)
   target_compile_definitions(stir_over_gr PUBLIC SWGR_HAS_OPENMP=1)
@@ -154,4 +182,7 @@ if(SWGR_BUILD_BENCH)
 
   add_executable(bench_merkle_open bench/bench_merkle_open.cpp)
   target_link_libraries(bench_merkle_open PRIVATE stir_over_gr)
+
+  add_executable(bench_hash_backend bench/bench_hash_backend.cpp)
+  target_link_libraries(bench_hash_backend PRIVATE stir_over_gr)
 endif()

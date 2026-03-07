@@ -1,63 +1,71 @@
 #include "crypto/hash.hpp"
 
-#include <openssl/evp.h>
+#include "blake3.h"
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <stdexcept>
 #include <vector>
 
 namespace swgr::crypto {
 namespace {
 
-const EVP_MD* ResolveHash(HashProfile profile, HashRole role) {
-  switch (profile) {
-    case HashProfile::STIR_NATIVE:
-      return role == HashRole::Merkle ? EVP_sha3_256() : EVP_sha256();
-    case HashProfile::WHIR_NATIVE:
-      return role == HashRole::Merkle ? EVP_sha256() : EVP_sha3_256();
-  }
-  throw std::invalid_argument("unknown HashProfile");
-}
+constexpr HashBackend kSelectedHashBackend = HashBackend::Blake3;
 
-std::vector<std::uint8_t> ComputeDigest(const EVP_MD* md,
-                                        std::span<const std::uint8_t> data) {
-  if (md == nullptr) {
-    throw std::runtime_error("OpenSSL returned null EVP_MD");
-  }
-
-  std::vector<std::uint8_t> out(
-      static_cast<std::size_t>(EVP_MD_get_size(md)), 0);
-  EVP_MD_CTX* const ctx = EVP_MD_CTX_new();
-  if (ctx == nullptr) {
-    throw std::runtime_error("EVP_MD_CTX_new failed");
-  }
-
-  unsigned int out_size = 0;
-  const bool ok =
-      EVP_DigestInit_ex(ctx, md, nullptr) == 1 &&
-      EVP_DigestUpdate(ctx, data.data(), data.size()) == 1 &&
-      EVP_DigestFinal_ex(ctx, out.data(), &out_size) == 1;
-  EVP_MD_CTX_free(ctx);
-  if (!ok || out_size != out.size()) {
-    throw std::runtime_error("OpenSSL digest computation failed");
-  }
+std::vector<std::uint8_t> ComputeBlake3(std::span<const std::uint8_t> data) {
+  std::vector<std::uint8_t> out(BLAKE3_OUT_LEN, 0);
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  blake3_hasher_update(&hasher, data.data(), data.size());
+  blake3_hasher_finalize(&hasher, out.data(), out.size());
   return out;
 }
 
 }  // namespace
+
+std::string to_string(HashBackend backend) {
+  switch (backend) {
+    case HashBackend::Blake3:
+      return "blake3";
+  }
+  return "unknown";
+}
+
+HashBackend selected_hash_backend() { return kSelectedHashBackend; }
+
+std::size_t digest_bytes(HashBackend backend) {
+  switch (backend) {
+    case HashBackend::Blake3:
+      return BLAKE3_OUT_LEN;
+  }
+  throw std::invalid_argument("unknown HashBackend");
+}
+
+std::vector<std::uint8_t> hash_bytes(HashBackend backend,
+                                     std::span<const std::uint8_t> data) {
+  switch (backend) {
+    case HashBackend::Blake3:
+      return ComputeBlake3(data);
+  }
+  throw std::invalid_argument("unknown HashBackend");
+}
 
 std::size_t digest_bytes(HashProfile profile) {
   return digest_bytes(profile, HashRole::Merkle);
 }
 
 std::size_t digest_bytes(HashProfile profile, HashRole role) {
-  return static_cast<std::size_t>(EVP_MD_get_size(ResolveHash(profile, role)));
+  (void)profile;
+  (void)role;
+  return digest_bytes(selected_hash_backend());
 }
 
 std::vector<std::uint8_t> hash_bytes(HashProfile profile, HashRole role,
                                      std::span<const std::uint8_t> data) {
-  return ComputeDigest(ResolveHash(profile, role), data);
+  (void)profile;
+  (void)role;
+  return hash_bytes(selected_hash_backend(), data);
 }
 
 std::vector<std::uint8_t> hash_bytes(HashProfile profile,
