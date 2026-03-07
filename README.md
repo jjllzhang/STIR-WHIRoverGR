@@ -73,6 +73,7 @@ OMP_NUM_THREADS=1 ./scripts/run_bench_time.sh --preset bench/presets/jia_micro_g
 - `bench_proof_size_estimate` 仍按计划输出 **compiled argument size estimator**，不是逐字节真实序列化 proof 大小；
 - `bench_proof_size_estimate` 现额外输出 `transcript_challenge_count / transcript_bytes_estimated / pow_nonce_bytes` 三个 estimator 元数据字段；它们用于描述 transcript/PoW 口径，不并入 `estimated_argument_bytes`；
 - Batch 4 的归档 smoke/result 证据已落在 `results/preset0_{size,time}.csv` 与 `results/preset1_{size,time}.csv`；复现命令见 `results/README.md`；
+- Batch 5 已补 `results/preset2_{size,time}.csv`；该组在 `GR(2^16,486), n=729, d=243` 上覆盖两轮 STIR estimator 与 time bench，但当前口径下 `stir9to3` 既未在 size 上优于 `fri9`（`36.570 KiB` vs `29.926 KiB`），在 time 侧也更重（`prover_total_ms = 7370.485` vs `3930.196`，`verify_ms = 8240.489` vs `324.210`），因此仍作为参数/趋势归档，而非第一版主图；
 - `--queries` 支持 `auto` 或显式 `q0[,q1,...]`；若某轮请求值被 cap，`bench_proof_size_estimate` / `bench_time` 会在 `stderr` 打 warning，estimator 的 `round_breakdown_json` 会写出 `requested_query_count / effective_query_count / cap_applied`；
 - `bench_time` 支持 `--warmup` / `--reps`；headline 时间字段按 measured reps 求均值；
 - `bench_time` 会输出 `commit_ms / prove_query_phase_ms / prover_total_ms / verify_ms / verifier_hashes_actual`；
