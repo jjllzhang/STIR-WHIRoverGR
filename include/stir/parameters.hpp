@@ -10,6 +10,14 @@ namespace swgr::stir {
 
 struct StirInstance;
 
+struct RoundQueryScheduleMetadata {
+  std::uint64_t requested_query_count = 0;
+  std::uint64_t effective_query_count = 0;
+  std::uint64_t bundle_count = 0;
+  std::uint64_t degree_budget = 0;
+  bool cap_applied = false;
+};
+
 struct StirParameters {
   std::uint64_t virtual_fold_factor = 9;
   std::uint64_t shift_power = 3;
@@ -24,6 +32,8 @@ struct StirParameters {
 
 bool validate(const StirParameters& params);
 bool validate(const StirParameters& params, const StirInstance& instance);
+std::vector<RoundQueryScheduleMetadata> resolve_query_schedule_metadata(
+    const StirParameters& params, const StirInstance& instance);
 std::vector<std::uint64_t> resolve_query_repetitions(
     const StirParameters& params, const StirInstance& instance);
 

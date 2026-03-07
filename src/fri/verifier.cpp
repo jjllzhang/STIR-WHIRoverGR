@@ -59,7 +59,7 @@ bool FriVerifier::verify(const FriInstance& instance,
       return false;
     }
 
-    const auto schedule = resolve_query_repetitions(params_, instance);
+    const auto query_rounds = resolve_query_rounds_metadata(params_, instance);
     Domain current_domain = instance.domain;
     std::uint64_t current_degree = instance.claimed_degree;
     swgr::crypto::Transcript transcript(params_.hash_profile);
@@ -114,7 +114,7 @@ bool FriVerifier::verify(const FriInstance& instance,
           current_domain.size() / params_.fold_factor;
       const auto expected_queries = derive_query_positions(
           transcript, RoundLabel("fri.query", round_index), next_domain_size,
-          schedule[round_index]);
+          query_rounds[round_index].effective_query_count);
       local_stats.verifier_transcript_ms += ElapsedMilliseconds(
           transcript_start, std::chrono::steady_clock::now());
       if (round.query_positions != expected_queries) {

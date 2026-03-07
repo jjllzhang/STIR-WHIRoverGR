@@ -72,7 +72,7 @@ bool StirVerifier::verify(const StirInstance& instance,
       return false;
     }
 
-    const auto schedule = resolve_query_repetitions(params_, instance);
+    const auto query_metadata = resolve_query_schedule_metadata(params_, instance);
     Domain current_domain = instance.domain;
     std::uint64_t current_degree_bound = instance.claimed_degree;
     swgr::poly_utils::Polynomial expected_current_polynomial =
@@ -83,6 +83,8 @@ bool StirVerifier::verify(const StirInstance& instance,
     bool has_cached_input_oracle = false;
 
     for (std::size_t round_index = 0; round_index < round_count; ++round_index) {
+      const auto effective_query_count =
+          query_metadata[round_index].effective_query_count;
       const auto& round = proof.rounds[round_index];
       if (round.round_index != round_index ||
           round.input_domain_size != current_domain.size() ||
@@ -190,10 +192,10 @@ bool StirVerifier::verify(const StirInstance& instance,
 
       const auto expected_fold_positions = derive_unique_positions(
           transcript, RoundLabel("stir.fold_query", round_index),
-          folded_domain.size(), schedule[round_index]);
+          folded_domain.size(), effective_query_count);
       const auto expected_shift_positions = derive_unique_positions(
           transcript, RoundLabel("stir.shift_query", round_index),
-          shift_domain.size(), schedule[round_index]);
+          shift_domain.size(), effective_query_count);
       const auto sorted_fold_positions = SortedPositions(expected_fold_positions);
       const auto sorted_shift_positions =
           SortedPositions(expected_shift_positions);

@@ -62,7 +62,7 @@ FriProof FriProver::prove(
 
   const std::size_t fold_rounds =
       folding_round_count(instance, params_.fold_factor, params_.stop_degree);
-  const auto schedule = resolve_query_repetitions(params_, instance);
+  const auto query_rounds = resolve_query_rounds_metadata(params_, instance);
 
   for (std::size_t round_index = 0; round_index < fold_rounds; ++round_index) {
     FriRoundProof round;
@@ -84,7 +84,8 @@ FriProof FriProver::prove(
         RoundLabel("fri.fold_alpha", round_index));
     round.query_positions = derive_query_positions(
         transcript, RoundLabel("fri.query", round_index),
-        current_domain.size() / params_.fold_factor, schedule[round_index]);
+        query_rounds[round_index].bundle_count,
+        query_rounds[round_index].effective_query_count);
     transcript_ms +=
         ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
     commit_ms += ElapsedMilliseconds(commit_start, std::chrono::steady_clock::now());

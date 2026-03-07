@@ -267,6 +267,33 @@ void TestFri9EstimatorProducesStructuredOutput() {
         std::string::npos);
 }
 
+void TestFriQueriesAreCappedToBundleCount() {
+  testutil::PrintInfo(
+      "fri manual over-budget queries are capped and estimator reports cap_applied");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx, 27, 8);
+  const auto params = MakeParams(9, {10});
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto proof = prover.prove(instance, polynomial);
+  CHECK(verifier.verify(instance, proof));
+
+  CHECK_EQ(proof.rounds.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{3});
+
+  const swgr::fri::FriProofSizeEstimator estimator(params);
+  const auto estimate = estimator.estimate(instance);
+  CHECK(estimate.round_breakdown_json.find("\"requested_query_count\":10") !=
+        std::string::npos);
+  CHECK(estimate.round_breakdown_json.find("\"effective_query_count\":3") !=
+        std::string::npos);
+  CHECK(estimate.round_breakdown_json.find("\"cap_applied\":true") !=
+        std::string::npos);
+}
+
 void TestFriValidationRejectsBadInputs() {
   testutil::PrintInfo("fri parameter validation rejects zero queries and bad degree");
 
@@ -302,6 +329,7 @@ int main() {
     RUN_TEST(TestFriManualQueriesOverrideAutoSchedule);
     RUN_TEST(TestFri3EstimatorProducesStructuredOutput);
     RUN_TEST(TestFri9EstimatorProducesStructuredOutput);
+    RUN_TEST(TestFriQueriesAreCappedToBundleCount);
     RUN_TEST(TestFriValidationRejectsBadInputs);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";

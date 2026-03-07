@@ -618,6 +618,37 @@ void PrintRows(const std::vector<TimeBenchRow>& rows,
   }
 }
 
+void PrintQueryWarnings(
+    std::string_view protocol,
+    const std::vector<swgr::fri::QueryRoundMetadata>& metadata) {
+  for (std::size_t round_index = 0; round_index < metadata.size(); ++round_index) {
+    const auto& round = metadata[round_index];
+    if (!round.cap_applied) {
+      continue;
+    }
+    std::cerr << "warning: " << protocol << " round " << round_index
+              << " requested " << round.requested_query_count
+              << " queries, capped to " << round.effective_query_count
+              << " (bundle_count=" << round.bundle_count << ")\n";
+  }
+}
+
+void PrintQueryWarnings(
+    std::string_view protocol,
+    const std::vector<swgr::stir::RoundQueryScheduleMetadata>& metadata) {
+  for (std::size_t round_index = 0; round_index < metadata.size(); ++round_index) {
+    const auto& round = metadata[round_index];
+    if (!round.cap_applied) {
+      continue;
+    }
+    std::cerr << "warning: " << protocol << " round " << round_index
+              << " requested " << round.requested_query_count
+              << " queries, capped to " << round.effective_query_count
+              << " (bundle_count=" << round.bundle_count
+              << ", degree_budget=" << round.degree_budget << ")\n";
+  }
+}
+
 template <typename RunMeasured>
 TimeBenchRow RunBenchLoop(const TimeBenchOptions& options, std::string protocol,
                           std::uint64_t fold, std::uint64_t shift_power,
@@ -666,6 +697,8 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
+  PrintQueryWarnings(fold_factor == 3 ? "fri3" : "fri9",
+                     swgr::fri::resolve_query_rounds_metadata(params, instance));
   const auto polynomial =
       SamplePolynomial(ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
   const swgr::fri::FriProver prover(params);
@@ -702,6 +735,8 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
+  PrintQueryWarnings("stir9to3",
+                     swgr::stir::resolve_query_schedule_metadata(params, instance));
   const auto polynomial =
       SamplePolynomial(ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
   const swgr::stir::StirProver prover(params);

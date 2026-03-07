@@ -1,6 +1,7 @@
 #ifndef SWGR_FRI_PARAMETERS_HPP_
 #define SWGR_FRI_PARAMETERS_HPP_
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -20,9 +21,20 @@ struct FriParameters {
   swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
 };
 
+struct QueryRoundMetadata {
+  std::uint64_t requested_query_count = 0;
+  std::uint64_t effective_query_count = 0;
+  std::uint64_t bundle_count = 0;
+  bool cap_applied = false;
+};
+
 bool validate(const FriParameters& params);
 bool validate(const FriParameters& params, const FriInstance& instance);
 std::vector<std::uint64_t> resolve_query_repetitions(
+    const FriParameters& params, const FriInstance& instance);
+QueryRoundMetadata resolve_query_round_metadata(std::uint64_t requested_count,
+                                                std::uint64_t bundle_count);
+std::vector<QueryRoundMetadata> resolve_query_rounds_metadata(
     const FriParameters& params, const FriInstance& instance);
 
 }  // namespace swgr::fri

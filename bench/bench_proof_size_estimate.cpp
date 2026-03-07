@@ -12,6 +12,37 @@
 
 namespace {
 
+void PrintQueryWarnings(
+    std::string_view protocol,
+    const std::vector<swgr::fri::QueryRoundMetadata>& metadata) {
+  for (std::size_t round_index = 0; round_index < metadata.size(); ++round_index) {
+    const auto& round = metadata[round_index];
+    if (!round.cap_applied) {
+      continue;
+    }
+    std::cerr << "warning: " << protocol << " round " << round_index
+              << " requested " << round.requested_query_count
+              << " queries, capped to " << round.effective_query_count
+              << " (bundle_count=" << round.bundle_count << ")\n";
+  }
+}
+
+void PrintQueryWarnings(
+    std::string_view protocol,
+    const std::vector<swgr::stir::RoundQueryScheduleMetadata>& metadata) {
+  for (std::size_t round_index = 0; round_index < metadata.size(); ++round_index) {
+    const auto& round = metadata[round_index];
+    if (!round.cap_applied) {
+      continue;
+    }
+    std::cerr << "warning: " << protocol << " round " << round_index
+              << " requested " << round.requested_query_count
+              << " queries, capped to " << round.effective_query_count
+              << " (bundle_count=" << round.bundle_count
+              << ", degree_budget=" << round.degree_budget << ")\n";
+  }
+}
+
 swgr::bench::ProofSizeBenchRow MakeFriRow(
     std::string protocol, const swgr::bench::ProofSizeBenchOptions& options,
     const swgr::algebra::GRContext& ctx, std::uint64_t fold_factor) {
@@ -28,6 +59,7 @@ swgr::bench::ProofSizeBenchRow MakeFriRow(
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
+  PrintQueryWarnings(protocol, swgr::fri::resolve_query_rounds_metadata(params, instance));
   const swgr::fri::FriProofSizeEstimator estimator(params);
   const auto estimate = estimator.estimate(instance);
 
@@ -71,6 +103,8 @@ swgr::bench::ProofSizeBenchRow MakeStirRow(
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
+  PrintQueryWarnings("stir9to3",
+                     swgr::stir::resolve_query_schedule_metadata(params, instance));
   const swgr::stir::StirProofSizeEstimator estimator(params);
   const auto estimate = estimator.estimate(instance);
 

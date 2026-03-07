@@ -69,6 +69,7 @@ ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri|test_stir'
 
 - 当前 `FRI-3` / `FRI-9` / `STIR(9->3)` prover/verifier 已使用真实 `Transcript` 与 `MerkleTree::open(...)`；
 - `bench_proof_size_estimate` 仍按计划输出 **compiled argument size estimator**，不是逐字节真实序列化 proof 大小；
+- `--queries` 支持 `auto` 或显式 `q0[,q1,...]`；若某轮请求值被 cap，`bench_proof_size_estimate` / `bench_time` 会在 `stderr` 打 warning，estimator 的 `round_breakdown_json` 会写出 `requested_query_count / effective_query_count / cap_applied`；
 - `bench_time` 支持 `--warmup` / `--reps`；headline 时间字段按 measured reps 求均值；
 - `bench_time` 会输出 `commit_ms / prove_query_phase_ms / prover_total_ms / verify_ms / verifier_hashes_actual`；
 - `bench_batched_inv` 默认对齐 `GR(2^16,162), n=243, d=81, fold=9`，并分别报告 `interpolate_for_gr_wrapper` 与 generic `fold_eval_k` 的 baseline/batched 平均耗时与 speedup；默认 `warmup=1, reps=1`，做性能结论请使用 `build-release/`；

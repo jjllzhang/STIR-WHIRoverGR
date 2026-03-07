@@ -49,32 +49,57 @@ bool validate(const FriParameters& params) {
   return true;
 }
 
-std::vector<std::uint64_t> resolve_query_repetitions(
+QueryRoundMetadata resolve_query_round_metadata(std::uint64_t requested_count,
+                                                std::uint64_t bundle_count) {
+  QueryRoundMetadata metadata;
+  metadata.requested_query_count = requested_count;
+  metadata.bundle_count = bundle_count;
+  metadata.effective_query_count = std::min(requested_count, bundle_count);
+  metadata.cap_applied = requested_count > bundle_count;
+  return metadata;
+}
+
+std::vector<QueryRoundMetadata> resolve_query_rounds_metadata(
     const FriParameters& params, const FriInstance& instance) {
   const std::size_t rounds =
       folding_round_count(instance, params.fold_factor, params.stop_degree);
-  if (!params.query_repetitions.empty()) {
-    return query_schedule(rounds, params.query_repetitions);
-  }
+  const auto requested_schedule =
+      params.query_repetitions.empty()
+          ? std::vector<std::uint64_t>()
+          : query_schedule(rounds, params.query_repetitions);
+  std::vector<QueryRoundMetadata> metadata;
+  metadata.reserve(rounds);
 
-  std::vector<std::uint64_t> schedule;
-  schedule.reserve(rounds);
   std::uint64_t current_domain_size = instance.domain.size();
   std::uint64_t current_degree_bound = instance.claimed_degree;
   for (std::size_t round_index = 0; round_index < rounds; ++round_index) {
-    const double rho = static_cast<double>(current_degree_bound + 1U) /
-                       static_cast<double>(current_domain_size);
+    std::uint64_t requested_count = 0;
+    if (!requested_schedule.empty()) {
+      requested_count = requested_schedule[round_index];
+    } else {
+      const double rho = static_cast<double>(current_degree_bound + 1U) /
+                         static_cast<double>(current_domain_size);
+      const std::uint64_t base_queries =
+          HeuristicBaseQueryCount(params, rho);
+      requested_count =
+          base_queries > round_index ? base_queries - round_index : 1U;
+    }
     const std::uint64_t bundle_count = current_domain_size / params.fold_factor;
-    const std::uint64_t base_queries =
-        HeuristicBaseQueryCount(params, rho);
-    const std::uint64_t decayed_queries =
-        base_queries > round_index ? base_queries - round_index : 1U;
-    const std::uint64_t query_count = std::min(
-        decayed_queries,
-        std::max<std::uint64_t>(1, bundle_count));
-    schedule.push_back(query_count);
+    metadata.push_back(
+        resolve_query_round_metadata(requested_count, bundle_count));
     current_domain_size /= params.fold_factor;
     current_degree_bound /= params.fold_factor;
+  }
+  return metadata;
+}
+
+std::vector<std::uint64_t> resolve_query_repetitions(
+    const FriParameters& params, const FriInstance& instance) {
+  const auto metadata = resolve_query_rounds_metadata(params, instance);
+  std::vector<std::uint64_t> schedule;
+  schedule.reserve(metadata.size());
+  for (const auto& round : metadata) {
+    schedule.push_back(round.effective_query_count);
   }
   return schedule;
 }

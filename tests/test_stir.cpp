@@ -230,7 +230,48 @@ void TestStirManualQueriesOverrideAutoSchedule() {
   const swgr::stir::StirProofSizeEstimator manual_estimator(manual_params);
   const auto auto_estimate = auto_estimator.estimate(instance);
   const auto manual_estimate = manual_estimator.estimate(instance);
-  CHECK(manual_estimate.argument_bytes < auto_estimate.argument_bytes);
+  CHECK(auto_estimate.round_breakdown_json.find("\"requested_query_count\":2") !=
+        std::string::npos);
+  CHECK(manual_estimate.round_breakdown_json.find("\"requested_query_count\":1") !=
+        std::string::npos);
+}
+
+void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
+  testutil::PrintInfo(
+      "stir caps oversubscribed queries to a safe effective count under degree budget");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx, 27, 26);
+  auto params = MakeParams({10}, 3);
+  params.ood_samples = 2;
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const auto schedule_metadata =
+      swgr::stir::resolve_query_schedule_metadata(params, instance);
+  CHECK_EQ(schedule_metadata.size(), std::size_t{1});
+  CHECK_EQ(schedule_metadata[0].requested_query_count, std::uint64_t{10});
+  CHECK_EQ(schedule_metadata[0].bundle_count, std::uint64_t{3});
+  CHECK_EQ(schedule_metadata[0].effective_query_count, std::uint64_t{1});
+  CHECK(schedule_metadata[0].cap_applied);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  const auto proof = prover.prove(instance, polynomial);
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(proof.rounds.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[0].fold_query_positions.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{1});
+
+  const swgr::stir::StirProofSizeEstimator estimator(params);
+  const auto estimate = estimator.estimate(instance);
+  CHECK(estimate.round_breakdown_json.find("\"requested_query_count\":10") !=
+        std::string::npos);
+  CHECK(estimate.round_breakdown_json.find("\"effective_query_count\":1") !=
+        std::string::npos);
+  CHECK(estimate.round_breakdown_json.find("\"bundle_count\":3") !=
+        std::string::npos);
+  CHECK(estimate.round_breakdown_json.find("\"cap_applied\":true") !=
+        std::string::npos);
 }
 
 void TestStirRejectsTamperedShiftedOracle() {
@@ -323,7 +364,7 @@ void TestStirEstimatorProducesStructuredOutput() {
 
 void TestStirValidationRejectsBadInputs() {
   testutil::PrintInfo(
-      "stir validation rejects bad parameters and over-budget query schedules");
+      "stir validation rejects bad parameters and accepts safely capped schedules");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx);
@@ -348,7 +389,11 @@ void TestStirValidationRejectsBadInputs() {
   CHECK(!swgr::stir::validate(MakeParams(), bad_degree));
 
   auto too_many_queries = MakeParams({2});
-  CHECK(!swgr::stir::validate(too_many_queries, instance));
+  CHECK(swgr::stir::validate(too_many_queries, instance));
+
+  auto no_query_budget = MakeParams({1});
+  no_query_budget.ood_samples = 3;
+  CHECK(!swgr::stir::validate(no_query_budget, instance));
 }
 
 }  // namespace
@@ -359,6 +404,7 @@ int main() {
     RUN_TEST(TestStirMultiRoundCachesNextRoundInputOracle);
     RUN_TEST(TestStirAutoScheduleMatchesConjectureCapacityDefault);
     RUN_TEST(TestStirManualQueriesOverrideAutoSchedule);
+    RUN_TEST(TestStirCapsOversubscribedQueriesWithDegreeBudget);
     RUN_TEST(TestStirRejectsTamperedShiftedOracle);
     RUN_TEST(TestStirRejectsTamperedOodAnswer);
     RUN_TEST(TestStirRejectsTamperedDegreeCorrection);

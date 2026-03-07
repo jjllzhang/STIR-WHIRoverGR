@@ -56,7 +56,7 @@ StirProof StirProver::prove(
   swgr::crypto::Transcript transcript(params_.hash_profile);
 
   const std::size_t round_count = folding_round_count(instance, params_);
-  const auto schedule = resolve_query_repetitions(params_, instance);
+  const auto query_metadata = resolve_query_schedule_metadata(params_, instance);
   const std::uint64_t elem_bytes =
       static_cast<std::uint64_t>(ctx.elem_bytes());
   std::uint64_t serialized_bytes = 0;
@@ -77,6 +77,8 @@ StirProof StirProver::prove(
   bool has_cached_input_oracle = false;
 
   for (std::size_t round_index = 0; round_index < round_count; ++round_index) {
+    const auto effective_query_count =
+        query_metadata[round_index].effective_query_count;
     StirRoundProof round;
     round.round_index = static_cast<std::uint64_t>(round_index);
     round.input_domain_size = current_domain.size();
@@ -162,10 +164,10 @@ StirProof StirProver::prove(
         transcript, ctx, RoundLabel("stir.comb", round_index));
     round.fold_query_positions = derive_unique_positions(
         transcript, RoundLabel("stir.fold_query", round_index),
-        folded_domain.size(), schedule[round_index]);
+        folded_domain.size(), effective_query_count);
     round.shift_query_positions = derive_unique_positions(
         transcript, RoundLabel("stir.shift_query", round_index),
-        shift_domain.size(), schedule[round_index]);
+        shift_domain.size(), effective_query_count);
     transcript_ms += ElapsedMilliseconds(transcript_query_start,
                                          std::chrono::steady_clock::now());
 
