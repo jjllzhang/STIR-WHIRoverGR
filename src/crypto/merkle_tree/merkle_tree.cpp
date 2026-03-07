@@ -17,6 +17,12 @@ constexpr char kLeafDomain[] = "swgr.merkle.leaf.v1";
 constexpr char kNodeDomain[] = "swgr.merkle.node.v1";
 constexpr std::size_t kParallelMerkleThreshold = 128;
 
+struct VerifyParentJob {
+  std::uint64_t parent_index = 0;
+  const std::vector<std::uint8_t>* left = nullptr;
+  const std::vector<std::uint8_t>* right = nullptr;
+};
+
 void AppendU64Le(std::vector<std::uint8_t>& out, std::uint64_t value) {
   for (std::size_t i = 0; i < sizeof(value); ++i) {
     out.push_back(static_cast<std::uint8_t>((value >> (8U * i)) & 0xFFU));
@@ -174,33 +180,54 @@ bool MerkleTree::verify(const std::vector<std::uint8_t>& root,
       }
     }
 
-    std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> parents;
-    parents.reserve(level.parent_indices.size());
-    for (std::size_t i = 0; i < current.size(); ++i) {
+    std::vector<VerifyParentJob> jobs(level.parent_indices.size());
+    std::size_t job_count = 0;
+    for (std::size_t i = 0; i < current.size();) {
       const auto& [index, hash] = current[i];
       const bool has_adjacent =
-          i + 1U < current.size() && current[i + 1U].first == (index ^ 1ULL);
+          i + 1U < current.size() && (index % 2ULL == 0ULL) &&
+          current[i + 1U].first == index + 1ULL;
+      if (job_count >= jobs.size()) {
+        return false;
+      }
 
-      const std::vector<std::uint8_t>* left = nullptr;
-      const std::vector<std::uint8_t>* right = nullptr;
+      auto& job = jobs[job_count];
+      job.parent_index = index / 2ULL;
+      if (job.parent_index != level.parent_indices[job_count]) {
+        return false;
+      }
+
       if (has_adjacent) {
-        left = (index % 2ULL == 0ULL) ? &hash : &current[i + 1U].second;
-        right = (index % 2ULL == 0ULL) ? &current[i + 1U].second : &hash;
-        ++i;
+        job.left = &hash;
+        job.right = &current[i + 1U].second;
+        i += 2U;
       } else {
         if (sibling_cursor >= proof.sibling_hashes.size()) {
           return false;
         }
-        const auto& sibling = proof.sibling_hashes[sibling_cursor++];
-        left = (index % 2ULL == 0ULL) ? &hash : &sibling;
-        right = (index % 2ULL == 0ULL) ? &sibling : &hash;
+        const auto* sibling = &proof.sibling_hashes[sibling_cursor++];
+        job.left = (index % 2ULL == 0ULL) ? &hash : sibling;
+        job.right = (index % 2ULL == 0ULL) ? sibling : &hash;
+        ++i;
       }
+      ++job_count;
+    }
+    if (job_count != jobs.size()) {
+      return false;
+    }
 
-      const auto parent_index = index / 2ULL;
-      if (!parents.empty() && parents.back().first == parent_index) {
-        return false;
-      }
-      parents.push_back({parent_index, HashParent(profile, *left, *right)});
+    std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> parents(
+        jobs.size());
+    for (std::size_t i = 0; i < jobs.size(); ++i) {
+      parents[i].first = jobs[i].parent_index;
+    }
+#if defined(SWGR_HAS_OPENMP)
+#pragma omp parallel for if(jobs.size() >= kParallelMerkleThreshold) schedule(static)
+#endif
+    for (std::ptrdiff_t i = 0; i < static_cast<std::ptrdiff_t>(jobs.size()); ++i) {
+      const auto parent_index = static_cast<std::size_t>(i);
+      parents[parent_index].second = HashParent(
+          profile, *jobs[parent_index].left, *jobs[parent_index].right);
     }
     current = std::move(parents);
   }

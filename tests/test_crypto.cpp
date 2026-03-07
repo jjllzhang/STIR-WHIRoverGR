@@ -148,6 +148,40 @@ void TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount() {
                                          leaves.size(), tree.root(), proof));
 }
 
+void TestMerkleVerifyLargeMultiproofStillPasses() {
+  testutil::PrintInfo(
+      "large merkle multiproof stays verifiable across many parent reductions");
+
+  constexpr std::size_t kLeafCount = 513;
+  constexpr std::size_t kPayloadBytes = 48;
+  std::vector<std::vector<std::uint8_t>> leaves(
+      kLeafCount, std::vector<std::uint8_t>(kPayloadBytes));
+  for (std::size_t leaf_index = 0; leaf_index < kLeafCount; ++leaf_index) {
+    for (std::size_t byte_index = 0; byte_index < kPayloadBytes; ++byte_index) {
+      leaves[leaf_index][byte_index] = static_cast<std::uint8_t>(
+          (leaf_index * 17U + byte_index * 29U + 11U) & 0xFFU);
+    }
+  }
+
+  std::vector<std::uint64_t> queries;
+  queries.reserve(192);
+  for (std::uint64_t i = 0; i < 192; ++i) {
+    queries.push_back((i * 37U + (i % 5U)) %
+                      static_cast<std::uint64_t>(kLeafCount));
+  }
+
+  const swgr::crypto::MerkleTree tree(swgr::HashProfile::STIR_NATIVE, leaves);
+  const auto proof = tree.open(queries);
+  CHECK(proof.queried_indices.size() >= 128U);
+  CHECK(swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+                                         leaves.size(), tree.root(), proof));
+
+  auto tampered = proof;
+  tampered.sibling_hashes.back().back() ^= 0x5AU;
+  CHECK(!swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+                                          leaves.size(), tree.root(), tampered));
+}
+
 }  // namespace
 
 int main() {
@@ -157,6 +191,7 @@ int main() {
     RUN_TEST(TestMerkleOpenVerifyAndRejectTamper);
     RUN_TEST(TestProofPlannerMatchesUniqueQueriesAndUpperBound);
     RUN_TEST(TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount);
+    RUN_TEST(TestMerkleVerifyLargeMultiproofStillPasses);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

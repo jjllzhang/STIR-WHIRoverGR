@@ -60,9 +60,11 @@ struct MerkleOpenBenchRow {
   double current_pruned_mean_ms = 0.0;
   double legacy_set_pruned_mean_ms = 0.0;
   double no_pruning_mean_ms = 0.0;
+  double current_verify_mean_ms = 0.0;
   double current_open_mean_us = 0.0;
   double legacy_open_mean_us = 0.0;
   double no_pruning_open_mean_us = 0.0;
+  double current_verify_mean_us = 0.0;
   double legacy_speedup_x = 0.0;
   double no_pruning_speedup_x = 0.0;
   double sibling_reduction_x = 0.0;
@@ -433,6 +435,11 @@ void ConsumeProof(const swgr::crypto::MerkleProof& proof) {
   g_sink = g_sink + checksum + 0x9E3779B97F4A7C15ULL;
 }
 
+void ConsumeVerifyResult(bool verified) {
+  g_sink = g_sink +
+           (verified ? 0xA5A5A5A5A5A5A5A5ULL : 0x5A5A5A5A5A5A5A5AULL);
+}
+
 template <typename Fn>
 double MeasureMeanMs(std::uint64_t warmup, std::uint64_t reps, Fn&& fn) {
   for (std::uint64_t i = 0; i < warmup; ++i) {
@@ -472,10 +479,12 @@ void PrintRowsText(const std::vector<MerkleOpenBenchRow>& rows) {
               << "legacy_set_pruned_mean_ms="
               << row.legacy_set_pruned_mean_ms << "\n"
               << "no_pruning_mean_ms=" << row.no_pruning_mean_ms << "\n"
+              << "current_verify_mean_ms=" << row.current_verify_mean_ms << "\n"
               << "current_open_mean_us=" << row.current_open_mean_us << "\n"
               << "legacy_open_mean_us=" << row.legacy_open_mean_us << "\n"
               << "no_pruning_open_mean_us=" << row.no_pruning_open_mean_us
               << "\n"
+              << "current_verify_mean_us=" << row.current_verify_mean_us << "\n"
               << "legacy_speedup_x=" << row.legacy_speedup_x << "\n"
               << "no_pruning_speedup_x=" << row.no_pruning_speedup_x << "\n"
               << "sibling_reduction_x=" << row.sibling_reduction_x << "\n"
@@ -496,9 +505,10 @@ void PrintRowsCsv(const std::vector<MerkleOpenBenchRow>& rows) {
       << "hash_profile,query_mode,leaves,padded_leaves,payload_bytes,queries,"
          "unique_queries,warmup,reps,iters,digest_bytes,pruned_sibling_hashes,"
          "no_pruning_sibling_hashes,pruning_saved_hashes,current_pruned_mean_ms,"
-         "legacy_set_pruned_mean_ms,no_pruning_mean_ms,current_open_mean_us,"
-         "legacy_open_mean_us,no_pruning_open_mean_us,legacy_speedup_x,"
-         "no_pruning_speedup_x,sibling_reduction_x,legacy_minus_current_ms,"
+         "legacy_set_pruned_mean_ms,no_pruning_mean_ms,current_verify_mean_ms,"
+         "current_open_mean_us,legacy_open_mean_us,no_pruning_open_mean_us,"
+         "current_verify_mean_us,legacy_speedup_x,no_pruning_speedup_x,"
+         "sibling_reduction_x,legacy_minus_current_ms,"
          "no_pruning_minus_current_ms,checksum_delta\n";
   for (const auto& row : rows) {
     std::cout << swgr::bench::CsvEscape(row.hash_profile) << ","
@@ -511,10 +521,12 @@ void PrintRowsCsv(const std::vector<MerkleOpenBenchRow>& rows) {
               << "," << std::fixed << std::setprecision(3)
               << row.current_pruned_mean_ms << ","
               << row.legacy_set_pruned_mean_ms << "," << row.no_pruning_mean_ms
+              << "," << row.current_verify_mean_ms
               << "," << row.current_open_mean_us << ","
               << row.legacy_open_mean_us << "," << row.no_pruning_open_mean_us
-              << "," << row.legacy_speedup_x << "," << row.no_pruning_speedup_x
-              << "," << row.sibling_reduction_x << ","
+              << "," << row.current_verify_mean_us << ","
+              << row.legacy_speedup_x << "," << row.no_pruning_speedup_x << ","
+              << row.sibling_reduction_x << ","
               << row.legacy_minus_current_ms << ","
               << row.no_pruning_minus_current_ms << "," << row.checksum_delta
               << "\n";
@@ -553,12 +565,16 @@ void PrintRowsJson(const std::vector<MerkleOpenBenchRow>& rows) {
               << row.legacy_set_pruned_mean_ms << ",\n"
               << "    \"no_pruning_mean_ms\": " << row.no_pruning_mean_ms
               << ",\n"
+              << "    \"current_verify_mean_ms\": "
+              << row.current_verify_mean_ms << ",\n"
               << "    \"current_open_mean_us\": " << row.current_open_mean_us
               << ",\n"
               << "    \"legacy_open_mean_us\": " << row.legacy_open_mean_us
               << ",\n"
               << "    \"no_pruning_open_mean_us\": "
               << row.no_pruning_open_mean_us << ",\n"
+              << "    \"current_verify_mean_us\": "
+              << row.current_verify_mean_us << ",\n"
               << "    \"legacy_speedup_x\": " << row.legacy_speedup_x << ",\n"
               << "    \"no_pruning_speedup_x\": " << row.no_pruning_speedup_x
               << ",\n"
@@ -625,6 +641,12 @@ MerkleOpenBenchRow RunBench(const MerkleOpenBenchOptions& options) {
           ConsumeProof(OpenNoPruningUpperBound(bench_tree, queries));
         }
       });
+  const double verify_mean_ms = MeasureMeanMs(options.warmup, options.reps, [&] {
+    for (std::uint64_t iter = 0; iter < options.iters; ++iter) {
+      ConsumeVerifyResult(swgr::crypto::MerkleTree::verify(
+          options.hash_profile, options.leaves, tree.root(), current_proof));
+    }
+  });
   const std::uint64_t checksum_after = g_sink;
 
   MerkleOpenBenchRow row;
@@ -650,9 +672,11 @@ MerkleOpenBenchRow RunBench(const MerkleOpenBenchOptions& options) {
   row.current_pruned_mean_ms = current_mean_ms;
   row.legacy_set_pruned_mean_ms = legacy_mean_ms;
   row.no_pruning_mean_ms = no_pruning_mean_ms;
+  row.current_verify_mean_ms = verify_mean_ms;
   row.current_open_mean_us = MeanUsPerOpen(current_mean_ms, options.iters);
   row.legacy_open_mean_us = MeanUsPerOpen(legacy_mean_ms, options.iters);
   row.no_pruning_open_mean_us = MeanUsPerOpen(no_pruning_mean_ms, options.iters);
+  row.current_verify_mean_us = MeanUsPerOpen(verify_mean_ms, options.iters);
   row.legacy_speedup_x = SafeSpeedup(legacy_mean_ms, current_mean_ms);
   row.no_pruning_speedup_x = SafeSpeedup(no_pruning_mean_ms, current_mean_ms);
   row.sibling_reduction_x = SafeRatio(
