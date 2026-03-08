@@ -1,2 +1,0 @@
-mode,ring,n,d,input_size,warmup,reps,calls_per_rep,mean_ms,mean_call_ms,checksum
-"interpolate","GR(2^16,486)",729,243,729,1,5,8,11241.165,1405.146,0

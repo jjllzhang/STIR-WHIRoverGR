@@ -1,2 +1,0 @@
-mode,ring,n,d,input_size,warmup,reps,mean_ms,checksum
-"encode","GR(2^16,486)",729,243,243,1,5,1560.981,296489418278617069

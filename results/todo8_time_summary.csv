@@ -1,3 +1,0 @@
-protocol,ring,n,d,threads_t1,threads_t8,prover_total_mean_ms_t1,prover_total_mean_ms_t8,prover_total_speedup,encode_mean_ms_t1,encode_mean_ms_t8,encode_speedup,interpolate_mean_ms_t1,interpolate_mean_ms_t8,interpolate_speedup,verify_algebra_mean_ms_t1,verify_algebra_mean_ms_t8,verify_algebra_speedup,verify_ms_t1,verify_ms_t8,verify_speedup
-fri9,"GR(2^16,162)",243,81,1,8,365.490,233.758,1.564,261.042,176.644,1.478,12.904,12.852,1.004,14.333,14.250,1.006,43.987,43.767,1.005
-stir9to3,"GR(2^16,162)",243,81,1,8,520.870,382.990,1.360,331.915,242.235,1.370,12.997,12.947,1.004,576.965,438.402,1.316,605.392,466.921,1.297
