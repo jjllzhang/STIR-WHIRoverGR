@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
-PRESET_PATH="${REPO_ROOT}/bench/presets/main_benchmark_workload_for_proof_size_gr216_r162.json"
+PRESET_PATH="${REPO_ROOT}/bench/presets/main_benchmark_workload_gr216_r162.json"
 BUILD_DIR="${REPO_ROOT}/build"
 OUTPUT_PATH=""
 FORMAT="csv"

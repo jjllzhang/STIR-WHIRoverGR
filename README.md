@@ -1,107 +1,193 @@
 # STIR & WHIR over Galois Rings
 
-## 说明
+`STIR&WHIRoverGR` is a **cryptographic protocol prototype repository** for experimenting with low-degree testing and commitment-oriented components over Galois rings. The current codebase explores how `FRI / STIR / WHIR`-style ideas over finite fields can be adapted to the `GR(p^k, r)` setting, with an emphasis on implementation boundaries, reusable interfaces, and benchmark methodology.
 
-STIR: Reed–Solomon Proximity Testing with Fewer Queries：对 FRI 进行改进，提出 shift to improve rate 思想，代码实现：https://github.com/WizardOfMenlo/stir。
+The public focus of this repository is:
 
-WHIR: Reed–Solomon Proximity Testing with Super-Fast Verification：将 STIR 中的单变量多项式承诺方案推广到多变量多项式承诺方案，RS码推广到CRS码，代码实现：https://github.com/WizardOfMenlo/whir。
+- algebra and domain infrastructure over Galois rings,
+- prototype prover / verifier / estimator paths for `FRI-3`, `FRI-9`, and `STIR(9->3)`,
+- transcript, Merkle, multiproof, benchmark, and parameter-search tooling around those protocol experiments.
 
-BaseFold: Efficient Field-Agnostic Polynomial Commitment Schemes from Foldable Codes：提出foldable codes，将FRI需要的RS码推广到 foldable codes，不需要底层域满足smooth条件，代码地址：https://github.com/jjllzhang/BasefoldOverGR。
+This repository is **prototype / research code**. It is intended for protocol exploration, implementation experiments, and measurement. It should not be treated as production-ready or audited cryptographic software.
 
-Polynomial Commitments for Galois Rings and Applications to SNARKs Over $$\mathbb {Z}_{2^k}$$：将有限域上的FRI推广到 Galois ring上，代码实现：https://github.com/jjllzhang/z2kSNARK。
+## Current Scope
 
-Polylogarithmic Proofs for Multilinears over $\mathbb{Z}_{2^k}$：将Basefold 推广到 Galois ring上，将FRI over Galois ring 改进到 STIR/WHIR 版本，Basefold部分的代码实现：https://github.com/jjllzhang/BasefoldOverGR。
+- Vendors only `third_party/GaloisRing/` as the underlying Galois-ring backend
+- Implements `GRContext`, ring-element serialization, and Teichmuller subgroup / coset domains
+- Implements protocol helpers such as polynomials, interpolation, quotient polynomials, degree correction, and folding
+- Uses radix-3 `fft3` / `inverse_fft3` fast paths on `3-smooth` domains, including `rs_encode` / `rs_interpolate`
+- Implements `BLAKE3`, Fiat-Shamir transcript, Merkle tree, and pruned multiproof planning
+- Provides prover / verifier and proof-size estimator surfaces for `FRI-3`, `FRI-9`, and `STIR(9->3)`
+- Provides `bench_proof_size_estimate`, `bench_time`, preset-driven wrappers, and parameter-search scripts
 
-目标：实现 STIR and WHIR over Galois ring。
+## Current Limits
 
-当前仓库先对齐 `stir-over-gr-implementation-plan.md` 的工程骨架，目标是：
+- `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
+- `poly_utils::bs08` is still a placeholder interface
+- `bench_proof_size_estimate` reports a **protocol-level estimator**, not exact serialized proof bytes
+- Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
+- The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
 
-- 使用 **C++ / CMake** 建立主工程；
-- 仅 vendor `BasefoldOverGR` 中的 `GaloisRing` 后端；
-- 先把 `algebra / domain / poly_utils / crypto / protocols` 的目录与接口搭起来；
-- 优先完成 `GRContext`、序列化与基础测试，给后续 `FRI-3 / FRI-9 / STIR(9->3)` 留出清晰落点。
+## Dependencies
 
-## 当前状态
+Required:
 
-- `third_party/GaloisRing/` 已纳入 `GaloisRing` 后端源码；
-- `include/` 与 `src/` 已按实施计划搭好模块层次；
-- `GRContext`、ring element 序列化、`Domain`、`Polynomial`、GR 插值 wrapper 已给出第一版实现；
-- `Domain` 现已对 `offset`/`root` 做 fail-fast 校验，并检查 `root` 的 exact order；
-- `FFT3` / `inverse_fft3` 与 `folding` 已给出第一版语义正确实现，并补上基础 roundtrip / 对拍测试；
-- `rs_encode` / `rs_interpolate` 在 `3-smooth` 域上已默认切到 `fft3` / `inverse_fft3` 快速路径；
-- `fft3` / `inverse_fft3` 已补上第一版调用内 stage cache，复用 radix-3 每层的 `offset/root/zeta` 与逆元常量；
-- `GRContext` 已提供 `batch_inv`，`interpolate_for_gr_wrapper` 与 generic `fold_eval_k` 已改成 batched inversion 路径，减少 GR 上的分母求逆次数；
-- `folding` 已加入 multiplicative-coset fast path，避免在每个 fiber 内重复做 `Inv`；
-- `FRI-3` / `FRI-9` / `STIR(9->3)` 已接入 **真实 transcript + Merkle root/opening** 的 non-interactive 路径，并通过 honest / tamper 回归；
-- `crypto/hash`、`crypto/fs/transcript`、`crypto/merkle_tree` 已完成第一版实现；当前已 vendoring 官方 `BLAKE3` C 后端，并已将仓库内哈希实现统一收口为 `BLAKE3`；
-- Phase 7 第一版已补上可选 OpenMP Merkle 并行化；`SWGR_USE_OPENMP=ON` 且本机找到 OpenMP 时，leaf / parent hashing 会自动并行；
-- CMake target 命名已统一为 `galoisring_backend` 与 `stir_over_gr`；
-- Phase 1 域构造推荐从 `Domain::teichmuller_subgroup(...)` / `Domain::teichmuller_coset(...)` 进入；
-- `bench_proof_size_estimate` 与 `bench_time` 已支持 `FRI-3 / FRI-9 / STIR(9->3)` 对照输出，并补了 `scripts/run_proof_size_estimator_from_preset.sh`、`scripts/run_timing_benchmark_from_preset.sh` 与 `scripts/plot_benchmark_metric_by_protocol.py`；
-- 已补第一版工程型 `soundness configurator`：当前统一输出 `soundness_model / query_policy / pow_policy / effective_security_bits / soundness_notes`，明确把自动查询调度与 `lambda/pow_bits` 口径标成 `engineering-heuristic-v1`；
-- 已补 `scripts/search_benchmark_parameters.py` 与 `scripts/run_benchmark_parameter_search.sh`，可在 preset 基础上做参数枚举、聚合 size/time 结果，并输出 Top-K / Pareto 摘要。
+- `CMake >= 3.20`
+- a `C++20` compiler
+- `NTL`
+- `GMP`
 
-## 构建
+Optional:
+
+- `OpenMP`, if available, enables some parallel paths
+
+Notes:
+
+- `BLAKE3` is vendored in `third_party/blake3/`, so no extra system hash library is required for the current hash path
+
+## Build
+
+Development build:
 
 ```bash
-cmake -S . -B build
+cmake -S . -B build \
+  -DSWGR_BUILD_TESTS=ON \
+  -DSWGR_BUILD_BENCH=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-如需显式关闭本轮加入的 OpenMP Merkle 并行化，可使用：
+Release build for performance measurements:
+
+```bash
+cmake -S . -B build-release \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSWGR_BUILD_TESTS=ON \
+  -DSWGR_BUILD_BENCH=ON
+cmake --build build-release -j
+ctest --test-dir build-release --output-on-failure
+```
+
+Disable OpenMP explicitly if needed:
 
 ```bash
 cmake -S . -B build -DSWGR_USE_OPENMP=OFF
 ```
 
-### Phase 6 快速验证
+## Quick Validation
+
+For this repository, focused tests are more informative than relying on a single full `ctest` pass:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri|test_stir'
-./build/bench_proof_size_estimate --protocol all --format csv
-./build/bench_time --protocol all --format csv
-./scripts/run_proof_size_estimator_from_preset.sh --output results/size_latest.csv
-./scripts/run_timing_benchmark_from_preset.sh --output results/time_latest.csv
-./scripts/run_benchmark_parameter_search.sh --n-values 81,243 --rho-values 1/3,1/9 --soundness 128:22:ConjectureCapacity:auto
-./scripts/run_proof_size_estimator_from_preset.sh --preset bench/presets/smallest_workload_covering_all_protocols_gr216_r54.json --build-dir build --output results/smallest_workload_covering_all_protocols_gr216_r54_proof_size.csv
-./scripts/run_timing_benchmark_from_preset.sh --preset bench/presets/main_benchmark_workload_for_timing_gr216_r162.json --build-dir build-release --threads 1 --output results/main_benchmark_workload_gr216_r162_timing.csv --warmup 1 --reps 3
+ctest --test-dir build --output-on-failure -R 'test_gr_basic|test_domain|test_fft3|test_folding|test_crypto|test_fri|test_stir|test_soundness_configurator'
 ```
 
-说明：
+These tests cover:
 
-- 当前 `FRI-3` / `FRI-9` / `STIR(9->3)` prover/verifier 已使用真实 `Transcript` 与 `MerkleTree::open(...)`；
-- `bench_proof_size_estimate` 仍按计划输出 **compiled argument size estimator**，不是逐字节真实序列化 proof 大小；
-- `bench_proof_size_estimate` 现额外输出 `transcript_challenge_count / transcript_bytes_estimated / pow_nonce_bytes` 三个 estimator 元数据字段；它们用于描述 transcript/PoW 口径，不并入 `estimated_argument_bytes`；
-- `bench_proof_size_estimate` 与 `bench_time` 现都会输出工程版 soundness 元数据：`soundness_model / query_policy / pow_policy / effective_security_bits / soundness_notes`；
-- Batch 4 的归档证据已落在 `results/smallest_workload_covering_all_protocols_gr216_r54_{proof_size,timing}.csv` 与 `results/main_benchmark_workload_gr216_r162_{proof_size,timing}.csv`；复现命令见 `results/README.md`；
-- Batch 5 已补 `results/workload_showing_two_stir_rounds_gr216_r486_{proof_size,timing}.csv`；该组在 `GR(2^16,486), n=729, d=243` 上覆盖两轮 STIR estimator 与 time bench，但当前口径下 `stir9to3` 既未在 size 上优于 `fri9`（`36.570 KiB` vs `29.926 KiB`），在 time 侧也更重（`prover_total_ms = 7370.485` vs `3930.196`，`verify_ms = 8240.489` vs `324.210`），因此仍作为参数/趋势归档，而非第一版主图；
-- `--queries` 支持 `auto` 或显式 `q0[,q1,...]`；若某轮请求值被 cap，`bench_proof_size_estimate` / `bench_time` 会在 `stderr` 打 warning，estimator 的 `round_breakdown_json` 会写出 `requested_query_count / effective_query_count / cap_applied`；
-- `bench_time --threads` 现会直接控制 OpenMP 运行时线程数；`scripts/run_timing_benchmark_from_preset.sh` 会同步注入 `OMP_NUM_THREADS=<threads>` 与 `OMP_DYNAMIC=false`，不再只是输出元数据；
-- `bench_time` 支持 `--warmup` / `--reps`；headline 时间字段按 measured reps 求均值；
-- `bench_time` 会输出 `commit_ms / prove_query_phase_ms / prover_total_ms / verify_ms / verifier_hashes_actual`，并额外带上 `serialized_bytes_actual / serialized_kib_actual`；
-- 细粒度 profile 同时给出 `profile_*_total_ms`（measured reps 累积）与 `profile_*_mean_ms`（单次 measured rep 均值），并补 `profile_*_accounted_*` / `profile_*_unaccounted_*` 便于对账；
-- `search_benchmark_parameters.py` 当前实现的是**工程型**参数搜索器：它复用现有 bench 二进制，给出候选全集、Top-K 与 Pareto 摘要；其中 `soundness_model = engineering-heuristic-v1` 仅表示当前启发式口径，后续可在形式化 soundness 推导补齐后替换；
-- `plot_benchmark_metric_by_protocol.py` 依赖 `matplotlib`；若本机未安装，可先执行 `python3 -m pip install matplotlib`。
+- core Galois-ring semantics and serialization,
+- domain / Teichmuller construction,
+- `fft3` and `folding` correctness,
+- transcript / Merkle / multiproof behavior,
+- honest / tamper regressions for `FRI-3`, `FRI-9`, and `STIR(9->3)`,
+- basic soundness-configurator output behavior.
 
-## 目录
+## Benchmarks
 
-核心目录与 `stir-over-gr-implementation-plan.md` 对齐：
+Inspect the benchmark CLIs:
 
-- `third_party/GaloisRing/`: 复用的 Galois ring 后端
-- `include/algebra/`: Galois ring 上下文、Teichmüller 相关接口
-- `include/poly_utils/`: 多项式、插值、FFT / folding 基础实现与后续扩展接口
-- `include/fri/`, `include/stir/`, `include/whir/`: 协议层入口
-- `bench/`, `tests/`, `scripts/`, `results/`: bench、测试、脚本与产物目录
+```bash
+./build-release/bench_proof_size_estimate --help
+./build-release/bench_time --help
+```
 
-## 库名
+Run the main proof-size workload:
 
-- `galoisring_backend`: vendor 的 `GaloisRing` 后端静态库
-- `stir_over_gr`: 本项目主静态库
-- 兼容 alias 仍保留 `swgr::swgr`
+```bash
+./scripts/run_proof_size_estimator_from_preset.sh \
+  --preset bench/presets/main_benchmark_workload_gr216_r162.json \
+  --build-dir build-release \
+  --output results/main_benchmark_workload_gr216_r162_proof_size.csv
+```
 
-## Phase 1 接口
+Run the main timing workload:
 
-- `algebra::teichmuller_subgroup_generator(...)`: 为给定 `N | (p^r - 1)` 生成对应 Teichmüller 子群生成元
-- `Domain::teichmuller_subgroup(...)`: 直接构造大小为 `N` 的 Teichmüller 子群域
-- `Domain::teichmuller_coset(...)`: 直接构造大小为 `N` 的 Teichmüller 子群陪集域
+```bash
+OMP_NUM_THREADS=1 ./scripts/run_timing_benchmark_from_preset.sh \
+  --preset bench/presets/main_benchmark_workload_gr216_r162.json \
+  --build-dir build-release \
+  --threads 1 \
+  --warmup 1 \
+  --reps 3 \
+  --output results/main_benchmark_workload_gr216_r162_timing.csv
+```
+
+Run parameter search:
+
+```bash
+./scripts/run_benchmark_parameter_search.sh \
+  --build-dir build-release \
+  --n-values 81,243 \
+  --rho-values 1/3,1/9 \
+  --soundness 128:22:ConjectureCapacity:auto
+```
+
+Benchmark notes:
+
+- For single-thread comparisons, pin both `OMP_NUM_THREADS=1` and `--threads 1`
+- `bench_time` is the end-to-end timing surface for prover / verifier / serialization behavior
+- `bench_proof_size_estimate` is the protocol-level proof-size estimation surface
+- Archived benchmark outputs live in `results/`, with filenames aligned to workload names
+
+## Preset Workloads
+
+Current preset filenames follow a shorter workload-first naming style:
+
+- `bench/presets/all_protocols_smoke_gr216_r54.json`
+- `bench/presets/main_benchmark_workload_gr216_r162.json`
+- `bench/presets/two_round_stir_gr216_r486.json`
+
+Interpretation:
+
+- `all_protocols_smoke_gr216_r54.json` is the smallest cross-protocol smoke workload
+- `main_benchmark_workload_gr216_r162.json` is the main benchmark preset
+- `two_round_stir_gr216_r486.json` is the larger preset that exercises two STIR rounds
+
+## CMake Targets
+
+Main targets:
+
+- `galoisring_backend`: vendored Galois-ring backend static library
+- `stir_over_gr`: main project static library
+- aliases: `swgr::galoisring_backend`, `swgr::stir_over_gr`, `swgr::swgr`
+
+## Repository Layout
+
+- `include/`: public headers and protocol interfaces
+- `src/`: implementations
+- `bench/`: benchmark entrypoints and presets
+- `tests/`: unit tests and protocol regressions
+- `scripts/`: benchmark wrappers, parameter search, and helper scripts
+- `results/`: archived benchmark outputs
+- `third_party/GaloisRing/`: vendored Galois-ring backend
+- `third_party/blake3/`: vendored `BLAKE3`
+
+## Reference Material
+
+The repository root also keeps several paper / implementation references for code-to-paper comparison:
+
+- `STIR.pdf`
+- `WHIR.pdf`
+- `Z2KSNARK.pdf`
+- `BasefoldOverGR.pdf`
+
+Upstream or related implementations:
+
+- `STIR`: <https://github.com/WizardOfMenlo/stir>
+- `WHIR`: <https://github.com/WizardOfMenlo/whir>
+- `BasefoldOverGR`: <https://github.com/jjllzhang/BasefoldOverGR>
+
+If you want to inspect current repo truth surfaces quickly:
+
+- start with `tests/`, `bench/`, `src/fri/`, and `src/stir/` for protocol behavior,
+- inspect `bench/bench_proof_size_estimate.cpp` and `bench/bench_time.cpp` for benchmark semantics,
+- use `scripts/` for reproducible wrapper entrypoints.
