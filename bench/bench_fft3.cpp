@@ -1,5 +1,6 @@
 #include "bench_common.hpp"
 
+#include <algorithm>
 #include <NTL/ZZ_pE.h>
 
 #include <chrono>
@@ -35,6 +36,7 @@ struct Fft3BenchOptions {
   std::uint64_t d = 0;
   std::uint64_t warmup = 1;
   std::uint64_t reps = 5;
+  std::uint64_t calls_per_rep = 1;
   swgr::bench::OutputFormat format = swgr::bench::OutputFormat::Text;
 };
 
@@ -46,7 +48,9 @@ struct Fft3BenchRow {
   std::uint64_t input_size = 0;
   std::uint64_t warmup = 0;
   std::uint64_t reps = 0;
+  std::uint64_t calls_per_rep = 0;
   double mean_ms = 0.0;
+  double mean_call_ms = 0.0;
   std::uint64_t checksum = 0;
 };
 
@@ -97,7 +101,7 @@ std::string Usage(const char* binary_name) {
          "  --mode encode|interpolate|roundtrip\n"
          "  --p <uint> --k-exp <uint> --r <uint>\n"
          "  --n <uint> [--d <uint>]\n"
-         "  --warmup <uint> --reps <uint>\n"
+         "  --warmup <uint> --reps <uint> [--calls-per-rep <uint>]\n"
          "  --format text|csv|json\n";
 }
 
@@ -139,6 +143,8 @@ Fft3BenchOptions ParseOptions(int argc, char** argv) {
       options.warmup = swgr::bench::ParseUint64(key, value);
     } else if (key == "--reps") {
       options.reps = swgr::bench::ParseUint64(key, value);
+    } else if (key == "--calls-per-rep") {
+      options.calls_per_rep = swgr::bench::ParseUint64(key, value);
     } else if (key == "--format") {
       options.format = swgr::bench::ParseOutputFormat(value);
     } else {
@@ -163,6 +169,9 @@ Fft3BenchOptions ParseOptions(int argc, char** argv) {
   }
   if (options.reps == 0) {
     throw std::invalid_argument("--reps must be > 0");
+  }
+  if (options.calls_per_rep == 0) {
+    throw std::invalid_argument("--calls-per-rep must be > 0");
   }
   return options;
 }
@@ -255,10 +264,10 @@ std::uint64_t VectorChecksum(const swgr::algebra::GRContext& ctx,
   return checksum;
 }
 
-std::vector<swgr::algebra::GRElem> RunMode(const Fft3BenchOptions& options,
-                                           const swgr::Domain& domain,
-                                           const swgr::poly_utils::Polynomial& poly,
-                                           const std::vector<swgr::algebra::GRElem>& evals) {
+std::vector<swgr::algebra::GRElem> RunModeOnce(
+    const Fft3BenchOptions& options, const swgr::Domain& domain,
+    const swgr::poly_utils::Polynomial& poly,
+    const std::vector<swgr::algebra::GRElem>& evals) {
   switch (options.mode) {
     case BenchMode::Encode:
       return swgr::poly_utils::fft3(domain, poly);
@@ -271,6 +280,28 @@ std::vector<swgr::algebra::GRElem> RunMode(const Fft3BenchOptions& options,
   throw std::invalid_argument("unknown bench mode");
 }
 
+std::vector<std::vector<swgr::algebra::GRElem>> RunCalls(
+    const Fft3BenchOptions& options, const swgr::Domain& domain,
+    const swgr::poly_utils::Polynomial& poly,
+    const std::vector<swgr::algebra::GRElem>& evals) {
+  std::vector<std::vector<swgr::algebra::GRElem>> outputs;
+  outputs.reserve(static_cast<std::size_t>(options.calls_per_rep));
+  for (std::uint64_t call = 0; call < options.calls_per_rep; ++call) {
+    outputs.push_back(RunModeOnce(options, domain, poly, evals));
+  }
+  return outputs;
+}
+
+std::uint64_t ChecksumOutputs(
+    const swgr::algebra::GRContext& ctx,
+    const std::vector<std::vector<swgr::algebra::GRElem>>& outputs) {
+  std::uint64_t checksum = 0;
+  for (const auto& output : outputs) {
+    checksum ^= VectorChecksum(ctx, output);
+  }
+  return checksum;
+}
+
 Fft3BenchRow RunBench(const Fft3BenchOptions& options) {
   const swgr::algebra::GRContext ctx(swgr::algebra::GRConfig{
       .p = options.p, .k_exp = options.k_exp, .r = options.r});
@@ -280,18 +311,18 @@ Fft3BenchRow RunBench(const Fft3BenchOptions& options) {
 
   for (std::uint64_t warmup_index = 0; warmup_index < options.warmup;
        ++warmup_index) {
-    const auto output = RunMode(options, domain, poly, evals);
-    g_sink ^= VectorChecksum(ctx, output);
+    const auto outputs = RunCalls(options, domain, poly, evals);
+    g_sink ^= ChecksumOutputs(ctx, outputs);
   }
 
   double total_ms = 0.0;
   std::uint64_t checksum = 0;
   for (std::uint64_t rep = 0; rep < options.reps; ++rep) {
     const auto start = std::chrono::steady_clock::now();
-    const auto output = RunMode(options, domain, poly, evals);
+    const auto outputs = RunCalls(options, domain, poly, evals);
     const auto end = std::chrono::steady_clock::now();
     total_ms += ElapsedMs(start, end);
-    checksum ^= VectorChecksum(ctx, output);
+    checksum ^= ChecksumOutputs(ctx, outputs);
   }
 
   Fft3BenchRow row;
@@ -303,7 +334,9 @@ Fft3BenchRow RunBench(const Fft3BenchOptions& options) {
       options.mode == BenchMode::Interpolate ? options.n : options.d;
   row.warmup = options.warmup;
   row.reps = options.reps;
+  row.calls_per_rep = options.calls_per_rep;
   row.mean_ms = total_ms / static_cast<double>(options.reps);
+  row.mean_call_ms = row.mean_ms / static_cast<double>(options.calls_per_rep);
   row.checksum = checksum;
   return row;
 }
@@ -316,19 +349,23 @@ void PrintText(const Fft3BenchRow& row) {
   std::cout << "input_size=" << row.input_size << "\n";
   std::cout << "warmup=" << row.warmup << "\n";
   std::cout << "reps=" << row.reps << "\n";
+  std::cout << "calls_per_rep=" << row.calls_per_rep << "\n";
   std::cout << std::fixed << std::setprecision(3) << "mean_ms=" << row.mean_ms
             << "\n";
+  std::cout << "mean_call_ms=" << row.mean_call_ms << "\n";
   std::cout.unsetf(std::ios::floatfield);
   std::cout << "checksum=" << row.checksum << "\n";
 }
 
 void PrintCsv(const Fft3BenchRow& row) {
-  std::cout << "mode,ring,n,d,input_size,warmup,reps,mean_ms,checksum\n";
+  std::cout << "mode,ring,n,d,input_size,warmup,reps,calls_per_rep,mean_ms,"
+               "mean_call_ms,checksum\n";
   std::cout << swgr::bench::CsvEscape(row.mode) << ","
             << swgr::bench::CsvEscape(row.ring) << "," << row.n << ","
             << row.d << "," << row.input_size << "," << row.warmup << ","
-            << row.reps << "," << std::fixed << std::setprecision(3)
-            << row.mean_ms << "," << row.checksum << "\n";
+            << row.reps << "," << row.calls_per_rep << "," << std::fixed
+            << std::setprecision(3) << row.mean_ms << "," << row.mean_call_ms
+            << "," << row.checksum << "\n";
   std::cout.unsetf(std::ios::floatfield);
 }
 
@@ -341,8 +378,10 @@ void PrintJson(const Fft3BenchRow& row) {
             << "  \"input_size\": " << row.input_size << ",\n"
             << "  \"warmup\": " << row.warmup << ",\n"
             << "  \"reps\": " << row.reps << ",\n"
+            << "  \"calls_per_rep\": " << row.calls_per_rep << ",\n"
             << std::fixed << std::setprecision(3)
             << "  \"mean_ms\": " << row.mean_ms << ",\n"
+            << "  \"mean_call_ms\": " << row.mean_call_ms << ",\n"
             << std::defaultfloat
             << "  \"checksum\": " << row.checksum << "\n"
             << "}\n";

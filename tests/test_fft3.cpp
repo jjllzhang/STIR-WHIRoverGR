@@ -1,6 +1,10 @@
+#include <atomic>
 #include <exception>
 #include <iostream>
+#include <mutex>
 #include <random>
+#include <string>
+#include <thread>
 #include <vector>
 
 #include "NTL/ZZ.h"
@@ -81,6 +85,28 @@ Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
   return Polynomial(coeffs);
 }
 
+void AppendArithmeticProgressionIndices(std::vector<std::size_t>* indices,
+                                        std::size_t start,
+                                        std::size_t stride,
+                                        std::size_t limit) {
+  for (std::size_t index = start; index < limit; index += stride) {
+    indices->push_back(index);
+  }
+}
+
+Polynomial MakeSparsePolynomial(const GRContext& ctx, std::size_t term_count,
+                                const std::vector<std::size_t>& nonzero_indices,
+                                std::mt19937_64& rng) {
+  std::vector<GRElem> coefficients(term_count, ctx.zero());
+  for (const std::size_t index : nonzero_indices) {
+    if (index >= term_count) {
+      throw std::invalid_argument("sparse coefficient index exceeds term count");
+    }
+    coefficients[index] = SampleRandomRingElement(ctx, rng);
+  }
+  return Polynomial(std::move(coefficients));
+}
+
 void CheckFftMatchesRSEncode(const Domain& domain, const Polynomial& poly) {
   const auto fft_evals = swgr::poly_utils::fft3(domain, poly);
   const auto expected = NaiveRSEncode(domain, poly);
@@ -132,6 +158,45 @@ void CheckInverseMatchesInterpolation(
   CHECK_EQ(recovered.size(), expected.size());
   for (std::size_t i = 0; i < expected.size(); ++i) {
     CHECK_EQ(recovered[i], expected[i]);
+  }
+}
+
+void CheckRepeatedCallsStable(const Domain& domain, const Polynomial& poly,
+                              const std::vector<GRElem>& evals,
+                              std::size_t repeat_count) {
+  const auto expected_evals = NaiveRSEncode(domain, poly);
+  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+      domain.context(), domain.elements(), evals);
+  std::vector<GRElem> expected_coeffs = expected_poly.coefficients();
+  expected_coeffs.resize(static_cast<std::size_t>(domain.size()),
+                         domain.context().zero());
+
+  for (std::size_t repeat = 0; repeat < repeat_count; ++repeat) {
+    const auto actual_evals = swgr::poly_utils::fft3(domain, poly);
+    CHECK_EQ(actual_evals.size(), expected_evals.size());
+    for (std::size_t i = 0; i < actual_evals.size(); ++i) {
+      CHECK_EQ(actual_evals[i], expected_evals[i]);
+    }
+
+    const auto actual_coeffs = swgr::poly_utils::inverse_fft3(domain, evals);
+    CHECK_EQ(actual_coeffs.size(), expected_coeffs.size());
+    for (std::size_t i = 0; i < actual_coeffs.size(); ++i) {
+      CHECK_EQ(actual_coeffs[i], expected_coeffs[i]);
+    }
+  }
+}
+
+void RequireVectorsEqual(const std::vector<GRElem>& actual,
+                         const std::vector<GRElem>& expected,
+                         const char* label) {
+  if (actual.size() != expected.size()) {
+    throw std::runtime_error(std::string(label) + " size mismatch");
+  }
+  for (std::size_t i = 0; i < actual.size(); ++i) {
+    if (actual[i] != expected[i]) {
+      throw std::runtime_error(std::string(label) + " mismatch at index " +
+                               std::to_string(i));
+    }
   }
 }
 
@@ -296,6 +361,100 @@ void TestFft3LargeDomainDifferential() {
   CheckInverseMatchesInterpolation(coset243, evals);
 }
 
+void TestFft3RepeatedDomainCallsStayStableOnSize243() {
+  testutil::PrintInfo(
+      "fft3 cache miss and subsequent hits stay stable on repeated size-243 subgroup/coset calls");
+
+  std::mt19937_64 rng(0xCACE243ULL);
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(ctx, 243);
+  const Domain coset243 =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 243);
+
+  const Polynomial poly = SampleRandomPolynomial(ctx, 127, rng);
+  const auto evals = SampleRandomEvaluations(ctx, 243, rng);
+
+  CheckRepeatedCallsStable(subgroup243, poly, evals, 6U);
+  CheckRepeatedCallsStable(coset243, poly, evals, 6U);
+}
+
+void TestFft3PlanCachePublishIsSafeUnderConcurrentMiss() {
+  testutil::PrintInfo(
+      "fft3 plan cache publication is safe under concurrent fresh misses");
+
+  std::mt19937_64 rng(0xC0FFEE243ULL);
+  auto shared_ctx = std::make_shared<GRContext>(
+      GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(shared_ctx, 243);
+  const Polynomial poly = SampleRandomPolynomial(*shared_ctx, 127, rng);
+  const auto evals = SampleRandomEvaluations(*shared_ctx, 243, rng);
+  const auto expected_evals = NaiveRSEncode(subgroup243, poly);
+  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+      subgroup243.context(), subgroup243.elements(), evals);
+  std::vector<GRElem> expected_coeffs = expected_poly.coefficients();
+  expected_coeffs.resize(static_cast<std::size_t>(subgroup243.size()),
+                         subgroup243.context().zero());
+
+  constexpr std::size_t kThreadCount = 4;
+  constexpr std::size_t kIterationsPerThread = 2;
+  std::atomic<bool> start(false);
+  std::atomic<bool> failed(false);
+  std::mutex error_mutex;
+  std::string first_error;
+  std::vector<std::thread> threads;
+  threads.reserve(kThreadCount);
+
+  for (std::size_t thread_index = 0; thread_index < kThreadCount;
+       ++thread_index) {
+    threads.emplace_back([&, thread_index] {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+
+      try {
+        for (std::size_t iteration = 0; iteration < kIterationsPerThread;
+             ++iteration) {
+          const bool inverse_first = ((thread_index + iteration) % 2U) != 0U;
+          if (inverse_first) {
+            RequireVectorsEqual(
+                swgr::poly_utils::inverse_fft3(subgroup243, evals),
+                expected_coeffs, "concurrent inverse_fft3");
+            RequireVectorsEqual(swgr::poly_utils::fft3(subgroup243, poly),
+                                expected_evals, "concurrent fft3");
+          } else {
+            RequireVectorsEqual(swgr::poly_utils::fft3(subgroup243, poly),
+                                expected_evals, "concurrent fft3");
+            RequireVectorsEqual(
+                swgr::poly_utils::inverse_fft3(subgroup243, evals),
+                expected_coeffs, "concurrent inverse_fft3");
+          }
+        }
+      } catch (const std::exception& ex) {
+        failed.store(true, std::memory_order_release);
+        std::lock_guard<std::mutex> lock(error_mutex);
+        if (first_error.empty()) {
+          first_error = ex.what();
+        }
+      } catch (...) {
+        failed.store(true, std::memory_order_release);
+        std::lock_guard<std::mutex> lock(error_mutex);
+        if (first_error.empty()) {
+          first_error = "non-std exception";
+        }
+      }
+    });
+  }
+
+  start.store(true, std::memory_order_release);
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  if (failed.load(std::memory_order_acquire)) {
+    throw std::runtime_error(first_error);
+  }
+}
+
 void TestFft3SharedContextStabilityOnSize243() {
   testutil::PrintInfo(
       "fft3 and inverse_fft3 remain stable across repeated size-243 calls on a shared GRContext");
@@ -310,12 +469,107 @@ void TestFft3SharedContextStabilityOnSize243() {
     const std::size_t term_count =
         81U + static_cast<std::size_t>(rng() % 81U);
     const Polynomial poly = SampleRandomPolynomial(ctx, term_count, rng);
+    const auto evals = SampleRandomEvaluations(ctx, 243, rng);
 
     CheckFftMatchesRSEncode(subgroup243, poly);
-    CheckInverseRoundtrip(subgroup243, poly);
+    CheckInverseMatchesInterpolation(subgroup243, evals);
     CheckFftMatchesRSEncode(coset243, poly);
-    CheckInverseRoundtrip(coset243, poly);
+    CheckInverseMatchesInterpolation(coset243, evals);
   }
+}
+
+void TestFft3SparseResidueClassLayoutsOnSize243() {
+  testutil::PrintInfo(
+      "fft3 preserves sparse single-residue coefficient layouts on size-243 subgroup and coset");
+
+  std::mt19937_64 rng(0xB9F243ULL);
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(ctx, 243);
+  const Domain coset243 =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 243);
+
+  std::vector<std::size_t> subgroup_indices;
+  AppendArithmeticProgressionIndices(&subgroup_indices, 1U, 3U, 243U);
+  const Polynomial subgroup_poly =
+      MakeSparsePolynomial(ctx, 243U, subgroup_indices, rng);
+
+  std::vector<std::size_t> coset_indices;
+  AppendArithmeticProgressionIndices(&coset_indices, 2U, 3U, 243U);
+  const Polynomial coset_poly =
+      MakeSparsePolynomial(ctx, 243U, coset_indices, rng);
+
+  CheckFftMatchesRSEncode(subgroup243, subgroup_poly);
+  CheckInverseRoundtrip(subgroup243, subgroup_poly);
+  CheckFftMatchesRSEncode(coset243, coset_poly);
+  CheckInverseRoundtrip(coset243, coset_poly);
+}
+
+void TestFft3AliasedDeepStrideLayoutsMatchInterpolation() {
+  testutil::PrintInfo(
+      "fft3 sparse deeper-stride aliased layouts keep forward and inverse semantics aligned");
+
+  std::mt19937_64 rng(0xA11A5E243ULL);
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(ctx, 243);
+  const Domain coset243 =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 243);
+
+  std::vector<std::size_t> sparse_indices;
+  AppendArithmeticProgressionIndices(&sparse_indices, 5U, 9U, 486U);
+  AppendArithmeticProgressionIndices(&sparse_indices, 20U, 27U, 486U);
+  AppendArithmeticProgressionIndices(&sparse_indices, 83U, 81U, 486U);
+  const Polynomial poly = MakeSparsePolynomial(ctx, 486U, sparse_indices, rng);
+
+  CheckFftMatchesRSEncode(subgroup243, poly);
+  CheckInverseMatchesInterpolation(subgroup243, poly);
+  CheckFftMatchesRSEncode(coset243, poly);
+  CheckInverseMatchesInterpolation(coset243, poly);
+}
+
+void TestFft3NestedTernaryStrideBucketsRoundtrip() {
+  testutil::PrintInfo(
+      "fft3 preserves nested ternary-stride buckets on size-243 subgroup and coset");
+
+  std::mt19937_64 rng(0x73D1D243ULL);
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(ctx, 243);
+  const Domain coset243 =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 243);
+
+  std::vector<std::size_t> nested_indices;
+  AppendArithmeticProgressionIndices(&nested_indices, 7U, 9U, 243U);
+  AppendArithmeticProgressionIndices(&nested_indices, 22U, 27U, 243U);
+  AppendArithmeticProgressionIndices(&nested_indices, 104U, 81U, 243U);
+  AppendArithmeticProgressionIndices(&nested_indices, 161U, 243U, 243U);
+  const Polynomial poly = MakeSparsePolynomial(ctx, 243U, nested_indices, rng);
+
+  CheckFftMatchesRSEncode(subgroup243, poly);
+  CheckInverseRoundtrip(subgroup243, poly);
+  CheckFftMatchesRSEncode(coset243, poly);
+  CheckInverseRoundtrip(coset243, poly);
+}
+
+void TestFft3AliasedInterleavedStrideLayoutsMatchInterpolation() {
+  testutil::PrintInfo(
+      "fft3 interleaved aliased stride layouts keep subgroup and coset semantics identical");
+
+  std::mt19937_64 rng(0xA11A5ED9ULL);
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const Domain subgroup243 = Domain::teichmuller_subgroup(ctx, 243);
+  const Domain coset243 =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 243);
+
+  std::vector<std::size_t> sparse_indices;
+  AppendArithmeticProgressionIndices(&sparse_indices, 2U, 9U, 729U);
+  AppendArithmeticProgressionIndices(&sparse_indices, 34U, 27U, 729U);
+  AppendArithmeticProgressionIndices(&sparse_indices, 123U, 81U, 729U);
+  AppendArithmeticProgressionIndices(&sparse_indices, 364U, 243U, 729U);
+  const Polynomial poly = MakeSparsePolynomial(ctx, 729U, sparse_indices, rng);
+
+  CheckFftMatchesRSEncode(subgroup243, poly);
+  CheckInverseMatchesInterpolation(subgroup243, poly);
+  CheckFftMatchesRSEncode(coset243, poly);
+  CheckInverseMatchesInterpolation(coset243, poly);
 }
 
 }  // namespace
@@ -330,7 +584,13 @@ int main() {
     RUN_TEST(TestFft3RandomDifferential);
     RUN_TEST(TestInverseFft3RandomDifferential);
     RUN_TEST(TestFft3LargeDomainDifferential);
+    RUN_TEST(TestFft3RepeatedDomainCallsStayStableOnSize243);
+    RUN_TEST(TestFft3PlanCachePublishIsSafeUnderConcurrentMiss);
     RUN_TEST(TestFft3SharedContextStabilityOnSize243);
+    RUN_TEST(TestFft3SparseResidueClassLayoutsOnSize243);
+    RUN_TEST(TestFft3AliasedDeepStrideLayoutsMatchInterpolation);
+    RUN_TEST(TestFft3NestedTernaryStrideBucketsRoundtrip);
+    RUN_TEST(TestFft3AliasedInterleavedStrideLayoutsMatchInterpolation);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

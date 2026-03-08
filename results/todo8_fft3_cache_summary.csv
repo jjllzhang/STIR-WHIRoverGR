@@ -1,0 +1,9 @@
+case,mode,ring,n,d,input_size,threads,warmup,reps,calls_per_rep,mean_ms,mean_call_ms,checksum,speedup_vs_t1,call_speedup_vs_t1
+encode_n243_t1,encode,"GR(2^16,162)",243,81,81,1,1,5,8,2079.508,259.939,0,1.000,1.000
+encode_n243_t8,encode,"GR(2^16,162)",243,81,81,8,1,5,8,1541.210,192.651,0,1.349,1.349
+interpolate_n243_t1,interpolate,"GR(2^16,162)",243,81,243,1,1,5,8,1686.222,210.778,0,1.000,1.000
+interpolate_n243_t8,interpolate,"GR(2^16,162)",243,81,243,8,1,5,8,1370.997,171.375,0,1.230,1.230
+encode_n729_t1,encode,"GR(2^16,486)",729,243,243,1,1,5,8,22708.760,2838.595,0,1.000,1.000
+encode_n729_t8,encode,"GR(2^16,486)",729,243,243,8,1,5,8,11950.442,1493.805,0,1.900,1.900
+interpolate_n729_t1,interpolate,"GR(2^16,486)",729,243,729,1,1,5,8,18089.067,2261.133,0,1.000,1.000
+interpolate_n729_t8,interpolate,"GR(2^16,486)",729,243,729,8,1,5,8,11241.165,1405.146,0,1.609,1.609

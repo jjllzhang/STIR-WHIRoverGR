@@ -99,3 +99,5 @@ results/runs/**
 !results/baselines/**
 !results/reference/
 !results/reference/**
+
+mineru_md/

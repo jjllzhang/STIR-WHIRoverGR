@@ -1,0 +1,2 @@
+mode,ring,n,d,input_size,warmup,reps,calls_per_rep,mean_ms,mean_call_ms,checksum
+"encode","GR(2^16,486)",729,243,243,1,5,8,22708.760,2838.595,0
