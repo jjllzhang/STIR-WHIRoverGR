@@ -92,10 +92,6 @@ std::vector<std::uint64_t> derive_unique_query_positions(
     swgr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t query_count);
 
-std::string estimate_breakdown_json(
-    const std::vector<std::string>& round_entries,
-    std::uint64_t final_polynomial_bytes);
-
 }  // namespace swgr::fri
 
 #endif  // SWGR_FRI_COMMON_HPP_

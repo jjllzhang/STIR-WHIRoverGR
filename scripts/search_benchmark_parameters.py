@@ -45,19 +45,14 @@ class SearchError(RuntimeError):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Enumerate parameter candidates over bench_proof_size_estimate/bench_time, "
-            "and emit combined CSV + markdown summary (Top-K + Pareto)."
+            "Enumerate parameter candidates over bench_time, "
+            "and emit combined CSV + markdown summary ranked by actual proof size."
         )
     )
 
     parser.add_argument("--preset", default="", help="Preset JSON path (optional)")
     parser.add_argument(
         "--build-dir", default="build", help="Build directory containing bench binaries"
-    )
-    parser.add_argument(
-        "--size-bin",
-        default="",
-        help="Path to bench_proof_size_estimate (default: <build-dir>/bench_proof_size_estimate)",
     )
     parser.add_argument(
         "--time-bin",
@@ -114,7 +109,7 @@ def parse_args() -> argparse.Namespace:
         help="Metric used by time Top-K and Pareto",
     )
 
-    parser.add_argument("--top-k", type=int, default=10, help="Top-K for size ranking")
+    parser.add_argument("--top-k", type=int, default=10, help="Top-K for proof-size ranking")
     parser.add_argument(
         "--time-top-k", type=int, default=10, help="Top-K for time ranking if include-time"
     )
@@ -353,50 +348,6 @@ def to_float(value: str) -> Optional[float]:
         return None
 
 
-def build_size_command(
-    size_bin: Path,
-    ring: RingConfig,
-    protocols: Sequence[str],
-    point: SweepPoint,
-    soundness: SoundnessConfig,
-    args: argparse.Namespace,
-) -> List[str]:
-    cmd = [
-        str(size_bin),
-        "--protocol",
-        ",".join(protocols),
-        "--p",
-        str(ring.p),
-        "--k-exp",
-        str(ring.k_exp),
-        "--r",
-        str(ring.r),
-        "--n",
-        str(point.n),
-        "--d",
-        str(point.d),
-        "--lambda",
-        str(soundness.lambda_target),
-        "--pow-bits",
-        str(soundness.pow_bits),
-        "--sec-mode",
-        soundness.sec_mode,
-        "--hash-profile",
-        args.hash_profile,
-        "--stop-degree",
-        str(args.stop_degree),
-        "--ood-samples",
-        str(args.ood_samples),
-        "--threads",
-        str(args.threads),
-        "--format",
-        "csv",
-    ]
-    if soundness.queries:
-        cmd += ["--queries", soundness.queries]
-    return cmd
-
-
 def build_time_command(
     time_bin: Path,
     ring: RingConfig,
@@ -476,13 +427,6 @@ def write_csv(path: Path, rows: List[Dict[str, str]]) -> None:
         "threads",
         "warmup",
         "reps",
-        "estimated_argument_bytes",
-        "estimated_argument_kib",
-        "estimated_verifier_hashes",
-        "transcript_challenge_count",
-        "transcript_bytes_estimated",
-        "pow_nonce_bytes",
-        "round_breakdown_json",
         "commit_ms",
         "prove_query_phase_ms",
         "prover_total_ms",
@@ -568,6 +512,8 @@ def write_summary(
     content.append(f"- Total rows: {len(rows)}\n")
     content.append(f"- Protocols: {', '.join(protocols)}\n")
     for key in ("ring", "build_dir", "size_bin", "time_bin", "include_time"):
+        if key == "size_bin":
+            continue
         if key in meta:
             content.append(f"- {key}: `{meta[key]}`\n")
 
@@ -582,17 +528,17 @@ def write_summary(
         "effective_security_bits",
         "query_policy",
         "search_queries_spec",
-        "estimated_argument_kib",
-        "estimated_argument_bytes",
+        "serialized_kib_actual",
+        "serialized_bytes_actual",
     ]
 
-    content.append("\n## Top-K by Estimated Size (global)\n")
-    content.append(render_table(sorted_top_k(rows, "estimated_argument_bytes", top_k), size_cols))
+    content.append("\n## Top-K by Actual Proof Size (global)\n")
+    content.append(render_table(sorted_top_k(rows, "serialized_bytes_actual", top_k), size_cols))
 
     for protocol in protocols:
         subset = [row for row in rows if row.get("protocol") == protocol]
-        content.append(f"\n## Top-K by Estimated Size ({protocol})\n")
-        content.append(render_table(sorted_top_k(subset, "estimated_argument_bytes", top_k), size_cols))
+        content.append(f"\n## Top-K by Actual Proof Size ({protocol})\n")
+        content.append(render_table(sorted_top_k(subset, "serialized_bytes_actual", top_k), size_cols))
 
     if include_time:
         time_cols = [
@@ -608,7 +554,6 @@ def write_summary(
             "search_queries_spec",
             time_metric,
             "serialized_kib_actual",
-            "estimated_argument_kib",
         ]
         content.append(f"\n## Top-K by {time_metric} (global)\n")
         content.append(render_table(sorted_top_k(rows, time_metric, time_top_k), time_cols))
@@ -621,11 +566,11 @@ def write_summary(
             )
 
         content.append(
-            f"\n## Pareto Front (Estimated Size vs {time_metric}, global)\n"
+            f"\n## Pareto Front (Actual Proof Size vs {time_metric}, global)\n"
         )
         content.append(
             render_table(
-                pareto_front(rows, "estimated_argument_bytes", time_metric),
+                pareto_front(rows, "serialized_bytes_actual", time_metric),
                 [
                     "protocol",
                     "n",
@@ -637,7 +582,7 @@ def write_summary(
                     "effective_security_bits",
                     "query_policy",
                     "search_queries_spec",
-                    "estimated_argument_kib",
+                    "serialized_kib_actual",
                     time_metric,
                 ],
             )
@@ -646,11 +591,11 @@ def write_summary(
         for protocol in protocols:
             subset = [row for row in rows if row.get("protocol") == protocol]
             content.append(
-                f"\n## Pareto Front (Estimated Size vs {time_metric}, {protocol})\n"
+                f"\n## Pareto Front (Actual Proof Size vs {time_metric}, {protocol})\n"
             )
             content.append(
                 render_table(
-                    pareto_front(subset, "estimated_argument_bytes", time_metric),
+                    pareto_front(subset, "serialized_bytes_actual", time_metric),
                     [
                         "protocol",
                         "n",
@@ -662,7 +607,7 @@ def write_summary(
                         "effective_security_bits",
                         "query_policy",
                         "search_queries_spec",
-                        "estimated_argument_kib",
+                        "serialized_kib_actual",
                         time_metric,
                     ],
                 )
@@ -685,12 +630,9 @@ def main() -> int:
     sweep_points = resolve_sweep_points(args, preset)
 
     build_dir = Path(args.build_dir)
-    size_bin = Path(args.size_bin) if args.size_bin else (build_dir / "bench_proof_size_estimate")
     time_bin = Path(args.time_bin) if args.time_bin else (build_dir / "bench_time")
 
-    if not size_bin.is_file():
-        raise SearchError(f"size bench binary not found: {size_bin}")
-    if args.include_time and not time_bin.is_file():
+    if not time_bin.is_file():
         raise SearchError(f"time bench binary not found: {time_bin}")
 
     results: List[Dict[str, str]] = []
@@ -710,17 +652,10 @@ def main() -> int:
                 file=sys.stderr,
             )
 
-            size_cmd = build_size_command(size_bin, ring, protocols, point, soundness, args)
-            size_rows = run_csv_command(size_cmd)
+            time_cmd = build_time_command(time_bin, ring, protocols, point, soundness, args)
+            time_rows = run_csv_command(time_cmd)
 
-            time_by_protocol: Dict[str, Dict[str, str]] = {}
-            if args.include_time:
-                time_cmd = build_time_command(time_bin, ring, protocols, point, soundness, args)
-                time_rows = run_csv_command(time_cmd)
-                time_by_protocol = {row.get("protocol", ""): row for row in time_rows}
-
-            for row in size_rows:
-                protocol = row.get("protocol", "")
+            for row in time_rows:
                 merged: Dict[str, str] = {
                     "search_candidate_id": str(candidate_id),
                     "search_soundness_id": str(soundness_idx),
@@ -728,13 +663,6 @@ def main() -> int:
                     "search_time_metric": args.time_metric,
                 }
                 merged.update({key: str(value) for key, value in row.items()})
-
-                if args.include_time and protocol in time_by_protocol:
-                    for key, value in time_by_protocol[protocol].items():
-                        if key in merged and key == "protocol":
-                            continue
-                        merged[key] = str(value)
-
                 results.append(merged)
 
     combined_path = Path(args.combined_csv)
@@ -752,7 +680,6 @@ def main() -> int:
         meta={
             "ring": f"GR({ring.p}^{ring.k_exp},{ring.r})",
             "build_dir": str(build_dir),
-            "size_bin": str(size_bin),
             "time_bin": str(time_bin),
             "include_time": str(args.include_time).lower(),
         },

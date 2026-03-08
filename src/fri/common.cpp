@@ -311,19 +311,4 @@ std::vector<std::uint64_t> derive_unique_query_positions(
   return positions;
 }
 
-std::string estimate_breakdown_json(
-    const std::vector<std::string>& round_entries,
-    std::uint64_t final_polynomial_bytes) {
-  std::string json = "{\"rounds\":[";
-  for (std::size_t i = 0; i < round_entries.size(); ++i) {
-    if (i != 0) {
-      json += ",";
-    }
-    json += round_entries[i];
-  }
-  json += "],\"final_polynomial_bytes\":" + std::to_string(final_polynomial_bytes) +
-          "}";
-  return json;
-}
-
 }  // namespace swgr::fri

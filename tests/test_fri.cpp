@@ -7,7 +7,6 @@
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
 #include "fri/common.hpp"
-#include "fri/proof_size_estimator.hpp"
 #include "fri/prover.hpp"
 #include "fri/verifier.hpp"
 #include "poly_utils/polynomial.hpp"
@@ -22,6 +21,52 @@ using swgr::algebra::GRConfig;
 using swgr::algebra::GRContext;
 using swgr::algebra::GRElem;
 using swgr::poly_utils::Polynomial;
+
+std::uint64_t MerkleOpeningPayloadBytes(
+    const swgr::crypto::MerkleProof& proof) {
+  std::uint64_t bytes = 0;
+  for (const auto& payload : proof.leaf_payloads) {
+    bytes += static_cast<std::uint64_t>(payload.size());
+  }
+  for (const auto& sibling : proof.sibling_hashes) {
+    bytes += static_cast<std::uint64_t>(sibling.size());
+  }
+  return bytes;
+}
+
+std::uint64_t CompactFriBytes(const GRContext& ctx,
+                              const swgr::fri::FriProof& proof) {
+  std::uint64_t bytes = 0;
+  const std::size_t query_rounds =
+      proof.rounds.empty() ? 0 : proof.rounds.size() - 1U;
+  for (std::size_t round_index = 0;
+       round_index < query_rounds && round_index < proof.oracle_roots.size();
+       ++round_index) {
+    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
+    bytes += MerkleOpeningPayloadBytes(proof.rounds[round_index].oracle_proof);
+  }
+  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
+           static_cast<std::uint64_t>(ctx.elem_bytes());
+  return bytes;
+}
+
+std::uint64_t LegacyRawFriBytes(const GRContext& ctx,
+                                const swgr::fri::FriProof& proof) {
+  std::uint64_t bytes = 0;
+  for (const auto& oracle_root : proof.oracle_roots) {
+    bytes += static_cast<std::uint64_t>(oracle_root.size());
+  }
+  for (const auto& round : proof.rounds) {
+    bytes += static_cast<std::uint64_t>(round.oracle_evals.size()) *
+             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += static_cast<std::uint64_t>(round.query_positions.size()) *
+             sizeof(std::uint64_t);
+    bytes += MerkleOpeningPayloadBytes(round.oracle_proof);
+  }
+  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
+           static_cast<std::uint64_t>(ctx.elem_bytes());
+  return bytes;
+}
 
 Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
                             std::size_t coefficient_count) {
@@ -98,6 +143,8 @@ void TestFri3HonestRoundtripAndRoundShape() {
   CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[1].query_positions.size(), std::size_t{1});
   CHECK(proof.rounds[2].query_positions.empty());
+  CHECK_EQ(proof.stats.serialized_bytes, CompactFriBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, proof));
 }
 
 void TestFri3RejectsTamperedOpening() {
@@ -159,6 +206,8 @@ void TestFri9HonestRoundtripAndRoundShape() {
   CHECK_EQ(proof.rounds[1].domain_size, std::uint64_t{3});
   CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{2});
   CHECK(proof.rounds[1].query_positions.empty());
+  CHECK_EQ(proof.stats.serialized_bytes, CompactFriBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, proof));
 }
 
 void TestFri9RejectsTamperedOpening() {
@@ -196,11 +245,6 @@ void TestFriAutoScheduleMatchesConjectureCapacityDefault() {
   CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[1].query_positions.size(), std::size_t{1});
   CHECK(proof.rounds[2].query_positions.empty());
-
-  const swgr::fri::FriProofSizeEstimator estimator(auto_params);
-  const auto estimate = estimator.estimate(instance);
-  CHECK(estimate.round_breakdown_json.find("\"query_count\":2") !=
-        std::string::npos);
 }
 
 void TestFriManualQueriesOverrideAutoSchedule() {
@@ -228,64 +272,11 @@ void TestFriManualQueriesOverrideAutoSchedule() {
   CHECK_EQ(auto_proof.rounds[1].query_positions.size(), std::size_t{1});
   CHECK_EQ(manual_proof.rounds[0].query_positions.size(), std::size_t{1});
   CHECK_EQ(manual_proof.rounds[1].query_positions.size(), std::size_t{1});
-
-  const swgr::fri::FriProofSizeEstimator auto_estimator(auto_params);
-  const swgr::fri::FriProofSizeEstimator manual_estimator(manual_params);
-  const auto auto_estimate = auto_estimator.estimate(instance);
-  const auto manual_estimate = manual_estimator.estimate(instance);
-  CHECK(manual_estimate.argument_bytes < auto_estimate.argument_bytes);
-}
-
-void TestFri3EstimatorProducesStructuredOutput() {
-  testutil::PrintInfo("fri-3 estimator returns non-zero bytes, hashes, and json");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const swgr::fri::FriProofSizeEstimator estimator(MakeParams(3));
-  const auto estimate = estimator.estimate(instance);
-
-  CHECK(estimate.argument_bytes > 0);
-  CHECK(estimate.verifier_hashes > 0);
-  CHECK_EQ(estimate.transcript_challenge_count, std::uint64_t{5});
-  CHECK_EQ(
-      estimate.transcript_bytes_estimated,
-      static_cast<std::uint64_t>(2 * ctx.elem_bytes()) +
-          3U * static_cast<std::uint64_t>(sizeof(std::uint64_t)));
-  CHECK_EQ(estimate.pow_nonce_bytes, std::uint64_t{0});
-  CHECK(estimate.round_breakdown_json.find("\"rounds\"") != std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"final_polynomial_bytes\"") !=
-        std::string::npos);
-}
-
-void TestFri9EstimatorProducesStructuredOutput() {
-  testutil::PrintInfo("fri-9 estimator returns non-zero bytes, hashes, and json");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx, 27, 8);
-  auto params = MakeParams(9, {2});
-  params.pow_bits = 22;
-  const swgr::fri::FriProofSizeEstimator estimator(params);
-  const auto estimate = estimator.estimate(instance);
-
-  CHECK(estimate.argument_bytes > 0);
-  CHECK(estimate.verifier_hashes > 0);
-  CHECK_EQ(estimate.transcript_challenge_count, std::uint64_t{3});
-  CHECK_EQ(
-      estimate.transcript_bytes_estimated,
-      static_cast<std::uint64_t>(ctx.elem_bytes()) +
-          2U * static_cast<std::uint64_t>(sizeof(std::uint64_t)));
-  CHECK_EQ(estimate.pow_nonce_bytes,
-           static_cast<std::uint64_t>(sizeof(std::uint64_t)));
-  CHECK(estimate.round_breakdown_json.find("\"rounds\"") != std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"bundle_count\":3") !=
-        std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"final_polynomial_bytes\"") !=
-        std::string::npos);
 }
 
 void TestFriQueriesAreCappedToBundleCount() {
   testutil::PrintInfo(
-      "fri manual over-budget queries are capped and estimator reports cap_applied");
+      "fri manual over-budget queries are capped to the bundle count");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx, 27, 8);
@@ -299,15 +290,6 @@ void TestFriQueriesAreCappedToBundleCount() {
 
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{3});
-
-  const swgr::fri::FriProofSizeEstimator estimator(params);
-  const auto estimate = estimator.estimate(instance);
-  CHECK(estimate.round_breakdown_json.find("\"requested_query_count\":10") !=
-        std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"effective_query_count\":3") !=
-        std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"cap_applied\":true") !=
-        std::string::npos);
 }
 
 void TestBuildOracleLeavesMatchesBundleSerialization() {
@@ -384,8 +366,6 @@ int main() {
     RUN_TEST(TestFri9RejectsTamperedOpening);
     RUN_TEST(TestFriAutoScheduleMatchesConjectureCapacityDefault);
     RUN_TEST(TestFriManualQueriesOverrideAutoSchedule);
-    RUN_TEST(TestFri3EstimatorProducesStructuredOutput);
-    RUN_TEST(TestFri9EstimatorProducesStructuredOutput);
     RUN_TEST(TestFriQueriesAreCappedToBundleCount);
     RUN_TEST(TestBuildOracleLeavesMatchesBundleSerialization);
     RUN_TEST(TestFriValidationRejectsBadInputs);

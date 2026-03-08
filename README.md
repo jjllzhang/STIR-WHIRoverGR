@@ -5,7 +5,7 @@
 The public focus of this repository is:
 
 - algebra and domain infrastructure over Galois rings,
-- prototype prover / verifier / estimator paths for `FRI-3`, `FRI-9`, and `STIR(9->3)`,
+- prototype prover / verifier paths for `FRI-3`, `FRI-9`, and `STIR(9->3)`,
 - transcript, Merkle, multiproof, benchmark, and parameter-search tooling around those protocol experiments.
 
 This repository is **prototype / research code**. It is intended for protocol exploration, implementation experiments, and measurement. It should not be treated as production-ready or audited cryptographic software.
@@ -17,14 +17,13 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - Implements protocol helpers such as polynomials, interpolation, quotient polynomials, degree correction, and folding
 - Uses radix-3 `fft3` / `inverse_fft3` fast paths on `3-smooth` domains, including `rs_encode` / `rs_interpolate`
 - Implements `BLAKE3`, Fiat-Shamir transcript, Merkle tree, and pruned multiproof planning
-- Provides prover / verifier and proof-size estimator surfaces for `FRI-3`, `FRI-9`, and `STIR(9->3)`
-- Provides `bench_proof_size_estimate`, `bench_time`, preset-driven wrappers, and parameter-search scripts
+- Provides prover / verifier surfaces for `FRI-3`, `FRI-9`, and `STIR(9->3)`
+- Provides `bench_time`, preset-driven wrappers, and parameter-search scripts
 
 ## Current Limits
 
 - `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
 - `poly_utils::bs08` is still a placeholder interface
-- `bench_proof_size_estimate` reports a **protocol-level estimator**, not exact serialized proof bytes
 - Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
 
@@ -96,17 +95,7 @@ These tests cover:
 Inspect the benchmark CLIs:
 
 ```bash
-./build-release/bench_proof_size_estimate --help
 ./build-release/bench_time --help
-```
-
-Run the main proof-size workload:
-
-```bash
-./scripts/run_proof_size_estimator_from_preset.sh \
-  --preset bench/presets/main_benchmark_workload_gr216_r162.json \
-  --build-dir build-release \
-  --output results/main_benchmark_workload_gr216_r162_proof_size.csv
 ```
 
 Run the main timing workload:
@@ -134,8 +123,8 @@ Run parameter search:
 Benchmark notes:
 
 - For single-thread comparisons, pin both `OMP_NUM_THREADS=1` and `--threads 1`
-- `bench_time` is the end-to-end timing surface for prover / verifier / serialization behavior
-- `bench_proof_size_estimate` is the protocol-level proof-size estimation surface
+- `bench_time` is the end-to-end timing surface for prover / verifier behavior and compact proof-byte accounting
+- `serialized_bytes_actual` excludes transcript-derived metadata and redundant prover-only witness caches; it counts the compact proof payload carried by the current protocol surface
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 
 ## Preset Workloads

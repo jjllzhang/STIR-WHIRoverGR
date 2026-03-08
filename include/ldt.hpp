@@ -2,7 +2,6 @@
 #define SWGR_LDT_HPP_
 
 #include <cstdint>
-#include <string>
 
 namespace swgr {
 
@@ -28,15 +27,6 @@ struct ProofStatistics {
   double verifier_query_phase_ms = 0.0;
   double verifier_algebra_ms = 0.0;
   double verifier_total_ms = 0.0;
-};
-
-struct EstimateResult {
-  std::uint64_t argument_bytes = 0;
-  std::uint64_t verifier_hashes = 0;
-  std::uint64_t transcript_challenge_count = 0;
-  std::uint64_t transcript_bytes_estimated = 0;
-  std::uint64_t pow_nonce_bytes = 0;
-  std::string round_breakdown_json = "{}";
 };
 
 }  // namespace swgr

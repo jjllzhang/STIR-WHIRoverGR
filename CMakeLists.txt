@@ -51,12 +51,10 @@ set(STIR_OVER_GR_SOURCES
     src/fri/parameters.cpp
     src/fri/prover.cpp
     src/fri/verifier.cpp
-    src/fri/proof_size_estimator.cpp
     src/stir/common.cpp
     src/stir/parameters.cpp
     src/stir/prover.cpp
     src/stir/verifier.cpp
-    src/stir/proof_size_estimator.cpp
     src/whir/common.cpp
     src/whir/parameters.cpp
     src/whir/prover.cpp
@@ -176,9 +174,6 @@ if(SWGR_BUILD_TESTS)
 endif()
 
 if(SWGR_BUILD_BENCH)
-  add_executable(bench_proof_size_estimate bench/bench_proof_size_estimate.cpp)
-  target_link_libraries(bench_proof_size_estimate PRIVATE stir_over_gr)
-
   add_executable(bench_time bench/bench_time.cpp)
   target_link_libraries(bench_time PRIVATE stir_over_gr)
 endif()

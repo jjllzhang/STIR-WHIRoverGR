@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--metric",
         required=True,
-        help="Numeric CSV column to plot, e.g. estimated_argument_kib or prover_total_ms",
+        help="Numeric CSV column to plot, e.g. serialized_kib_actual or prover_total_ms",
     )
     parser.add_argument(
         "--x-axis",

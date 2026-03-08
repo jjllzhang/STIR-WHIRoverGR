@@ -25,6 +25,39 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
   return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
+std::uint64_t MerkleOpeningPayloadBytes(
+    const swgr::crypto::MerkleProof& proof) {
+  std::uint64_t bytes = 0;
+  for (const auto& payload : proof.leaf_payloads) {
+    bytes += static_cast<std::uint64_t>(payload.size());
+  }
+  for (const auto& sibling : proof.sibling_hashes) {
+    bytes += static_cast<std::uint64_t>(sibling.size());
+  }
+  return bytes;
+}
+
+std::uint64_t PolynomialPayloadBytes(const swgr::algebra::GRContext& ctx,
+                                     const swgr::poly_utils::Polynomial& poly) {
+  return static_cast<std::uint64_t>(poly.coefficients().size()) *
+         static_cast<std::uint64_t>(ctx.elem_bytes());
+}
+
+std::uint64_t CompactFriProofBytes(const swgr::algebra::GRContext& ctx,
+                                   const FriProof& proof) {
+  std::uint64_t bytes = 0;
+  const std::size_t query_rounds =
+      proof.rounds.empty() ? 0 : proof.rounds.size() - 1U;
+  for (std::size_t round_index = 0;
+       round_index < query_rounds && round_index < proof.oracle_roots.size();
+       ++round_index) {
+    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
+    bytes += MerkleOpeningPayloadBytes(proof.rounds[round_index].oracle_proof);
+  }
+  bytes += PolynomialPayloadBytes(ctx, proof.final_polynomial);
+  return bytes;
+}
+
 }  // namespace
 
 FriProver::FriProver(FriParameters params) : params_(std::move(params)) {}
@@ -133,27 +166,8 @@ FriProof FriProver::prove(
         "fri::FriProver::prove terminal polynomial violates degree bound");
   }
 
-  const std::uint64_t elem_bytes =
-      static_cast<std::uint64_t>(instance.domain.context().elem_bytes());
-  std::uint64_t serialized_bytes = 0;
-  for (const auto& oracle_root : proof.oracle_roots) {
-    serialized_bytes += static_cast<std::uint64_t>(oracle_root.size());
-  }
-  for (const auto& round : proof.rounds) {
-    serialized_bytes += static_cast<std::uint64_t>(round.oracle_evals.size()) *
-                        elem_bytes;
-    serialized_bytes += static_cast<std::uint64_t>(round.query_positions.size()) *
-                        sizeof(std::uint64_t);
-    for (const auto& payload : round.oracle_proof.leaf_payloads) {
-      serialized_bytes += static_cast<std::uint64_t>(payload.size());
-    }
-    for (const auto& sibling : round.oracle_proof.sibling_hashes) {
-      serialized_bytes += static_cast<std::uint64_t>(sibling.size());
-    }
-  }
-  serialized_bytes +=
-      static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
-      elem_bytes;
+  const std::uint64_t serialized_bytes =
+      CompactFriProofBytes(instance.domain.context(), proof);
 
   proof.stats.prover_rounds = static_cast<std::uint64_t>(fold_rounds);
   proof.stats.verifier_hashes = 0;

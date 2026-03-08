@@ -32,6 +32,41 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
   return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
+std::uint64_t MerkleOpeningPayloadBytes(
+    const swgr::crypto::MerkleProof& proof) {
+  std::uint64_t bytes = 0;
+  for (const auto& payload : proof.leaf_payloads) {
+    bytes += static_cast<std::uint64_t>(payload.size());
+  }
+  for (const auto& sibling : proof.sibling_hashes) {
+    bytes += static_cast<std::uint64_t>(sibling.size());
+  }
+  return bytes;
+}
+
+std::uint64_t PolynomialPayloadBytes(const swgr::algebra::GRContext& ctx,
+                                     const swgr::poly_utils::Polynomial& poly) {
+  return static_cast<std::uint64_t>(poly.coefficients().size()) *
+         static_cast<std::uint64_t>(ctx.elem_bytes());
+}
+
+std::uint64_t CompactStirProofBytes(const swgr::algebra::GRContext& ctx,
+                                    const StirProof& proof) {
+  std::uint64_t bytes = 0;
+  for (std::size_t round_index = 0;
+       round_index < proof.rounds.size() && round_index < proof.oracle_roots.size();
+       ++round_index) {
+    const auto& round = proof.rounds[round_index];
+    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
+    bytes += static_cast<std::uint64_t>(round.ood_answers.size()) *
+             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += PolynomialPayloadBytes(ctx, round.quotient_polynomial);
+    bytes += MerkleOpeningPayloadBytes(round.input_oracle_proof);
+    bytes += MerkleOpeningPayloadBytes(round.shift_oracle_proof);
+  }
+  return bytes;
+}
+
 }  // namespace
 
 StirProver::StirProver(StirParameters params) : params_(std::move(params)) {}
@@ -57,9 +92,6 @@ StirProof StirProver::prove(
 
   const std::size_t round_count = folding_round_count(instance, params_);
   const auto query_metadata = resolve_query_schedule_metadata(params_, instance);
-  const std::uint64_t elem_bytes =
-      static_cast<std::uint64_t>(ctx.elem_bytes());
-  std::uint64_t serialized_bytes = 0;
   const auto prover_start = std::chrono::steady_clock::now();
   double encode_ms = 0.0;
   double merkle_ms = 0.0;
@@ -237,40 +269,6 @@ StirProof StirProver::prove(
                                        std::chrono::steady_clock::now());
     }
 
-    serialized_bytes +=
-        static_cast<std::uint64_t>(round.shifted_oracle_evals.size()) * elem_bytes;
-    serialized_bytes +=
-        static_cast<std::uint64_t>(round.ood_answers.size() +
-                                   round.shift_query_answers.size()) *
-        elem_bytes;
-    serialized_bytes +=
-        static_cast<std::uint64_t>(round.answer_polynomial.coefficients().size() +
-                                   round.vanishing_polynomial.coefficients().size() +
-                                   round.quotient_polynomial.coefficients().size() +
-                                   round.next_polynomial.coefficients().size() +
-                                   round.input_polynomial.coefficients().size() +
-                                   round.folded_polynomial.coefficients().size()) *
-        elem_bytes;
-    serialized_bytes += static_cast<std::uint64_t>(oracle_root.size());
-    serialized_bytes +=
-        static_cast<std::uint64_t>(round.fold_query_positions.size()) *
-        sizeof(std::uint64_t);
-    serialized_bytes +=
-        static_cast<std::uint64_t>(round.shift_query_positions.size()) *
-        sizeof(std::uint64_t);
-    for (const auto& payload : round.input_oracle_proof.leaf_payloads) {
-      serialized_bytes += static_cast<std::uint64_t>(payload.size());
-    }
-    for (const auto& sibling : round.input_oracle_proof.sibling_hashes) {
-      serialized_bytes += static_cast<std::uint64_t>(sibling.size());
-    }
-    for (const auto& payload : round.shift_oracle_proof.leaf_payloads) {
-      serialized_bytes += static_cast<std::uint64_t>(payload.size());
-    }
-    for (const auto& sibling : round.shift_oracle_proof.sibling_hashes) {
-      serialized_bytes += static_cast<std::uint64_t>(sibling.size());
-    }
-
     proof.rounds.push_back(round);
     current_domain = shift_domain;
     current_degree_bound = proof.rounds.back().folded_degree_bound;
@@ -284,12 +282,8 @@ StirProof StirProver::prove(
     throw std::runtime_error(
         "stir::StirProver::prove terminal polynomial violates degree bound");
   }
-  serialized_bytes +=
-      static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
-      elem_bytes;
-
   proof.stats.prover_rounds = static_cast<std::uint64_t>(round_count);
-  proof.stats.serialized_bytes = serialized_bytes;
+  proof.stats.serialized_bytes = CompactStirProofBytes(ctx, proof);
   proof.stats.verifier_hashes = 0;
   for (const auto& round : proof.rounds) {
     proof.stats.verifier_hashes +=

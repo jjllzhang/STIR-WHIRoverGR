@@ -9,10 +9,8 @@
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
 #include "fri/common.hpp"
-#include "fri/proof_size_estimator.hpp"
 #include "poly_utils/interpolation.hpp"
 #include "poly_utils/polynomial.hpp"
-#include "stir/proof_size_estimator.hpp"
 #include "stir/prover.hpp"
 #include "stir/verifier.hpp"
 #include "tests/test_common.hpp"
@@ -26,6 +24,68 @@ using swgr::algebra::GRConfig;
 using swgr::algebra::GRContext;
 using swgr::algebra::GRElem;
 using swgr::poly_utils::Polynomial;
+
+std::uint64_t MerkleOpeningPayloadBytes(
+    const swgr::crypto::MerkleProof& proof) {
+  std::uint64_t bytes = 0;
+  for (const auto& payload : proof.leaf_payloads) {
+    bytes += static_cast<std::uint64_t>(payload.size());
+  }
+  for (const auto& sibling : proof.sibling_hashes) {
+    bytes += static_cast<std::uint64_t>(sibling.size());
+  }
+  return bytes;
+}
+
+std::uint64_t CompactStirBytes(const GRContext& ctx,
+                               const swgr::stir::StirProof& proof) {
+  std::uint64_t bytes = 0;
+  for (std::size_t round_index = 0;
+       round_index < proof.rounds.size() && round_index < proof.oracle_roots.size();
+       ++round_index) {
+    const auto& round = proof.rounds[round_index];
+    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
+    bytes += static_cast<std::uint64_t>(round.ood_answers.size()) *
+             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += static_cast<std::uint64_t>(round.quotient_polynomial.coefficients().size()) *
+             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += MerkleOpeningPayloadBytes(round.input_oracle_proof);
+    bytes += MerkleOpeningPayloadBytes(round.shift_oracle_proof);
+  }
+  return bytes;
+}
+
+std::uint64_t LegacyRawStirBytes(const GRContext& ctx,
+                                 const swgr::stir::StirProof& proof) {
+  std::uint64_t bytes = 0;
+  for (std::size_t round_index = 0;
+       round_index < proof.rounds.size() && round_index < proof.oracle_roots.size();
+       ++round_index) {
+    const auto& round = proof.rounds[round_index];
+    bytes += static_cast<std::uint64_t>(round.shifted_oracle_evals.size()) *
+             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += static_cast<std::uint64_t>(round.ood_answers.size() +
+                                        round.shift_query_answers.size()) *
+             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += static_cast<std::uint64_t>(round.answer_polynomial.coefficients().size() +
+                                        round.vanishing_polynomial.coefficients().size() +
+                                        round.quotient_polynomial.coefficients().size() +
+                                        round.next_polynomial.coefficients().size() +
+                                        round.input_polynomial.coefficients().size() +
+                                        round.folded_polynomial.coefficients().size()) *
+             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
+    bytes += static_cast<std::uint64_t>(round.fold_query_positions.size()) *
+             sizeof(std::uint64_t);
+    bytes += static_cast<std::uint64_t>(round.shift_query_positions.size()) *
+             sizeof(std::uint64_t);
+    bytes += MerkleOpeningPayloadBytes(round.input_oracle_proof);
+    bytes += MerkleOpeningPayloadBytes(round.shift_oracle_proof);
+  }
+  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
+           static_cast<std::uint64_t>(ctx.elem_bytes());
+  return bytes;
+}
 
 Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
                             std::size_t coefficient_count) {
@@ -123,6 +183,8 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
   CHECK(proof.final_polynomial.degree() <= params.stop_degree);
   CHECK_EQ(proof.final_polynomial.coefficients(),
            proof.rounds[0].next_polynomial.coefficients());
+  CHECK_EQ(proof.stats.serialized_bytes, CompactStirBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, proof));
 }
 
 void TestStirMultiRoundCachesNextRoundInputOracle() {
@@ -143,6 +205,8 @@ void TestStirMultiRoundCachesNextRoundInputOracle() {
   CHECK(verifier.verify(instance, proof));
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
+  CHECK_EQ(proof.stats.serialized_bytes, CompactStirBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, proof));
   ctx.with_ntl_context([&] {
     CHECK_EQ(proof.rounds[1].input_polynomial.coefficients(),
              proof.rounds[0].next_polynomial.coefficients());
@@ -186,11 +250,6 @@ void TestStirAutoScheduleMatchesConjectureCapacityDefault() {
   CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[1].fold_query_positions.size(), std::size_t{1});
   CHECK_EQ(proof.rounds[1].shift_query_positions.size(), std::size_t{1});
-
-  const swgr::stir::StirProofSizeEstimator estimator(auto_params);
-  const auto estimate = estimator.estimate(instance);
-  CHECK(estimate.round_breakdown_json.find("\"query_count\":2") !=
-        std::string::npos);
 }
 
 void TestStirManualQueriesOverrideAutoSchedule() {
@@ -225,15 +284,6 @@ void TestStirManualQueriesOverrideAutoSchedule() {
   CHECK_EQ(manual_proof.rounds[0].shift_query_positions.size(), std::size_t{1});
   CHECK_EQ(manual_proof.rounds[1].fold_query_positions.size(), std::size_t{1});
   CHECK_EQ(manual_proof.rounds[1].shift_query_positions.size(), std::size_t{1});
-
-  const swgr::stir::StirProofSizeEstimator auto_estimator(auto_params);
-  const swgr::stir::StirProofSizeEstimator manual_estimator(manual_params);
-  const auto auto_estimate = auto_estimator.estimate(instance);
-  const auto manual_estimate = manual_estimator.estimate(instance);
-  CHECK(auto_estimate.round_breakdown_json.find("\"requested_query_count\":2") !=
-        std::string::npos);
-  CHECK(manual_estimate.round_breakdown_json.find("\"requested_query_count\":1") !=
-        std::string::npos);
 }
 
 void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
@@ -261,17 +311,6 @@ void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
   CHECK_EQ(proof.rounds.size(), std::size_t{1});
   CHECK_EQ(proof.rounds[0].fold_query_positions.size(), std::size_t{1});
   CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{1});
-
-  const swgr::stir::StirProofSizeEstimator estimator(params);
-  const auto estimate = estimator.estimate(instance);
-  CHECK(estimate.round_breakdown_json.find("\"requested_query_count\":10") !=
-        std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"effective_query_count\":1") !=
-        std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"bundle_count\":3") !=
-        std::string::npos);
-  CHECK(estimate.round_breakdown_json.find("\"cap_applied\":true") !=
-        std::string::npos);
 }
 
 void TestStirRejectsTamperedShiftedOracle() {
@@ -325,53 +364,6 @@ void TestStirRejectsTamperedDegreeCorrection() {
   CHECK(!verifier.verify(instance, proof));
 }
 
-void TestStirEstimatorProducesStructuredOutput() {
-  testutil::PrintInfo(
-      "stir estimator returns non-zero bytes, hashes, and no-fill breakdown");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx);
-  auto params = MakeParams();
-  params.pow_bits = 22;
-
-  const swgr::stir::StirProofSizeEstimator stir_estimator(params);
-  const auto stir_estimate = stir_estimator.estimate(instance);
-
-  swgr::fri::FriParameters fri_params;
-  fri_params.fold_factor = 9;
-  fri_params.stop_degree = params.stop_degree;
-  fri_params.query_repetitions = params.query_repetitions;
-  fri_params.lambda_target = params.lambda_target;
-  fri_params.pow_bits = params.pow_bits;
-  fri_params.sec_mode = params.sec_mode;
-  fri_params.hash_profile = params.hash_profile;
-  const swgr::fri::FriInstance fri_instance{
-      .domain = instance.domain,
-      .claimed_degree = instance.claimed_degree,
-  };
-  const swgr::fri::FriProofSizeEstimator fri_estimator(fri_params);
-  const auto fri_estimate = fri_estimator.estimate(fri_instance);
-
-  CHECK(stir_estimate.argument_bytes > 0);
-  CHECK(stir_estimate.verifier_hashes > 0);
-  CHECK_EQ(stir_estimate.transcript_challenge_count, std::uint64_t{6});
-  CHECK_EQ(
-      stir_estimate.transcript_bytes_estimated,
-      2U * static_cast<std::uint64_t>(ctx.elem_bytes()) +
-          4U * static_cast<std::uint64_t>(sizeof(std::uint64_t)));
-  CHECK_EQ(stir_estimate.pow_nonce_bytes,
-           static_cast<std::uint64_t>(sizeof(std::uint64_t)));
-  CHECK(stir_estimate.round_breakdown_json.find("\"rounds\"") !=
-        std::string::npos);
-  CHECK(stir_estimate.round_breakdown_json.find("\"fill_used\":false") !=
-        std::string::npos);
-  CHECK(stir_estimate.round_breakdown_json.find("\"final_polynomial_bytes\"") !=
-        std::string::npos);
-  CHECK(fri_estimate.argument_bytes > 0);
-  CHECK_EQ(fri_estimate.pow_nonce_bytes,
-           static_cast<std::uint64_t>(sizeof(std::uint64_t)));
-}
-
 void TestStirValidationRejectsBadInputs() {
   testutil::PrintInfo(
       "stir validation rejects bad parameters and accepts safely capped schedules");
@@ -418,7 +410,6 @@ int main() {
     RUN_TEST(TestStirRejectsTamperedShiftedOracle);
     RUN_TEST(TestStirRejectsTamperedOodAnswer);
     RUN_TEST(TestStirRejectsTamperedDegreeCorrection);
-    RUN_TEST(TestStirEstimatorProducesStructuredOutput);
     RUN_TEST(TestStirValidationRejectsBadInputs);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
