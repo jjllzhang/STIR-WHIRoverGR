@@ -12,13 +12,16 @@ class FriProver {
 
   FriCommitment commit(const FriInstance& instance,
                        const swgr::poly_utils::Polynomial& polynomial) const;
-  FriOpeningArtifact open(const FriCommitment& commitment,
-                         const swgr::poly_utils::Polynomial& polynomial,
-                         const swgr::algebra::GRElem& alpha) const;
+  FriOpening open(const FriCommitment& commitment,
+                  const swgr::poly_utils::Polynomial& polynomial,
+                  const swgr::algebra::GRElem& alpha) const;
+  FriOpeningArtifact open_with_witness(
+      const FriCommitment& commitment,
+      const swgr::poly_utils::Polynomial& polynomial,
+      const swgr::algebra::GRElem& alpha) const;
 
-  FriProofWithWitness prove(
-      const FriInstance& instance,
-      const swgr::poly_utils::Polynomial& polynomial) const;
+  FriProof prove(const FriInstance& instance,
+                 const swgr::poly_utils::Polynomial& polynomial) const;
   FriProofWithWitness prove_with_witness(
       const FriInstance& instance,
       const swgr::poly_utils::Polynomial& polynomial) const;

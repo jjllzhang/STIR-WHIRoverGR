@@ -32,16 +32,7 @@ struct FriOpeningClaim {
   swgr::algebra::GRElem value;
 };
 
-struct FriRoundState {
-  std::uint64_t round_index = 0;
-  std::uint64_t fold_factor = 0;
-};
-
 struct FriRoundProof {
-  std::uint64_t round_index = 0;
-  std::uint64_t domain_size = 0;
-  swgr::algebra::GRElem folding_alpha;
-  std::vector<std::uint64_t> query_positions;
   swgr::crypto::MerkleProof oracle_proof;
 };
 
@@ -66,6 +57,7 @@ struct FriProofWithWitness {
 };
 
 struct FriOpeningProof {
+  swgr::crypto::MerkleProof committed_oracle_proof;
   FriProof quotient_proof;
   swgr::ProofStatistics stats;
 };

@@ -164,13 +164,13 @@
 **建议 API 形态**
 
 - [x] `commit(instance, polynomial) -> commitment`
-- [x] `open(commitment, polynomial, alpha) -> FriOpeningArtifact{ opening={ claim, proof }, witness }`
-- [x] `verify(commitment, alpha, value, artifact) -> bool`
+- [x] `open(commitment, polynomial, alpha) -> FriOpening`
+- [x] `verify(commitment, alpha, value, opening) -> bool`
 
 **Phase 2 当前落地说明**
 
 - [x] `FriCommitment` 固定承诺 `f|L` 的单点 oracle root，不再复用 FRI 轮内 bundle 语义
-- [x] `FriOpening` 只承载 `{ alpha, value, proof }`；过渡期兼容层显式命名为 `FriOpeningArtifact`
+- [x] `FriOpening` 只承载 `{ alpha, value, proof }`；`FriOpeningArtifact` 只保留内部 / compat 用途
 - [x] `opening_instance(commitment)` 将 quotient degree bound 设为 `degree_bound - 1`
 - [x] `bench_time` 的 FRI PCS 行按 `rho' = d / |L|` 计算 soundness metadata
 
@@ -204,18 +204,17 @@
 
 **任务**
 
-- [ ] 重写 FRI prover 的每轮输出，只发送被 query 的 bundle payload + multiproof
-- [ ] verifier 不再重建整轮 oracle tree
-- [ ] verifier 只使用 queried bundle 检查 folding consistency
-- [ ] 终轮不再要求整轮 `oracle_evals` 显式出现在 proof 里
-- [ ] 明确终轮是：
-  - [ ] 直接发送 `final_polynomial`
-  - [ ] 还是发送终轮 opening 并由 verifier 做有限检查
-- [ ] 清理 `FriRoundProof` 中不应显式发送的 transcript-derived 字段
+- [x] 重写 FRI prover 的每轮输出，只发送被 query 的 bundle payload + multiproof
+- [x] verifier 不再重建整轮 oracle tree
+- [x] verifier 只使用 queried bundle 检查 folding consistency
+- [x] 终轮不再要求整轮 `oracle_evals` 显式出现在 proof 里
+- [x] 终轮改为 `final_polynomial + terminal sparse opening` 收尾
+- [x] 清理 `FriRoundProof` 中不应显式发送的 transcript-derived 字段
 
 **特别注意**
 
-- 当前 `query_positions` 和 `folding_alpha` 虽然还在 proof 结构体里，但它们本质上应由 transcript 派生；最终版应该从“发出去的 proof 字段”里剥离
+- `query_positions` 和 `folding_alpha` 已从对外 `FriRoundProof` 中剥离；verifier 现阶段完全依赖 transcript 重放这些值
+- PCS 首轮 quotient oracle 不再作为 committed full table 发送；verifier 通过 commitment 下的 `f(β)` sparse openings 现场计算 `g(β) = (f(β)-v)/(β-α)`
 
 **建议涉及文件**
 
@@ -227,9 +226,9 @@
 
 **验收标准**
 
-- [ ] `FriProof` 不再包含整轮 `oracle_evals`
-- [ ] verifier 不再需要整轮表就能完成验证
-- [ ] honest / tamper regression 仍全部通过
+- [x] `FriProof` 不再包含整轮 `oracle_evals`
+- [x] verifier 不再需要整轮表就能完成验证
+- [x] honest / tamper regression 仍全部通过
 
 ---
 
@@ -370,17 +369,17 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 | --- | --- | --- | --- | --- |
 | Phase 0 基线护栏 | DONE | Codex | 2026-03-09 | verifier 依赖点、tamper 护栏、README 边界已落地 |
 | Phase 1 proof/witness 分层 | DONE | Codex | 2026-03-09 | external proof 已瘦身，compat carrier 保留旧 verifier 所需 witness |
-| Phase 2 PCS commit/open | DONE | Codex | 2026-03-09 | FRI 已具备 `commit/open/verify` PCS 表面；`FriOpeningArtifact` 显式承载过渡期 witness，FRI benchmark 已切到 PCS 路径 |
-| Phase 3 sparse-opening FRI verifier | TODO |  |  |  |
+| Phase 2 PCS commit/open | DONE | Codex | 2026-03-09 | FRI 已具备 `commit/open/verify` PCS 表面；`FriOpeningArtifact` 已降级为内部 / compat 层，FRI benchmark 已切到 PCS 路径 |
+| Phase 3 sparse-opening FRI verifier | DONE | Codex | 2026-03-09 | public `FriOpening` / `FriProof` 已改成 sparse-opening external proof；verifier 只依赖 roots + sparse openings + `final_polynomial` |
 | Phase 4 exact proof bytes | TODO |  |  |  |
 | Phase 5 STIR proof 瘦身 | TODO |  |  |  |
 | Phase 6 参数与文档回收 | TODO |  |  |  |
 
 ## 11. 下一步建议
 
-最合理的下一步不是直接碰 STIR，而是：
+最合理的下一步不是继续回头碰 FRI proof 形状，而是：
 
-- 先执行 **Phase 3**
-- 目标是把 FRI verifier 从 `FriOpeningArtifact` / `FriProofWithWitness` 过渡到真正的 sparse-opening verifier
+- 先执行 **Phase 4**
+- 目标是把 `serialized_bytes_actual` 和真实 external proof 的确定性编码彻底对齐
 
-只有这一步完成，`FriOpening` 才会变成真正可单独发送的外部 proof，而不是当前的 compat artifact 外壳。
+只有这一步完成，benchmark 的 proof-size 才会完全对应当前已经落地的 sparse-opening public proof object。

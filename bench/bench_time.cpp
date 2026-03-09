@@ -827,20 +827,20 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
                             prover.open(commitment, polynomial, ctx->zero());
                         const double prover_total_ms = ElapsedMilliseconds(
                             prover_start, std::chrono::steady_clock::now());
-                        const auto& proof = opening.opening.proof.quotient_proof;
+                        const auto& proof = opening.proof.quotient_proof;
                         swgr::ProofStatistics verify_stats;
-                        if (!verifier.verify(commitment, opening.opening.claim.alpha,
-                                             opening.opening.claim.value, opening,
+                        if (!verifier.verify(commitment, opening.claim.alpha,
+                                             opening.claim.value, opening,
                                              &verify_stats)) {
                           throw std::runtime_error("fri verifier rejected honest proof");
                         }
                         if (current_row != nullptr) {
-                          auto prover_stats = opening.opening.proof.stats;
+                          auto prover_stats = opening.proof.stats;
                           prover_stats.commit_ms += commit_ms;
                           prover_stats.prover_total_ms = prover_total_ms;
                           AddRunStats(*current_row, prover_stats, verify_stats);
                           current_row->verifier_hashes_actual =
-                              proof.stats.verifier_hashes;
+                              opening.proof.stats.verifier_hashes;
                         }
                       });
   FillSoundnessMetadata(row, options.sec_mode, options.lambda_target,
