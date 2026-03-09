@@ -24,6 +24,7 @@ This repository is **prototype / research code**. It is intended for protocol ex
 
 - `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
 - `FRI-3`, `FRI-9`, and `STIR(9->3)` still use prototype-heavy verifiers that depend on full or reconstructed witness material; they should not be described as theorem-4.1-complete FRI-based PCS verifiers
+- During the current Phase 1 transition, `fri::FriProver::prove()` and `stir::StirProver::prove()` return a compatibility carrier `{ proof, witness }`; the slim external proof object lives in `artifact.proof`
 - `poly_utils::bs08` is still a placeholder interface
 - Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims

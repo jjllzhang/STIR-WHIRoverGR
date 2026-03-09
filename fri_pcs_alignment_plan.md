@@ -104,26 +104,27 @@
 
 **任务**
 
-- [ ] 为 FRI 定义内部 `FriRoundWitness` / 外部 `FriRoundProof`
-- [ ] 为 STIR 定义内部 `StirRoundWitness` / 外部 `StirRoundProof`
-- [ ] 把目前仅供 prover 内部使用的字段从“对外 proof 结构体”中搬到内部 witness
-- [ ] 暂时允许 prover 在内部仍保留完整 oracle / polynomial，以保证重构时功能不丢
-- [ ] verifier 先保留旧逻辑，但改为显式从“内部兼容层”读取，而不是默认所有字段都是 public proof 字段
+- [x] 为 FRI 定义内部 `FriRoundWitness` / 外部 `FriRoundProof`
+- [x] 为 STIR 定义内部 `StirRoundWitness` / 外部 `StirRoundProof`
+- [x] 把目前仅供 prover 内部使用的字段从“对外 proof 结构体”中搬到内部 witness
+- [x] 暂时允许 prover 在内部仍保留完整 oracle / polynomial，以保证重构时功能不丢
+- [x] verifier 先保留旧逻辑，但改为显式从“内部兼容层”读取，而不是默认所有字段都是 public proof 字段
 
 **FRI 预计要迁出的字段**
 
-- [ ] `oracle_evals`
-- [ ] 终轮整轮 evaluation table
+- [x] `oracle_evals`
+- [x] 终轮整轮 evaluation table
 
 **STIR 预计要迁出的字段**
 
-- [ ] `input_polynomial`
-- [ ] `folded_polynomial`
-- [ ] `shifted_oracle_evals`
-- [ ] `answer_polynomial`
-- [ ] `vanishing_polynomial`
-- [ ] `next_polynomial`
-- [ ] 其他只为重算方便保留的中间 witness
+- [x] `input_polynomial`
+- [x] `folded_polynomial`
+- [x] `shifted_oracle_evals`
+- [x] `answer_polynomial`
+- [x] `vanishing_polynomial`
+- [x] `quotient_polynomial`
+- [x] `next_polynomial`
+- [x] 其他只为重算方便保留的中间 witness
 
 **建议涉及文件**
 
@@ -136,8 +137,8 @@
 
 **验收标准**
 
-- [ ] 对外 proof 结构体只包含“理论上应发送给 verifier”的字段
-- [ ] 内部 witness 仍能支持当前实现平滑过渡
+- [x] 对外 proof 结构体只包含“理论上应发送给 verifier”的字段
+- [x] 内部 witness 仍能支持当前实现平滑过渡
 
 ---
 
@@ -361,7 +362,7 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 | 阶段 | 状态 | 负责人 | 最近更新 | 备注 |
 | --- | --- | --- | --- | --- |
 | Phase 0 基线护栏 | DONE | Codex | 2026-03-09 | verifier 依赖点、tamper 护栏、README 边界已落地 |
-| Phase 1 proof/witness 分层 | TODO |  |  |  |
+| Phase 1 proof/witness 分层 | DONE | Codex | 2026-03-09 | external proof 已瘦身，compat carrier 保留旧 verifier 所需 witness |
 | Phase 2 PCS commit/open | TODO |  |  |  |
 | Phase 3 sparse-opening FRI verifier | TODO |  |  |  |
 | Phase 4 exact proof bytes | TODO |  |  |  |

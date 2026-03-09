@@ -10,7 +10,7 @@ class FriVerifier {
  public:
   explicit FriVerifier(FriParameters params);
 
-  bool verify(const FriInstance& instance, const FriProof& proof,
+  bool verify(const FriInstance& instance, const FriProofWithWitness& artifact,
               swgr::ProofStatistics* stats = nullptr) const;
 
  private:

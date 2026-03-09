@@ -51,13 +51,16 @@ std::uint64_t CompactFriBytes(const GRContext& ctx,
 }
 
 std::uint64_t LegacyRawFriBytes(const GRContext& ctx,
-                                const swgr::fri::FriProof& proof) {
+                                const swgr::fri::FriProofWithWitness& artifact) {
+  const auto& proof = artifact.proof;
   std::uint64_t bytes = 0;
   for (const auto& oracle_root : proof.oracle_roots) {
     bytes += static_cast<std::uint64_t>(oracle_root.size());
   }
-  for (const auto& round : proof.rounds) {
-    bytes += static_cast<std::uint64_t>(round.oracle_evals.size()) *
+  for (std::size_t round_index = 0; round_index < proof.rounds.size(); ++round_index) {
+    const auto& round = proof.rounds[round_index];
+    const auto& round_witness = artifact.witness.rounds[round_index];
+    bytes += static_cast<std::uint64_t>(round_witness.oracle_evals.size()) *
              static_cast<std::uint64_t>(ctx.elem_bytes());
     bytes += static_cast<std::uint64_t>(round.query_positions.size()) *
              sizeof(std::uint64_t);
@@ -113,25 +116,29 @@ swgr::fri::FriInstance MakeInstance(const GRContext& ctx,
   };
 }
 
-void TamperFirstQueriedOpening(const GRContext& ctx, swgr::fri::FriProof& proof) {
-  const std::uint64_t index = proof.rounds[0].query_positions.front();
+void TamperFirstQueriedOpening(const GRContext& ctx,
+                               swgr::fri::FriProofWithWitness& artifact) {
+  const std::uint64_t index = artifact.proof.rounds[0].query_positions.front();
   ctx.with_ntl_context([&] {
-    proof.rounds[0].oracle_evals[static_cast<std::size_t>(index)] += ctx.one();
+    artifact.witness.rounds[0].oracle_evals[static_cast<std::size_t>(index)] +=
+        ctx.one();
     return 0;
   });
 }
 
-void TamperTerminalOracleTable(const GRContext& ctx, swgr::fri::FriProof& proof) {
+void TamperTerminalOracleTable(const GRContext& ctx,
+                               swgr::fri::FriProofWithWitness& artifact) {
   ctx.with_ntl_context([&] {
-    proof.rounds.back().oracle_evals[0] += ctx.one();
+    artifact.witness.rounds.back().oracle_evals[0] += ctx.one();
     return 0;
   });
 }
 
-// Phase 0 baseline: FRI still exposes full `oracle_evals` tables in the proof,
-// and the verifier consumes them for queried bundles and the terminal table.
-// TODO(fri-phase1-proof-thinning): replace these guards with sparse-opening
-// checks once `FriRoundWitness` and a slimmer external proof are introduced.
+// Phase 1 baseline: the public `FriProof` is slimmed, while the temporary
+// compatibility carrier still holds the full oracle tables needed by the
+// current verifier.
+// TODO(fri-phase3-sparse-verifier): drop the witness carrier once the verifier
+// only consumes sparse openings and the terminal polynomial.
 void TestFri3HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
       "fri-3 honest prover/verifier passes and round sizes shrink 9 -> 3 -> 1");
@@ -143,9 +150,10 @@ void TestFri3HonestRoundtripAndRoundShape() {
 
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove(instance, polynomial);
+  const auto& proof = artifact.proof;
 
-  CHECK(verifier.verify(instance, proof));
+  CHECK(verifier.verify(instance, artifact));
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
   CHECK_EQ(proof.rounds.size(), std::size_t{3});
   CHECK_EQ(proof.rounds[0].domain_size, std::uint64_t{9});
@@ -155,7 +163,7 @@ void TestFri3HonestRoundtripAndRoundShape() {
   CHECK_EQ(proof.rounds[1].query_positions.size(), std::size_t{1});
   CHECK(proof.rounds[2].query_positions.empty());
   CHECK_EQ(proof.stats.serialized_bytes, CompactFriBytes(ctx, proof));
-  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, artifact));
 }
 
 void TestFri3RejectsTamperedOpening() {
@@ -168,11 +176,11 @@ void TestFri3RejectsTamperedOpening() {
 
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperFirstQueriedOpening(ctx, proof);
+  TamperFirstQueriedOpening(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestFri3RejectsTamperedFinalPolynomial() {
@@ -185,16 +193,16 @@ void TestFri3RejectsTamperedFinalPolynomial() {
 
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
   ctx.with_ntl_context([&] {
-    auto coefficients = proof.final_polynomial.coefficients();
+    auto coefficients = artifact.proof.final_polynomial.coefficients();
     coefficients[0] += ctx.one();
-    proof.final_polynomial = Polynomial(std::move(coefficients));
+    artifact.proof.final_polynomial = Polynomial(std::move(coefficients));
     return 0;
   });
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestFri3RejectsTamperedTerminalOracleTable() {
@@ -207,16 +215,16 @@ void TestFri3RejectsTamperedTerminalOracleTable() {
 
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperTerminalOracleTable(ctx, proof);
+  TamperTerminalOracleTable(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
-// TODO(fri-phase1-proof-thinning): keep the schedule and helper coverage below
-// when slimming the proof, but rewrite them against the future external proof
-// object instead of the current round-witness-shaped struct.
+// TODO(fri-phase3-sparse-verifier): keep the schedule and helper coverage
+// below, but retarget the tamper cases to external proof data only once the
+// witness carrier disappears.
 void TestFri9HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
       "fri-9 honest prover/verifier passes and round sizes shrink 27 -> 3");
@@ -228,9 +236,10 @@ void TestFri9HonestRoundtripAndRoundShape() {
 
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove(instance, polynomial);
+  const auto& proof = artifact.proof;
 
-  CHECK(verifier.verify(instance, proof));
+  CHECK(verifier.verify(instance, artifact));
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{1});
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[0].domain_size, std::uint64_t{27});
@@ -238,7 +247,7 @@ void TestFri9HonestRoundtripAndRoundShape() {
   CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{2});
   CHECK(proof.rounds[1].query_positions.empty());
   CHECK_EQ(proof.stats.serialized_bytes, CompactFriBytes(ctx, proof));
-  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, artifact));
 }
 
 void TestFri9RejectsTamperedOpening() {
@@ -251,11 +260,11 @@ void TestFri9RejectsTamperedOpening() {
 
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperFirstQueriedOpening(ctx, proof);
+  TamperFirstQueriedOpening(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestFriAutoScheduleMatchesConjectureCapacityDefault() {
@@ -269,9 +278,10 @@ void TestFriAutoScheduleMatchesConjectureCapacityDefault() {
 
   const swgr::fri::FriProver prover(auto_params);
   const swgr::fri::FriVerifier verifier(auto_params);
-  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove(instance, polynomial);
+  const auto& proof = artifact.proof;
 
-  CHECK(verifier.verify(instance, proof));
+  CHECK(verifier.verify(instance, artifact));
   CHECK_EQ(proof.rounds.size(), std::size_t{3});
   CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[1].query_positions.size(), std::size_t{1});
@@ -291,14 +301,17 @@ void TestFriManualQueriesOverrideAutoSchedule() {
 
   const swgr::fri::FriProver auto_prover(auto_params);
   const swgr::fri::FriVerifier auto_verifier(auto_params);
-  const auto auto_proof = auto_prover.prove(instance, polynomial);
+  const auto auto_artifact = auto_prover.prove(instance, polynomial);
 
   const swgr::fri::FriProver manual_prover(manual_params);
   const swgr::fri::FriVerifier manual_verifier(manual_params);
-  const auto manual_proof = manual_prover.prove(instance, polynomial);
+  const auto manual_artifact = manual_prover.prove(instance, polynomial);
 
-  CHECK(auto_verifier.verify(instance, auto_proof));
-  CHECK(manual_verifier.verify(instance, manual_proof));
+  const auto& auto_proof = auto_artifact.proof;
+  const auto& manual_proof = manual_artifact.proof;
+
+  CHECK(auto_verifier.verify(instance, auto_artifact));
+  CHECK(manual_verifier.verify(instance, manual_artifact));
   CHECK_EQ(auto_proof.rounds[0].query_positions.size(), std::size_t{2});
   CHECK_EQ(auto_proof.rounds[1].query_positions.size(), std::size_t{1});
   CHECK_EQ(manual_proof.rounds[0].query_positions.size(), std::size_t{1});
@@ -316,11 +329,11 @@ void TestFriQueriesAreCappedToBundleCount() {
 
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
-  CHECK(verifier.verify(instance, proof));
+  const auto artifact = prover.prove(instance, polynomial);
+  CHECK(verifier.verify(instance, artifact));
 
-  CHECK_EQ(proof.rounds.size(), std::size_t{2});
-  CHECK_EQ(proof.rounds[0].query_positions.size(), std::size_t{3});
+  CHECK_EQ(artifact.proof.rounds.size(), std::size_t{2});
+  CHECK_EQ(artifact.proof.rounds[0].query_positions.size(), std::size_t{3});
 }
 
 void TestBuildOracleLeavesMatchesBundleSerialization() {

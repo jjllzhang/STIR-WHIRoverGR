@@ -62,7 +62,13 @@ std::uint64_t CompactFriProofBytes(const swgr::algebra::GRContext& ctx,
 
 FriProver::FriProver(FriParameters params) : params_(std::move(params)) {}
 
-FriProof FriProver::prove(
+FriProofWithWitness FriProver::prove(
+    const FriInstance& instance,
+    const swgr::poly_utils::Polynomial& polynomial) const {
+  return prove_with_witness(instance, polynomial);
+}
+
+FriProofWithWitness FriProver::prove_with_witness(
     const FriInstance& instance,
     const swgr::poly_utils::Polynomial& polynomial) const {
   if (!validate(params_, instance)) {
@@ -73,7 +79,9 @@ FriProof FriProver::prove(
         "fri::FriProver::prove polynomial exceeds claimed degree");
   }
 
-  FriProof proof;
+  FriProofWithWitness artifact;
+  auto& proof = artifact.proof;
+  auto& witness = artifact.witness;
   swgr::crypto::Transcript transcript(params_.hash_profile);
   Domain current_domain = instance.domain;
   std::uint64_t current_degree = instance.claimed_degree;
@@ -99,15 +107,16 @@ FriProof FriProver::prove(
 
   for (std::size_t round_index = 0; round_index < fold_rounds; ++round_index) {
     FriRoundProof round;
+    FriRoundWitness round_witness;
     round.round_index = static_cast<std::uint64_t>(round_index);
     round.domain_size = current_domain.size();
-    round.oracle_evals = current_oracle;
+    round_witness.oracle_evals = current_oracle;
 
     const auto commit_start = std::chrono::steady_clock::now();
     const auto merkle_start = std::chrono::steady_clock::now();
     const auto oracle_tree =
         build_oracle_tree(params_.hash_profile, current_domain.context(),
-                          round.oracle_evals, params_.fold_factor);
+                          round_witness.oracle_evals, params_.fold_factor);
     merkle_ms += ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
     const auto oracle_commitment = oracle_tree.root();
     const auto transcript_start = std::chrono::steady_clock::now();
@@ -132,34 +141,37 @@ FriProof FriProver::prove(
 
     proof.oracle_roots.push_back(oracle_commitment);
     proof.rounds.push_back(round);
+    witness.rounds.push_back(std::move(round_witness));
 
     const auto fold_start = std::chrono::steady_clock::now();
     current_oracle = swgr::poly_utils::fold_table_k(
         current_domain, current_oracle, params_.fold_factor,
-        round.folding_alpha);
+        proof.rounds.back().folding_alpha);
     fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
     current_domain = current_domain.pow_map(params_.fold_factor);
     current_degree /= params_.fold_factor;
   }
 
   FriRoundProof final_round;
+  FriRoundWitness final_round_witness;
   final_round.round_index = static_cast<std::uint64_t>(fold_rounds);
   final_round.domain_size = current_domain.size();
   final_round.folding_alpha = current_domain.context().zero();
-  final_round.oracle_evals = current_oracle;
+  final_round_witness.oracle_evals = current_oracle;
   const auto final_merkle_start = std::chrono::steady_clock::now();
   proof.oracle_roots.push_back(
       build_oracle_tree(params_.hash_profile, current_domain.context(),
-                        final_round.oracle_evals, 1)
+                        final_round_witness.oracle_evals, 1)
           .root());
   merkle_ms +=
       ElapsedMilliseconds(final_merkle_start, std::chrono::steady_clock::now());
   const auto interpolate_start = std::chrono::steady_clock::now();
   proof.final_polynomial =
-      swgr::poly_utils::rs_interpolate(current_domain, final_round.oracle_evals);
+      swgr::poly_utils::rs_interpolate(current_domain, final_round_witness.oracle_evals);
   interpolate_ms +=
       ElapsedMilliseconds(interpolate_start, std::chrono::steady_clock::now());
   proof.rounds.push_back(std::move(final_round));
+  witness.rounds.push_back(std::move(final_round_witness));
 
   if (proof.final_polynomial.degree() > current_degree) {
     throw std::runtime_error(
@@ -186,7 +198,7 @@ FriProof FriProver::prove(
   proof.stats.prover_query_open_ms = query_open_ms;
   proof.stats.prover_total_ms =
       ElapsedMilliseconds(prover_start, std::chrono::steady_clock::now());
-  return proof;
+  return artifact;
 }
 
 }  // namespace swgr::fri

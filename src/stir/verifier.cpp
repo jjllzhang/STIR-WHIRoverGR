@@ -56,17 +56,20 @@ std::vector<std::uint64_t> SortedPositions(
 StirVerifier::StirVerifier(StirParameters params) : params_(std::move(params)) {}
 
 bool StirVerifier::verify(const StirInstance& instance,
-                         const StirProof& proof,
+                         const StirProofWithWitness& artifact,
                          swgr::ProofStatistics* stats) const {
   swgr::ProofStatistics local_stats;
   const auto verify_start = std::chrono::steady_clock::now();
   try {
+    const auto& proof = artifact.proof;
+    const auto& witness = artifact.witness;
     if (!validate(params_, instance)) {
       return false;
     }
 
     const std::size_t round_count = folding_round_count(instance, params_);
     if (proof.rounds.size() != round_count ||
+        witness.rounds.size() != round_count ||
         proof.oracle_roots.size() != round_count ||
         proof.stats.prover_rounds != round_count) {
       return false;
@@ -77,7 +80,7 @@ bool StirVerifier::verify(const StirInstance& instance,
     std::uint64_t current_degree_bound = instance.claimed_degree;
     swgr::poly_utils::Polynomial expected_current_polynomial =
         proof.rounds.empty() ? proof.final_polynomial
-                             : proof.rounds.front().input_polynomial;
+                             : witness.rounds.front().input_polynomial;
     swgr::crypto::Transcript transcript(params_.hash_profile);
     std::vector<swgr::algebra::GRElem> cached_input_oracle;
     bool has_cached_input_oracle = false;
@@ -86,14 +89,15 @@ bool StirVerifier::verify(const StirInstance& instance,
       const auto effective_query_count =
           query_metadata[round_index].effective_query_count;
       const auto& round = proof.rounds[round_index];
-      // Phase 0 baseline: `input_polynomial` is still a verifier-visible
-      // witness field. It anchors the current round state and, on cache misses,
-      // is re-encoded to rebuild the input oracle root.
+      const auto& round_witness = witness.rounds[round_index];
+      // Phase 1 compatibility path: the verifier still consumes the explicit
+      // witness carrier, but these fields no longer live in the public proof.
       if (round.round_index != round_index ||
           round.input_domain_size != current_domain.size() ||
           round.input_degree_bound != current_degree_bound ||
-          !SamePolynomial(round.input_polynomial, expected_current_polynomial) ||
-          round.input_polynomial.degree() > current_degree_bound) {
+          !SamePolynomial(round_witness.input_polynomial,
+                          expected_current_polynomial) ||
+          round_witness.input_polynomial.degree() > current_degree_bound) {
         return false;
       }
 
@@ -103,7 +107,8 @@ bool StirVerifier::verify(const StirInstance& instance,
       const auto* input_oracle = &cached_input_oracle;
       if (!has_cached_input_oracle) {
         computed_input_oracle =
-            swgr::poly_utils::rs_encode(current_domain, round.input_polynomial);
+            swgr::poly_utils::rs_encode(current_domain,
+                                        round_witness.input_polynomial);
         input_oracle = &computed_input_oracle;
       }
       local_stats.verifier_algebra_ms +=
@@ -141,18 +146,15 @@ bool StirVerifier::verify(const StirInstance& instance,
           round.folding_alpha);
       const auto expected_folded_polynomial =
           swgr::poly_utils::rs_interpolate(folded_domain, folded_table);
-      // Phase 0 baseline: the verifier still expects the full folded witness
-      // polynomial and rejects if it cannot match the prover's interpolation.
-      if (!SamePolynomial(round.folded_polynomial, expected_folded_polynomial)) {
+      if (!SamePolynomial(round_witness.folded_polynomial,
+                          expected_folded_polynomial)) {
         return false;
       }
 
       const auto expected_shifted_oracle =
           swgr::poly_utils::rs_encode(shift_domain, expected_folded_polynomial);
-      // Phase 0 baseline: `shifted_oracle_evals` is a public witness cache used
-      // both for equality against the shifted codeword and for the committed
-      // shift-oracle root that drives transcript challenges.
-      if (!SameVector(round.shifted_oracle_evals, expected_shifted_oracle)) {
+      if (!SameVector(round_witness.shifted_oracle_evals,
+                      expected_shifted_oracle)) {
         return false;
       }
       const auto shift_merkle_start = std::chrono::steady_clock::now();
@@ -290,13 +292,11 @@ bool StirVerifier::verify(const StirInstance& instance,
       const auto expected_quotient_polynomial =
           swgr::poly_utils::quotient_polynomial_from_answers(
               ctx, expected_folded_polynomial, answer_points, answer_values);
-      // Phase 0 baseline: STIR still exposes intermediate answer/vanishing/
-      // quotient witness polynomials, and the verifier re-derives all of them
-      // before accepting the round.
-      if (!SamePolynomial(round.answer_polynomial, expected_answer_polynomial) ||
-          !SamePolynomial(round.vanishing_polynomial,
+      if (!SamePolynomial(round_witness.answer_polynomial,
+                          expected_answer_polynomial) ||
+          !SamePolynomial(round_witness.vanishing_polynomial,
                           expected_vanishing_polynomial) ||
-          !SamePolynomial(round.quotient_polynomial,
+          !SamePolynomial(round_witness.quotient_polynomial,
                           expected_quotient_polynomial)) {
         return false;
       }
@@ -307,11 +307,9 @@ bool StirVerifier::verify(const StirInstance& instance,
           swgr::poly_utils::degree_correction_polynomial(
               ctx, expected_quotient_polynomial, next_degree_bound,
               quotient_degree_bound, expected_combination);
-      // Phase 0 baseline: `next_polynomial` remains the verifier-visible bridge
-      // into the next round and the final proof output, so shrinking it out of
-      // the public proof changes both transition and terminal checks.
-      if (!SamePolynomial(round.next_polynomial, expected_next_polynomial) ||
-          round.next_polynomial.degree() > next_degree_bound) {
+      if (!SamePolynomial(round_witness.next_polynomial,
+                          expected_next_polynomial) ||
+          round_witness.next_polynomial.degree() > next_degree_bound) {
         return false;
       }
       std::vector<swgr::algebra::GRElem> next_input_oracle;

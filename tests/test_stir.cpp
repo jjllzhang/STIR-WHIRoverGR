@@ -47,32 +47,35 @@ std::uint64_t CompactStirBytes(const GRContext& ctx,
     bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
     bytes += static_cast<std::uint64_t>(round.ood_answers.size()) *
              static_cast<std::uint64_t>(ctx.elem_bytes());
-    bytes += static_cast<std::uint64_t>(round.quotient_polynomial.coefficients().size()) *
-             static_cast<std::uint64_t>(ctx.elem_bytes());
     bytes += MerkleOpeningPayloadBytes(round.input_oracle_proof);
     bytes += MerkleOpeningPayloadBytes(round.shift_oracle_proof);
   }
+  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
+           static_cast<std::uint64_t>(ctx.elem_bytes());
   return bytes;
 }
 
 std::uint64_t LegacyRawStirBytes(const GRContext& ctx,
-                                 const swgr::stir::StirProof& proof) {
+                                 const swgr::stir::StirProofWithWitness& artifact) {
+  const auto& proof = artifact.proof;
   std::uint64_t bytes = 0;
   for (std::size_t round_index = 0;
        round_index < proof.rounds.size() && round_index < proof.oracle_roots.size();
        ++round_index) {
     const auto& round = proof.rounds[round_index];
-    bytes += static_cast<std::uint64_t>(round.shifted_oracle_evals.size()) *
+    const auto& round_witness = artifact.witness.rounds[round_index];
+    bytes += static_cast<std::uint64_t>(round_witness.shifted_oracle_evals.size()) *
              static_cast<std::uint64_t>(ctx.elem_bytes());
     bytes += static_cast<std::uint64_t>(round.ood_answers.size() +
                                         round.shift_query_answers.size()) *
              static_cast<std::uint64_t>(ctx.elem_bytes());
-    bytes += static_cast<std::uint64_t>(round.answer_polynomial.coefficients().size() +
-                                        round.vanishing_polynomial.coefficients().size() +
-                                        round.quotient_polynomial.coefficients().size() +
-                                        round.next_polynomial.coefficients().size() +
-                                        round.input_polynomial.coefficients().size() +
-                                        round.folded_polynomial.coefficients().size()) *
+    bytes += static_cast<std::uint64_t>(
+                 round_witness.answer_polynomial.coefficients().size() +
+                 round_witness.vanishing_polynomial.coefficients().size() +
+                 round_witness.quotient_polynomial.coefficients().size() +
+                 round_witness.next_polynomial.coefficients().size() +
+                 round_witness.input_polynomial.coefficients().size() +
+                 round_witness.folded_polynomial.coefficients().size()) *
              static_cast<std::uint64_t>(ctx.elem_bytes());
     bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
     bytes += static_cast<std::uint64_t>(round.fold_query_positions.size()) *
@@ -145,40 +148,46 @@ void NudgePolynomial(const GRContext& ctx, Polynomial* polynomial) {
   });
 }
 
-void TamperShiftedOracle(const GRContext& ctx, swgr::stir::StirProof& proof) {
+void TamperShiftedOracle(const GRContext& ctx,
+                         swgr::stir::StirProofWithWitness& artifact) {
   ctx.with_ntl_context([&] {
-    proof.rounds[0].shifted_oracle_evals[0] += ctx.one();
+    artifact.witness.rounds[0].shifted_oracle_evals[0] += ctx.one();
     return 0;
   });
 }
 
-void TamperInputPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
-  NudgePolynomial(ctx, &proof.rounds[0].input_polynomial);
+void TamperInputPolynomial(const GRContext& ctx,
+                           swgr::stir::StirProofWithWitness& artifact) {
+  NudgePolynomial(ctx, &artifact.witness.rounds[0].input_polynomial);
 }
 
-void TamperFoldedPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
-  NudgePolynomial(ctx, &proof.rounds[0].folded_polynomial);
+void TamperFoldedPolynomial(const GRContext& ctx,
+                            swgr::stir::StirProofWithWitness& artifact) {
+  NudgePolynomial(ctx, &artifact.witness.rounds[0].folded_polynomial);
 }
 
-void TamperOodAnswer(const GRContext& ctx, swgr::stir::StirProof& proof) {
+void TamperOodAnswer(const GRContext& ctx,
+                     swgr::stir::StirProofWithWitness& artifact) {
   ctx.with_ntl_context([&] {
-    proof.rounds[0].ood_answers[0] += ctx.one();
+    artifact.proof.rounds[0].ood_answers[0] += ctx.one();
     return 0;
   });
 }
 
-void TamperQuotientPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
-  NudgePolynomial(ctx, &proof.rounds[0].quotient_polynomial);
+void TamperQuotientPolynomial(const GRContext& ctx,
+                              swgr::stir::StirProofWithWitness& artifact) {
+  NudgePolynomial(ctx, &artifact.witness.rounds[0].quotient_polynomial);
 }
 
-void TamperNextPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
-  NudgePolynomial(ctx, &proof.rounds[0].next_polynomial);
+void TamperNextPolynomial(const GRContext& ctx,
+                          swgr::stir::StirProofWithWitness& artifact) {
+  NudgePolynomial(ctx, &artifact.witness.rounds[0].next_polynomial);
 }
 
-// Phase 0 baseline: STIR still publishes prover-side witness material inside
-// `StirRoundProof`, and the verifier re-derives each stage from those fields.
-// TODO(stir-phase1-proof-thinning): move these guards to an internal witness /
-// external proof split before changing the verifier model.
+// Phase 1 baseline: the public `StirProof` is slimmed, while the compatibility
+// carrier still holds the witness material needed by the current verifier.
+// TODO(stir-phase3-sparse-verifier): retarget these guards to proof-only data
+// once the verifier no longer needs the witness carrier.
 void TestStir9to3HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
       "stir-9to3 honest prover/verifier passes and exposes one explicit round");
@@ -190,9 +199,10 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove(instance, polynomial);
+  const auto& proof = artifact.proof;
 
-  CHECK(verifier.verify(instance, proof));
+  CHECK(verifier.verify(instance, artifact));
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{1});
   CHECK_EQ(proof.rounds.size(), std::size_t{1});
   CHECK_EQ(proof.rounds[0].input_domain_size, std::uint64_t{27});
@@ -202,9 +212,9 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
   CHECK_EQ(proof.rounds[0].ood_points.size(), std::size_t{2});
   CHECK(proof.final_polynomial.degree() <= params.stop_degree);
   CHECK_EQ(proof.final_polynomial.coefficients(),
-           proof.rounds[0].next_polynomial.coefficients());
+           artifact.witness.rounds[0].next_polynomial.coefficients());
   CHECK_EQ(proof.stats.serialized_bytes, CompactStirBytes(ctx, proof));
-  CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
 }
 
 void TestStirMultiRoundCachesNextRoundInputOracle() {
@@ -220,22 +230,23 @@ void TestStirMultiRoundCachesNextRoundInputOracle() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove(instance, polynomial);
+  const auto& proof = artifact.proof;
 
-  CHECK(verifier.verify(instance, proof));
+  CHECK(verifier.verify(instance, artifact));
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
   CHECK_EQ(proof.stats.serialized_bytes, CompactStirBytes(ctx, proof));
-  CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
   ctx.with_ntl_context([&] {
-    CHECK_EQ(proof.rounds[1].input_polynomial.coefficients(),
-             proof.rounds[0].next_polynomial.coefficients());
+    CHECK_EQ(artifact.witness.rounds[1].input_polynomial.coefficients(),
+             artifact.witness.rounds[0].next_polynomial.coefficients());
 
     const Domain round_one_shift_domain =
         instance.domain.scale_offset(params.shift_power);
     const auto expected_round_two_input_oracle =
         swgr::poly_utils::rs_encode(round_one_shift_domain,
-                                    proof.rounds[1].input_polynomial);
+                                    artifact.witness.rounds[1].input_polynomial);
     CHECK_EQ(proof.rounds[1].input_oracle_proof.leaf_payloads.size(),
              proof.rounds[1].fold_query_positions.size());
     for (std::size_t i = 0; i < proof.rounds[1].fold_query_positions.size(); ++i) {
@@ -262,9 +273,10 @@ void TestStirAutoScheduleMatchesConjectureCapacityDefault() {
 
   const swgr::stir::StirProver prover(auto_params);
   const swgr::stir::StirVerifier verifier(auto_params);
-  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove(instance, polynomial);
+  const auto& proof = artifact.proof;
 
-  CHECK(verifier.verify(instance, proof));
+  CHECK(verifier.verify(instance, artifact));
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[0].fold_query_positions.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{2});
@@ -288,14 +300,17 @@ void TestStirManualQueriesOverrideAutoSchedule() {
 
   const swgr::stir::StirProver auto_prover(auto_params);
   const swgr::stir::StirVerifier auto_verifier(auto_params);
-  const auto auto_proof = auto_prover.prove(instance, polynomial);
+  const auto auto_artifact = auto_prover.prove(instance, polynomial);
 
   const swgr::stir::StirProver manual_prover(manual_params);
   const swgr::stir::StirVerifier manual_verifier(manual_params);
-  const auto manual_proof = manual_prover.prove(instance, polynomial);
+  const auto manual_artifact = manual_prover.prove(instance, polynomial);
 
-  CHECK(auto_verifier.verify(instance, auto_proof));
-  CHECK(manual_verifier.verify(instance, manual_proof));
+  const auto& auto_proof = auto_artifact.proof;
+  const auto& manual_proof = manual_artifact.proof;
+
+  CHECK(auto_verifier.verify(instance, auto_artifact));
+  CHECK(manual_verifier.verify(instance, manual_artifact));
   CHECK_EQ(auto_proof.rounds[0].fold_query_positions.size(), std::size_t{2});
   CHECK_EQ(auto_proof.rounds[0].shift_query_positions.size(), std::size_t{2});
   CHECK_EQ(auto_proof.rounds[1].fold_query_positions.size(), std::size_t{1});
@@ -326,11 +341,11 @@ void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
-  CHECK(verifier.verify(instance, proof));
-  CHECK_EQ(proof.rounds.size(), std::size_t{1});
-  CHECK_EQ(proof.rounds[0].fold_query_positions.size(), std::size_t{1});
-  CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{1});
+  const auto artifact = prover.prove(instance, polynomial);
+  CHECK(verifier.verify(instance, artifact));
+  CHECK_EQ(artifact.proof.rounds.size(), std::size_t{1});
+  CHECK_EQ(artifact.proof.rounds[0].fold_query_positions.size(), std::size_t{1});
+  CHECK_EQ(artifact.proof.rounds[0].shift_query_positions.size(), std::size_t{1});
 }
 
 void TestStirRejectsTamperedShiftedOracle() {
@@ -343,11 +358,11 @@ void TestStirRejectsTamperedShiftedOracle() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperShiftedOracle(ctx, proof);
+  TamperShiftedOracle(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestStirRejectsTamperedInputPolynomial() {
@@ -360,11 +375,11 @@ void TestStirRejectsTamperedInputPolynomial() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperInputPolynomial(ctx, proof);
+  TamperInputPolynomial(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestStirRejectsTamperedFoldedPolynomial() {
@@ -377,11 +392,11 @@ void TestStirRejectsTamperedFoldedPolynomial() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperFoldedPolynomial(ctx, proof);
+  TamperFoldedPolynomial(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestStirRejectsTamperedOodAnswer() {
@@ -394,11 +409,11 @@ void TestStirRejectsTamperedOodAnswer() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperOodAnswer(ctx, proof);
+  TamperOodAnswer(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestStirRejectsTamperedQuotientPolynomial() {
@@ -411,16 +426,16 @@ void TestStirRejectsTamperedQuotientPolynomial() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperQuotientPolynomial(ctx, proof);
+  TamperQuotientPolynomial(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
-// TODO(stir-phase1-proof-thinning): once the external proof stops carrying the
-// heavy witness fields below, keep the semantic coverage but retarget the
-// tamper cases to sparse openings and transcript-derived metadata only.
+// TODO(stir-phase3-sparse-verifier): once the verifier consumes sparse openings
+// only, keep the semantic coverage below but retarget the tamper cases to the
+// external proof object rather than the witness carrier.
 void TestStirRejectsTamperedDegreeCorrection() {
   testutil::PrintInfo("stir verifier rejects a tampered degree-correction step");
 
@@ -431,11 +446,11 @@ void TestStirRejectsTamperedDegreeCorrection() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
+  auto artifact = prover.prove(instance, polynomial);
 
-  TamperNextPolynomial(ctx, proof);
+  TamperNextPolynomial(ctx, artifact);
 
-  CHECK(!verifier.verify(instance, proof));
+  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestStirValidationRejectsBadInputs() {

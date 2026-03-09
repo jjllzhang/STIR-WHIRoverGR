@@ -807,9 +807,10 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
 
   return RunBenchLoop(options, fold_factor == 3 ? "fri3" : "fri9", fold_factor, 0,
                       0, [&](TimeBenchRow* row) {
-                        const auto proof = prover.prove(instance, polynomial);
+                        const auto artifact = prover.prove(instance, polynomial);
+                        const auto& proof = artifact.proof;
                         swgr::ProofStatistics verify_stats;
-                        if (!verifier.verify(instance, proof, &verify_stats)) {
+                        if (!verifier.verify(instance, artifact, &verify_stats)) {
                           throw std::runtime_error("fri verifier rejected honest proof");
                         }
                         if (row != nullptr) {
@@ -845,9 +846,10 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
 
   return RunBenchLoop(options, "stir9to3", 9, 3, options.ood_samples,
                       [&](TimeBenchRow* row) {
-                        const auto proof = prover.prove(instance, polynomial);
+                        const auto artifact = prover.prove(instance, polynomial);
+                        const auto& proof = artifact.proof;
                         swgr::ProofStatistics verify_stats;
-                        if (!verifier.verify(instance, proof, &verify_stats)) {
+                        if (!verifier.verify(instance, artifact, &verify_stats)) {
                           throw std::runtime_error("stir verifier rejected honest proof");
                         }
                         if (row != nullptr) {

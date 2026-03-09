@@ -30,7 +30,6 @@ struct FriRoundProof {
   std::uint64_t domain_size = 0;
   swgr::algebra::GRElem folding_alpha;
   std::vector<std::uint64_t> query_positions;
-  std::vector<swgr::algebra::GRElem> oracle_evals;
   swgr::crypto::MerkleProof oracle_proof;
 };
 
@@ -39,6 +38,19 @@ struct FriProof {
   swgr::poly_utils::Polynomial final_polynomial;
   std::vector<std::vector<std::uint8_t>> oracle_roots;
   swgr::ProofStatistics stats;
+};
+
+struct FriRoundWitness {
+  std::vector<swgr::algebra::GRElem> oracle_evals;
+};
+
+struct FriWitness {
+  std::vector<FriRoundWitness> rounds;
+};
+
+struct FriProofWithWitness {
+  FriProof proof;
+  FriWitness witness;
 };
 
 std::size_t folding_round_count(const FriInstance& instance,

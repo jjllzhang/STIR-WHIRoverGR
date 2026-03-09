@@ -10,8 +10,12 @@ class FriProver {
  public:
   explicit FriProver(FriParameters params);
 
-  FriProof prove(const FriInstance& instance,
-                 const swgr::poly_utils::Polynomial& polynomial) const;
+  FriProofWithWitness prove(
+      const FriInstance& instance,
+      const swgr::poly_utils::Polynomial& polynomial) const;
+  FriProofWithWitness prove_with_witness(
+      const FriInstance& instance,
+      const swgr::poly_utils::Polynomial& polynomial) const;
 
  private:
   FriParameters params_;

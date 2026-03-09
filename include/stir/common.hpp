@@ -40,9 +40,6 @@ struct StirRoundProof {
   std::uint64_t folded_degree_bound = 0;
   swgr::algebra::GRElem folding_alpha;
   swgr::algebra::GRElem comb_randomness;
-  swgr::poly_utils::Polynomial input_polynomial;
-  swgr::poly_utils::Polynomial folded_polynomial;
-  std::vector<swgr::algebra::GRElem> shifted_oracle_evals;
   std::vector<std::uint64_t> fold_query_positions;
   std::vector<std::uint64_t> shift_query_positions;
   std::vector<swgr::algebra::GRElem> shift_query_answers;
@@ -50,6 +47,12 @@ struct StirRoundProof {
   swgr::crypto::MerkleProof shift_oracle_proof;
   std::vector<swgr::algebra::GRElem> ood_points;
   std::vector<swgr::algebra::GRElem> ood_answers;
+};
+
+struct StirRoundWitness {
+  swgr::poly_utils::Polynomial input_polynomial;
+  swgr::poly_utils::Polynomial folded_polynomial;
+  std::vector<swgr::algebra::GRElem> shifted_oracle_evals;
   swgr::poly_utils::Polynomial answer_polynomial;
   swgr::poly_utils::Polynomial vanishing_polynomial;
   swgr::poly_utils::Polynomial quotient_polynomial;
@@ -61,6 +64,15 @@ struct StirProof {
   swgr::poly_utils::Polynomial final_polynomial;
   std::vector<std::vector<std::uint8_t>> oracle_roots;
   swgr::ProofStatistics stats;
+};
+
+struct StirWitness {
+  std::vector<StirRoundWitness> rounds;
+};
+
+struct StirProofWithWitness {
+  StirProof proof;
+  StirWitness witness;
 };
 
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
