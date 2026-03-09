@@ -96,7 +96,7 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
       const Domain folded_domain =
           current_domain.pow_map(params.virtual_fold_factor);
       const Domain shift_domain = current_domain.scale_offset(params.shift_power);
-      if (!folded_domain.disjoint_with(shift_domain)) {
+      if (!domains_have_unit_differences(shift_domain, folded_domain)) {
         return false;
       }
 

@@ -160,6 +160,35 @@ std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
   return sink.size();
 }
 
+bool points_have_unit_differences(
+    const Domain& domain, std::span<const swgr::algebra::GRElem> points) {
+  const auto& ctx = domain.context();
+  const auto domain_points = domain.elements();
+  return ctx.with_ntl_context([&] {
+    for (const auto& point : points) {
+      for (const auto& domain_point : domain_points) {
+        if (!ctx.is_unit(point - domain_point)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  });
+}
+
+bool domains_have_unit_differences(const Domain& lhs, const Domain& rhs) {
+  const auto& lhs_cfg = lhs.context().config();
+  const auto& rhs_cfg = rhs.context().config();
+  if (lhs_cfg.p != rhs_cfg.p || lhs_cfg.k_exp != rhs_cfg.k_exp ||
+      lhs_cfg.r != rhs_cfg.r) {
+    throw std::invalid_argument(
+        "domains_have_unit_differences requires the same ring");
+  }
+
+  const auto rhs_points = rhs.elements();
+  return points_have_unit_differences(lhs, rhs_points);
+}
+
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
                                   std::uint64_t fold_factor) {
   if (fold_factor < 2) {
@@ -253,7 +282,8 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
         Contains(result, candidate)) {
       continue;
     }
-    if (!ExceptionalAgainst(ctx, candidate, folded_points) ||
+    if (!ExceptionalAgainst(ctx, candidate, shift_points) ||
+        !ExceptionalAgainst(ctx, candidate, folded_points) ||
         !ExceptionalAgainst(ctx, candidate, result)) {
       continue;
     }
@@ -293,7 +323,8 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
         Contains(result, candidate)) {
       continue;
     }
-    if (!ExceptionalAgainst(ctx, candidate, folded_points) ||
+    if (!ExceptionalAgainst(ctx, candidate, shift_points) ||
+        !ExceptionalAgainst(ctx, candidate, folded_points) ||
         !ExceptionalAgainst(ctx, candidate, result)) {
       continue;
     }

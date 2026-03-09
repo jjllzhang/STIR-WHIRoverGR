@@ -321,6 +321,27 @@ void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
            std::size_t{1});
 }
 
+void TestStirExceptionalSetsStayUnitDifferenceSafe() {
+  testutil::PrintInfo(
+      "stir ood points and round domains satisfy the verifier's unit-difference precondition");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx, 27, 26);
+  const auto folded_domain = instance.domain.pow_map(9);
+  const auto shift_domain = instance.domain.scale_offset(3);
+  const std::vector<std::uint8_t> seed_material{0x53, 0x57, 0x47, 0x52};
+
+  CHECK(swgr::stir::domains_have_unit_differences(shift_domain, folded_domain));
+
+  const auto ood_points = swgr::stir::derive_ood_points(
+      instance.domain, shift_domain, folded_domain, seed_material, 0, 2);
+  CHECK(swgr::stir::points_have_unit_differences(shift_domain, ood_points));
+  CHECK(swgr::stir::points_have_unit_differences(folded_domain, ood_points));
+
+  const std::vector<GRElem> bad_points{shift_domain.element(0)};
+  CHECK(!swgr::stir::points_have_unit_differences(shift_domain, bad_points));
+}
+
 void TestStirRejectsTamperedPrevQueryOpening() {
   testutil::PrintInfo("stir verifier rejects a tampered previous-oracle opening");
 
@@ -500,6 +521,8 @@ void TestStirValidationRejectsBadInputs() {
       .claimed_degree = instance.domain.size(),
   };
   CHECK(!swgr::stir::validate(MakeParams(), bad_degree));
+  CHECK(swgr::stir::domains_have_unit_differences(
+      instance.domain.scale_offset(3), instance.domain.pow_map(9)));
 
   auto too_many_queries = MakeParams({2});
   CHECK(swgr::stir::validate(too_many_queries, instance));
@@ -512,6 +535,46 @@ void TestStirValidationRejectsBadInputs() {
   CHECK(!swgr::stir::validate(MakeParams(), tiny_instance));
 }
 
+void TestStirFreshContextsStayStableAcrossAutoAndManualSchedules() {
+  testutil::PrintInfo(
+      "fresh contexts keep stir auto and manual schedules stable after deterministic teich setup");
+
+  std::vector<std::uint8_t> expected_generator;
+  std::vector<std::uint8_t> expected_root;
+  for (int iteration = 0; iteration < 6; ++iteration) {
+    const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
+    const auto instance = MakeInstance(ctx, 243, 161);
+    const auto polynomial = SamplePolynomial(
+        ctx, instance.domain,
+        static_cast<std::size_t>(instance.claimed_degree + 1));
+
+    const auto generator_bytes = ctx.serialize(ctx.teich_generator());
+    const auto root_bytes = ctx.serialize(instance.domain.root());
+    if (iteration == 0) {
+      expected_generator = generator_bytes;
+      expected_root = root_bytes;
+    } else {
+      CHECK_EQ(generator_bytes, expected_generator);
+      CHECK_EQ(root_bytes, expected_root);
+    }
+
+    auto auto_params = MakeAutoParams(3);
+    auto_params.ood_samples = 1;
+    auto manual_params = MakeParams({1, 1}, 3);
+    manual_params.ood_samples = 1;
+
+    const swgr::stir::StirProver auto_prover(auto_params);
+    const swgr::stir::StirVerifier auto_verifier(auto_params);
+    const auto auto_proof = auto_prover.prove(instance, polynomial);
+    CHECK(auto_verifier.verify(instance, auto_proof));
+
+    const swgr::stir::StirProver manual_prover(manual_params);
+    const swgr::stir::StirVerifier manual_verifier(manual_params);
+    const auto manual_proof = manual_prover.prove(instance, polynomial);
+    CHECK(manual_verifier.verify(instance, manual_proof));
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -522,6 +585,7 @@ int main() {
     RUN_TEST(TestStirAutoScheduleMatchesConjectureCapacityDefault);
     RUN_TEST(TestStirManualQueriesOverrideAutoSchedule);
     RUN_TEST(TestStirCapsOversubscribedQueriesWithDegreeBudget);
+    RUN_TEST(TestStirExceptionalSetsStayUnitDifferenceSafe);
     RUN_TEST(TestStirRejectsTamperedPrevQueryOpening);
     RUN_TEST(TestStirRejectsTamperedInitialRoot);
     RUN_TEST(TestStirRejectsTamperedGRoot);
@@ -532,6 +596,7 @@ int main() {
     RUN_TEST(TestStirRejectsTamperedFinalOpening);
     RUN_TEST(TestStirCompatWitnessNoLongerDrivesVerification);
     RUN_TEST(TestStirValidationRejectsBadInputs);
+    RUN_TEST(TestStirFreshContextsStayStableAcrossAutoAndManualSchedules);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

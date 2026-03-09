@@ -88,6 +88,24 @@ ZZ DeterministicPrimitivePolySeed(const GRConfig& cfg) {
   return ZZFromBytes(bytes.data(), static_cast<long>(bytes.size()));
 }
 
+ZZ DeterministicTeichGeneratorSeed(const GRConfig& cfg) {
+  std::vector<unsigned char> bytes;
+  bytes.reserve(sizeof(std::uint64_t) * 4);
+  const std::uint64_t words[] = {
+      0x5357475254454943ULL,
+      cfg.p,
+      cfg.k_exp,
+      cfg.r,
+  };
+  for (const auto word : words) {
+    for (std::size_t i = 0; i < sizeof(word); ++i) {
+      bytes.push_back(
+          static_cast<unsigned char>((word >> (8U * i)) & 0xFFU));
+    }
+  }
+  return ZZFromBytes(bytes.data(), static_cast<long>(bytes.size()));
+}
+
 }  // namespace
 
 GRContext::GRContext(const GRConfig& cfg) : cfg_(cfg) { initialize(); }
@@ -292,6 +310,8 @@ void GRContext::ensure_teich_generator_initialized() const {
     const long vendor_teich_order_bits_limit = 32;
 
     if (NumBits(teich_order) <= vendor_teich_order_bits_limit) {
+      RandomStreamPush seed_push;
+      SetSeed(DeterministicTeichGeneratorSeed(cfg_));
       lazy_state_->teich_generator = FindTeichmullerGenerator(
           prime_, k_long, r_long, lazy_state_->extension_polynomial);
     } else {

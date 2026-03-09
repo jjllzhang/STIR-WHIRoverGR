@@ -193,6 +193,30 @@ void TestMidExtensionPrimitiveTeichGeneratorPath() {
   CHECK_EQ(coset.offset(), offset);
 }
 
+void TestTeichGeneratorDeterministicAcrossFreshContexts() {
+  testutil::PrintInfo(
+      "fresh contexts now reuse a deterministic teich generator and subgroup root");
+
+  std::vector<std::uint8_t> expected_generator;
+  std::vector<std::uint8_t> expected_root;
+  for (int iteration = 0; iteration < 6; ++iteration) {
+    const swgr::algebra::GRContext ctx(
+        swgr::algebra::GRConfig{.p = 487, .k_exp = 2, .r = 1});
+    CHECK(swgr::algebra::teichmuller_subgroup_size_supported(ctx, 243));
+    const auto generator_bytes = ctx.serialize(ctx.teich_generator());
+    const auto root_bytes =
+        ctx.serialize(swgr::Domain::teichmuller_subgroup(ctx, 243).root());
+
+    if (iteration == 0) {
+      expected_generator = generator_bytes;
+      expected_root = root_bytes;
+    } else {
+      CHECK_EQ(generator_bytes, expected_generator);
+      CHECK_EQ(root_bytes, expected_root);
+    }
+  }
+}
+
 void TestMidExtensionTeichGeneratorFallback() {
   testutil::PrintInfo(
       "mid-r teich fallback remains usable for preset-0 style subgroup construction");
@@ -231,6 +255,7 @@ int main() {
     RUN_TEST(TestDomainRejectsInvalidTeichmullerInputs);
     RUN_TEST(TestLargeExtensionTeichGeneratorFallback);
     RUN_TEST(TestMidExtensionPrimitiveTeichGeneratorPath);
+    RUN_TEST(TestTeichGeneratorDeterministicAcrossFreshContexts);
     RUN_TEST(TestMidExtensionTeichGeneratorFallback);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";

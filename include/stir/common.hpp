@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -68,6 +69,11 @@ struct StirProofWithWitness {
 
 std::uint64_t serialized_message_bytes(
     const swgr::algebra::GRContext& ctx, const StirProof& proof);
+
+bool points_have_unit_differences(
+    const Domain& domain, std::span<const swgr::algebra::GRElem> points);
+
+bool domains_have_unit_differences(const Domain& lhs, const Domain& rhs);
 
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
                                   std::uint64_t fold_factor);
