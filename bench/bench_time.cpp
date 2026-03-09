@@ -57,6 +57,7 @@ struct TimeBenchRow {
   std::string sec_mode;
   std::string hash_profile;
   std::string soundness_model;
+  std::string soundness_scope;
   std::string query_policy;
   std::string pow_policy;
   std::uint64_t effective_security_bits = 0;
@@ -150,6 +151,7 @@ void FillSoundnessMetadata(TimeBenchRow& row, swgr::SecurityMode sec_mode,
   const auto heuristic = swgr::soundness::engineering_heuristic_result(
       sec_mode, lambda_target, pow_bits, !query_repetitions.empty(), rho);
   row.soundness_model = heuristic.model;
+  row.soundness_scope = heuristic.scope;
   row.query_policy = heuristic.query_policy;
   row.pow_policy = heuristic.pow_policy;
   row.effective_security_bits = heuristic.effective_security_bits;
@@ -339,6 +341,7 @@ void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
     std::cout << "sec_mode=" << row.sec_mode << "\n";
     std::cout << "hash_profile=" << row.hash_profile << "\n";
     std::cout << "soundness_model=" << row.soundness_model << "\n";
+    std::cout << "soundness_scope=" << row.soundness_scope << "\n";
     std::cout << "query_policy=" << row.query_policy << "\n";
     std::cout << "pow_policy=" << row.pow_policy << "\n";
     std::cout << "effective_security_bits=" << row.effective_security_bits
@@ -457,7 +460,7 @@ void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
 void PrintRowsCsv(const std::vector<TimeBenchRow>& rows) {
   std::cout
       << "protocol,ring,n,d,rho,lambda_target,pow_bits,sec_mode,hash_profile,"
-         "soundness_model,query_policy,pow_policy,effective_security_bits,"
+         "soundness_model,soundness_scope,query_policy,pow_policy,effective_security_bits,"
          "soundness_notes,fold,shift_power,stop_degree,ood_samples,threads,"
          "warmup,reps,commit_ms,prove_query_phase_ms,prover_total_ms,"
          "verify_ms,serialized_bytes_actual,serialized_kib_actual,"
@@ -494,6 +497,7 @@ void PrintRowsCsv(const std::vector<TimeBenchRow>& rows) {
               << swgr::bench::CsvEscape(row.sec_mode) << ","
               << swgr::bench::CsvEscape(row.hash_profile) << ","
               << swgr::bench::CsvEscape(row.soundness_model) << ","
+              << swgr::bench::CsvEscape(row.soundness_scope) << ","
               << swgr::bench::CsvEscape(row.query_policy) << ","
               << swgr::bench::CsvEscape(row.pow_policy) << ","
               << row.effective_security_bits << ","
@@ -578,6 +582,8 @@ void PrintRowsJson(const std::vector<TimeBenchRow>& rows) {
               << swgr::bench::JsonEscape(row.hash_profile) << "\",\n";
     std::cout << "    \"soundness_model\": \""
               << swgr::bench::JsonEscape(row.soundness_model) << "\",\n";
+    std::cout << "    \"soundness_scope\": \""
+              << swgr::bench::JsonEscape(row.soundness_scope) << "\",\n";
     std::cout << "    \"query_policy\": \""
               << swgr::bench::JsonEscape(row.query_policy) << "\",\n";
     std::cout << "    \"pow_policy\": \""

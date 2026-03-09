@@ -65,12 +65,16 @@ EngineeringHeuristicResult engineering_heuristic_result(
     std::uint64_t pow_bits, bool manual_query_schedule, double rho) {
   EngineeringHeuristicResult result;
   result.model = "engineering-heuristic-v1";
+  result.scope = "engineering_metadata_non_paper";
   result.query_policy = manual_query_schedule ? "manual" : "auto_heuristic";
   result.pow_policy = "fixed_bits";
   result.effective_security_bits = effective_security_bits(lambda_target, pow_bits);
   result.notes.push_back(
       "Engineering heuristic only; auto queries follow eta-based schedule "
       "with per-round decay.");
+  result.notes.push_back(
+      "Benchmark-facing soundness fields are engineering metadata only, "
+      "not theorem-level or paper-complete security claims.");
   if (manual_query_schedule) {
     result.notes.push_back("Manual query schedule overrides auto heuristic.");
   }

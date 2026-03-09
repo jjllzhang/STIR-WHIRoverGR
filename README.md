@@ -30,6 +30,25 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
 
+## Paper Alignment Boundaries
+
+Current FRI support should be read as a paper-aligned subset of the Section 4.1 PCS semantics, not as a full `pi_FRICom` implementation.
+
+Supported now:
+
+- a public `commit / open / verify` PCS surface over Teichmuller-supported domains
+- sparse Merkle openings with Fiat-Shamir-replayed round challenges and query positions
+- a virtual first-round quotient oracle `g = (f - v) / (X - alpha)` derived from sparse openings of committed `f|L`
+- terminal `final_polynomial` consistency checks rather than verifier-side full-table witness reconstruction
+
+Not yet implemented or proven here:
+
+- the full self-contained `pi_FRICom` procedure deferred by the paper to its full version
+- a step-by-step theorem-level reproduction of all Section 4.1 details beyond the currently implemented `FRI-3` / `FRI-9` parameterized path
+- a formal soundness proof for this fixed-parameter Galois-ring adaptation
+
+Current STIR support should be read similarly: the public proof shape now aligns with Construction 5.2-style rounds and final-polynomial consistency checks, but the repository still implements a fixed-parameter Galois-ring adaptation rather than a full theorem-level reproduction of the field-model paper.
+
 ## Dependencies
 
 Required:
@@ -131,6 +150,7 @@ Benchmark notes:
 - `serialized_bytes_actual` is computed from the deterministic serializer of the actual external message shape rather than from hand-written compact payload formulas
 - Current FRI rows count the prover reply opening message (`value + opening proof`) rather than `commitment + opening` combined bytes; `alpha` remains verifier-chosen context and is not charged to the prover reply
 - Current STIR rows count the exact serialized bytes of the public `StirProof`; the optional `prove_with_witness()` compatibility carrier is not charged
+- `soundness_model`, `soundness_scope`, `effective_security_bits`, and the `ConjectureCapacity` / `Conservative` labels are engineering calibration metadata for benchmark scheduling; they are not theorem-backed security claims or paper-complete parameter instantiations
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 
 ## Preset Workloads

@@ -12,6 +12,7 @@ namespace swgr::soundness {
 
 struct EngineeringHeuristicResult {
   std::string model;
+  std::string scope;
   std::string query_policy;
   std::string pow_policy;
   std::uint64_t effective_security_bits = 0;

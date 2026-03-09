@@ -293,9 +293,9 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 
 **任务**
 
-- [ ] 将 README 中 “prototype” 与 “paper-aligned subset” 的边界写清楚
-- [ ] 明确 FRI 当前支持的是论文 4.1 的哪一部分、未支持哪一部分
-- [ ] 审查 `engineering-heuristic-v1` 是否继续保留；如果保留，要在 benchmark 输出中明确其非论文性
+- [x] 将 README 中 “prototype” 与 “paper-aligned subset” 的边界写清楚
+- [x] 明确 FRI 当前支持的是论文 4.1 的哪一部分、未支持哪一部分
+- [x] 审查 `engineering-heuristic-v1` 是否继续保留；如果保留，要在 benchmark 输出中明确其非论文性
 - [ ] 如果未来拿到 `π_FRICom` full version，再补一轮逐步骤映射
 
 **建议涉及文件**
@@ -307,7 +307,7 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 
 **验收标准**
 
-- [ ] README/bench 输出不会再让读者误以为当前实现已经 theorem-4.1-complete
+- [x] README/bench 输出不会再让读者误以为当前实现已经 theorem-4.1-complete
 
 ---
 
@@ -348,7 +348,7 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 
 ### 文档与基准
 
-- [ ] `python3 scripts/search_benchmark_parameters.py --help`
+- [x] `python3 scripts/search_benchmark_parameters.py --help`
 - [x] 手工检查 README 中 proof-size / verifier model 描述是否与当前代码一致
 
 ## 9. 不在本计划首轮范围内的事项
@@ -372,7 +372,7 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 | Phase 3 sparse-opening FRI verifier | DONE | Codex | 2026-03-09 | public `FriOpening` / `FriProof` 已改成 sparse-opening external proof；verifier 只依赖 roots + sparse openings + `final_polynomial` |
 | Phase 4 exact proof bytes | DONE | Codex | 2026-03-09 | `serialized_bytes_actual` 已切到 deterministic serializer；FRI 维持 opening-only bytes，STIR 计 slim external proof |
 | Phase 5 STIR proof 瘦身 | DONE | Codex | 2026-03-09 | STIR 已迁到 route-2 proof-only verifier：public `StirProof` 保留 `initial_root`、每轮 `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`，以及 `queries_to_final + final_polynomial` |
-| Phase 6 参数与文档回收 | TODO |  |  |  |
+| Phase 6 参数与文档回收 | DONE | Codex | 2026-03-10 | README 已拆清 prototype 与 paper-aligned subset 边界；`bench_time` 现显式输出 `soundness_scope=engineering_metadata_non_paper`，soundness notes 与 benchmark 说明已明确非 theorem-level / 非 paper-complete |
 
 ## 11. 下一步建议
 

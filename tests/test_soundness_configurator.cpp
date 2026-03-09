@@ -39,15 +39,21 @@ void TestEngineeringHeuristicResultCarriesPolicyAndCaveat() {
       swgr::SecurityMode::Conservative, 128, 22, true, 1.0);
 
   CHECK_EQ(result.model, std::string("engineering-heuristic-v1"));
+  CHECK_EQ(result.scope, std::string("engineering_metadata_non_paper"));
   CHECK_EQ(result.query_policy, std::string("manual"));
   CHECK_EQ(result.pow_policy, std::string("fixed_bits"));
   CHECK_EQ(result.effective_security_bits, std::uint64_t{106});
 
   bool saw_formula_note = false;
+  bool saw_non_theorem_note = false;
   bool saw_gr_caveat = false;
   for (const auto& note : result.notes) {
     if (note.find("Engineering heuristic only") != std::string::npos) {
       saw_formula_note = true;
+    }
+    if (note.find("not theorem-level or paper-complete security claims") !=
+        std::string::npos) {
+      saw_non_theorem_note = true;
     }
     if (note.find("degree-correction soundness is not yet fully formalized") !=
         std::string::npos) {
@@ -55,6 +61,7 @@ void TestEngineeringHeuristicResultCarriesPolicyAndCaveat() {
     }
   }
   CHECK(saw_formula_note);
+  CHECK(saw_non_theorem_note);
   CHECK(saw_gr_caveat);
 }
 
