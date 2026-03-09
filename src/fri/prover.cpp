@@ -61,37 +61,6 @@ std::vector<std::uint64_t> CarryToBundleQueries(
   return UniqueSorted(queries);
 }
 
-std::uint64_t MerkleOpeningPayloadBytes(
-    const swgr::crypto::MerkleProof& proof) {
-  std::uint64_t bytes = 0;
-  for (const auto& payload : proof.leaf_payloads) {
-    bytes += static_cast<std::uint64_t>(payload.size());
-  }
-  for (const auto& sibling : proof.sibling_hashes) {
-    bytes += static_cast<std::uint64_t>(sibling.size());
-  }
-  return bytes;
-}
-
-std::uint64_t PolynomialPayloadBytes(const swgr::algebra::GRContext& ctx,
-                                     const swgr::poly_utils::Polynomial& poly) {
-  return static_cast<std::uint64_t>(poly.coefficients().size()) *
-         static_cast<std::uint64_t>(ctx.elem_bytes());
-}
-
-std::uint64_t CompactFriProofBytes(const swgr::algebra::GRContext& ctx,
-                                   const FriProof& proof) {
-  std::uint64_t bytes = 0;
-  for (const auto& oracle_root : proof.oracle_roots) {
-    bytes += static_cast<std::uint64_t>(oracle_root.size());
-  }
-  for (const auto& round : proof.rounds) {
-    bytes += MerkleOpeningPayloadBytes(round.oracle_proof);
-  }
-  bytes += PolynomialPayloadBytes(ctx, proof.final_polynomial);
-  return bytes;
-}
-
 std::uint64_t AutoTerminalQueryCount(const FriParameters& params,
                                      const FriInstance& instance,
                                      std::size_t round_index) {
@@ -257,7 +226,7 @@ SparseProofBuildResult BuildSparseProof(
         round.oracle_proof.sibling_hashes.size());
   }
   proof.stats.serialized_bytes =
-      CompactFriProofBytes(instance.domain.context(), proof);
+      serialized_message_bytes(instance.domain.context(), proof);
   return result;
 }
 
@@ -306,8 +275,7 @@ FriCommitment FriProver::commit(
   commitment.stats.commit_ms =
       ElapsedMilliseconds(commit_start, std::chrono::steady_clock::now());
   commitment.stats.prover_total_ms = commitment.stats.commit_ms;
-  commitment.stats.serialized_bytes =
-      static_cast<std::uint64_t>(commitment.oracle_root.size());
+  commitment.stats.serialized_bytes = serialized_message_bytes(commitment);
   return commitment;
 }
 
@@ -394,7 +362,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
     opening.proof.quotient_proof.final_polynomial = quotient_polynomial;
     opening.proof.quotient_proof.stats.prover_rounds = 0;
     opening.proof.quotient_proof.stats.serialized_bytes =
-        PolynomialPayloadBytes(ctx, quotient_polynomial);
+        serialized_message_bytes(ctx, opening.proof.quotient_proof);
   } else {
     const auto query_rounds = resolve_query_rounds_metadata(params_, reduced_instance);
 
@@ -443,9 +411,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
       static_cast<std::uint64_t>(total_rounds);
   opening.proof.stats.verifier_hashes += static_cast<std::uint64_t>(
       opening.proof.committed_oracle_proof.sibling_hashes.size());
-  opening.proof.stats.serialized_bytes +=
-      MerkleOpeningPayloadBytes(opening.proof.committed_oracle_proof) +
-      static_cast<std::uint64_t>(ctx.elem_bytes());
+  opening.proof.stats.serialized_bytes = serialized_message_bytes(ctx, opening);
   opening.proof.stats.prover_encode_ms += encode_ms;
   opening.proof.stats.prover_merkle_ms += merkle_ms;
   opening.proof.stats.prover_answer_ms += answer_ms;

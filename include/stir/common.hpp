@@ -75,6 +75,9 @@ struct StirProofWithWitness {
   StirWitness witness;
 };
 
+std::uint64_t serialized_message_bytes(
+    const swgr::algebra::GRContext& ctx, const StirProof& proof);
+
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
                                   std::uint64_t fold_factor);
 

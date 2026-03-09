@@ -77,6 +77,18 @@ struct FriOpeningArtifact {
   FriOpeningWitness witness;
 };
 
+std::uint64_t serialized_message_bytes(const FriCommitment& commitment);
+
+std::uint64_t serialized_message_bytes(
+    const swgr::algebra::GRContext& ctx, const FriProof& proof);
+
+std::uint64_t serialized_message_bytes(
+    const swgr::algebra::GRContext& ctx, const FriOpeningProof& proof);
+
+// Counts only the prover reply bytes for the opening message: value plus proof.
+std::uint64_t serialized_message_bytes(
+    const swgr::algebra::GRContext& ctx, const FriOpening& opening);
+
 std::size_t folding_round_count(const FriInstance& instance,
                                 std::uint64_t fold_factor,
                                 std::uint64_t stop_degree);

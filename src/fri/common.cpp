@@ -58,6 +58,50 @@ void append_bytes(std::vector<std::uint8_t>& dst,
   dst.insert(dst.end(), src.begin(), src.end());
 }
 
+template <typename Sink>
+void SerializeRingElement(Sink& sink, const swgr::algebra::GRContext& ctx,
+                          const swgr::algebra::GRElem& value) {
+  swgr::SerializeBytes(sink, ctx.serialize(value));
+}
+
+template <typename Sink>
+void SerializePolynomial(Sink& sink, const swgr::algebra::GRContext& ctx,
+                         const swgr::poly_utils::Polynomial& polynomial) {
+  const auto& coefficients = polynomial.coefficients();
+  swgr::SerializeUint64(sink,
+                        static_cast<std::uint64_t>(coefficients.size()));
+  for (const auto& coefficient : coefficients) {
+    SerializeRingElement(sink, ctx, coefficient);
+  }
+}
+
+template <typename Sink>
+void SerializeMerkleProof(Sink& sink, const swgr::crypto::MerkleProof& proof) {
+  swgr::SerializeUint64Vector(sink, proof.queried_indices);
+  swgr::SerializeByteVector(sink, proof.leaf_payloads);
+  swgr::SerializeByteVector(sink, proof.sibling_hashes);
+}
+
+template <typename Sink>
+void SerializeFriProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
+                           const FriProof& proof) {
+  swgr::SerializeUint64(sink,
+                        static_cast<std::uint64_t>(proof.rounds.size()));
+  for (const auto& round : proof.rounds) {
+    SerializeMerkleProof(sink, round.oracle_proof);
+  }
+  SerializePolynomial(sink, ctx, proof.final_polynomial);
+  swgr::SerializeByteVector(sink, proof.oracle_roots);
+}
+
+template <typename Sink>
+void SerializeFriOpeningProofBody(
+    Sink& sink, const swgr::algebra::GRContext& ctx,
+    const FriOpeningProof& proof) {
+  SerializeMerkleProof(sink, proof.committed_oracle_proof);
+  SerializeFriProofBody(sink, ctx, proof.quotient_proof);
+}
+
 void append_serialized_in_current_ntl_context(
     const swgr::algebra::GRContext& ctx, const swgr::algebra::GRElem& value,
     std::vector<std::uint8_t>& out) {
@@ -125,6 +169,34 @@ std::vector<std::uint8_t> expand_seed(std::uint64_t seed,
 }
 
 }  // namespace
+
+std::uint64_t serialized_message_bytes(const FriCommitment& commitment) {
+  swgr::CountingSink sink;
+  swgr::SerializeBytes(sink, commitment.oracle_root);
+  return sink.size();
+}
+
+std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
+                                       const FriProof& proof) {
+  swgr::CountingSink sink;
+  SerializeFriProofBody(sink, ctx, proof);
+  return sink.size();
+}
+
+std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
+                                       const FriOpeningProof& proof) {
+  swgr::CountingSink sink;
+  SerializeFriOpeningProofBody(sink, ctx, proof);
+  return sink.size();
+}
+
+std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
+                                       const FriOpening& opening) {
+  swgr::CountingSink sink;
+  SerializeRingElement(sink, ctx, opening.claim.value);
+  SerializeFriOpeningProofBody(sink, ctx, opening.proof);
+  return sink.size();
+}
 
 std::size_t folding_round_count(const FriInstance& instance,
                                 std::uint64_t fold_factor,

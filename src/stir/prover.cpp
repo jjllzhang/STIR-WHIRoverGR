@@ -32,41 +32,6 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
   return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
-std::uint64_t MerkleOpeningPayloadBytes(
-    const swgr::crypto::MerkleProof& proof) {
-  std::uint64_t bytes = 0;
-  for (const auto& payload : proof.leaf_payloads) {
-    bytes += static_cast<std::uint64_t>(payload.size());
-  }
-  for (const auto& sibling : proof.sibling_hashes) {
-    bytes += static_cast<std::uint64_t>(sibling.size());
-  }
-  return bytes;
-}
-
-std::uint64_t PolynomialPayloadBytes(const swgr::algebra::GRContext& ctx,
-                                     const swgr::poly_utils::Polynomial& poly) {
-  return static_cast<std::uint64_t>(poly.coefficients().size()) *
-         static_cast<std::uint64_t>(ctx.elem_bytes());
-}
-
-std::uint64_t CompactStirProofBytes(const swgr::algebra::GRContext& ctx,
-                                    const StirProof& proof) {
-  std::uint64_t bytes = 0;
-  for (std::size_t round_index = 0;
-       round_index < proof.rounds.size() && round_index < proof.oracle_roots.size();
-       ++round_index) {
-    const auto& round = proof.rounds[round_index];
-    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
-    bytes += static_cast<std::uint64_t>(round.ood_answers.size()) *
-             static_cast<std::uint64_t>(ctx.elem_bytes());
-    bytes += MerkleOpeningPayloadBytes(round.input_oracle_proof);
-    bytes += MerkleOpeningPayloadBytes(round.shift_oracle_proof);
-  }
-  bytes += PolynomialPayloadBytes(ctx, proof.final_polynomial);
-  return bytes;
-}
-
 }  // namespace
 
 StirProver::StirProver(StirParameters params) : params_(std::move(params)) {}
@@ -297,7 +262,7 @@ StirProofWithWitness StirProver::prove_with_witness(
         "stir::StirProver::prove terminal polynomial violates degree bound");
   }
   proof.stats.prover_rounds = static_cast<std::uint64_t>(round_count);
-  proof.stats.serialized_bytes = CompactStirProofBytes(ctx, proof);
+  proof.stats.serialized_bytes = serialized_message_bytes(ctx, proof);
   proof.stats.verifier_hashes = 0;
   for (const auto& round : proof.rounds) {
     proof.stats.verifier_hashes +=

@@ -20,6 +20,65 @@ namespace {
 
 constexpr std::uint64_t kOodTagOffset = 0x10000ULL;
 
+template <typename Sink>
+void SerializeRingElement(Sink& sink, const swgr::algebra::GRContext& ctx,
+                          const swgr::algebra::GRElem& value) {
+  swgr::SerializeBytes(sink, ctx.serialize(value));
+}
+
+template <typename Sink>
+void SerializePolynomial(Sink& sink, const swgr::algebra::GRContext& ctx,
+                         const swgr::poly_utils::Polynomial& polynomial) {
+  const auto& coefficients = polynomial.coefficients();
+  swgr::SerializeUint64(sink,
+                        static_cast<std::uint64_t>(coefficients.size()));
+  for (const auto& coefficient : coefficients) {
+    SerializeRingElement(sink, ctx, coefficient);
+  }
+}
+
+template <typename Sink>
+void SerializeMerkleProof(Sink& sink, const swgr::crypto::MerkleProof& proof) {
+  swgr::SerializeUint64Vector(sink, proof.queried_indices);
+  swgr::SerializeByteVector(sink, proof.leaf_payloads);
+  swgr::SerializeByteVector(sink, proof.sibling_hashes);
+}
+
+template <typename Sink>
+void SerializeRingVector(Sink& sink, const swgr::algebra::GRContext& ctx,
+                         std::span<const swgr::algebra::GRElem> values) {
+  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+  for (const auto& value : values) {
+    SerializeRingElement(sink, ctx, value);
+  }
+}
+
+template <typename Sink>
+void SerializeStirProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
+                            const StirProof& proof) {
+  swgr::SerializeUint64(sink,
+                        static_cast<std::uint64_t>(proof.rounds.size()));
+  for (const auto& round : proof.rounds) {
+    swgr::SerializeUint64(sink, round.round_index);
+    swgr::SerializeUint64(sink, round.input_domain_size);
+    swgr::SerializeUint64(sink, round.folded_domain_size);
+    swgr::SerializeUint64(sink, round.shift_domain_size);
+    swgr::SerializeUint64(sink, round.input_degree_bound);
+    swgr::SerializeUint64(sink, round.folded_degree_bound);
+    SerializeRingElement(sink, ctx, round.folding_alpha);
+    SerializeRingElement(sink, ctx, round.comb_randomness);
+    swgr::SerializeUint64Vector(sink, round.fold_query_positions);
+    swgr::SerializeUint64Vector(sink, round.shift_query_positions);
+    SerializeRingVector(sink, ctx, round.shift_query_answers);
+    SerializeMerkleProof(sink, round.input_oracle_proof);
+    SerializeMerkleProof(sink, round.shift_oracle_proof);
+    SerializeRingVector(sink, ctx, round.ood_points);
+    SerializeRingVector(sink, ctx, round.ood_answers);
+  }
+  SerializePolynomial(sink, ctx, proof.final_polynomial);
+  swgr::SerializeByteVector(sink, proof.oracle_roots);
+}
+
 bool Contains(const std::vector<algebra::GRElem>& values,
               const algebra::GRElem& candidate) {
   for (const auto& value : values) {
@@ -102,6 +161,13 @@ std::vector<swgr::algebra::GRElem> EnumerateDomainPoints(const Domain& domain) {
 }
 
 }  // namespace
+
+std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
+                                       const StirProof& proof) {
+  swgr::CountingSink sink;
+  SerializeStirProofBody(sink, ctx, proof);
+  return sink.size();
+}
 
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
                                   std::uint64_t fold_factor) {

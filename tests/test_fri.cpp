@@ -23,55 +23,21 @@ using swgr::algebra::GRContext;
 using swgr::algebra::GRElem;
 using swgr::poly_utils::Polynomial;
 
-std::uint64_t MerkleOpeningPayloadBytes(
-    const swgr::crypto::MerkleProof& proof) {
-  std::uint64_t bytes = 0;
-  for (const auto& payload : proof.leaf_payloads) {
-    bytes += static_cast<std::uint64_t>(payload.size());
-  }
-  for (const auto& sibling : proof.sibling_hashes) {
-    bytes += static_cast<std::uint64_t>(sibling.size());
-  }
-  return bytes;
-}
-
-std::uint64_t CompactFriBytes(const GRContext& ctx,
-                              const swgr::fri::FriProof& proof) {
-  std::uint64_t bytes = 0;
-  for (const auto& oracle_root : proof.oracle_roots) {
-    bytes += static_cast<std::uint64_t>(oracle_root.size());
-  }
-  for (const auto& round : proof.rounds) {
-    bytes += MerkleOpeningPayloadBytes(round.oracle_proof);
-  }
-  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
-           static_cast<std::uint64_t>(ctx.elem_bytes());
-  return bytes;
-}
-
-std::uint64_t CompactFriOpeningBytes(const GRContext& ctx,
-                                     const swgr::fri::FriOpening& opening) {
-  return static_cast<std::uint64_t>(ctx.elem_bytes()) +
-         MerkleOpeningPayloadBytes(opening.proof.committed_oracle_proof) +
-         CompactFriBytes(ctx, opening.proof.quotient_proof);
+std::uint64_t EncodedRingVectorBytes(const GRContext& ctx,
+                                     std::size_t value_count) {
+  return sizeof(std::uint64_t) +
+         static_cast<std::uint64_t>(value_count) *
+             (sizeof(std::uint64_t) +
+              static_cast<std::uint64_t>(ctx.elem_bytes()));
 }
 
 std::uint64_t LegacyRawFriBytes(const GRContext& ctx,
                                 const swgr::fri::FriProofWithWitness& artifact) {
-  const auto& proof = artifact.proof;
-  std::uint64_t bytes = 0;
-  for (const auto& oracle_root : proof.oracle_roots) {
-    bytes += static_cast<std::uint64_t>(oracle_root.size());
-  }
-  for (const auto& round : proof.rounds) {
-    bytes += MerkleOpeningPayloadBytes(round.oracle_proof);
-  }
+  std::uint64_t bytes = swgr::fri::serialized_message_bytes(ctx, artifact.proof);
+  bytes += sizeof(std::uint64_t);
   for (const auto& round_witness : artifact.witness.rounds) {
-    bytes += static_cast<std::uint64_t>(round_witness.oracle_evals.size()) *
-             static_cast<std::uint64_t>(ctx.elem_bytes());
+    bytes += EncodedRingVectorBytes(ctx, round_witness.oracle_evals.size());
   }
-  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
-           static_cast<std::uint64_t>(ctx.elem_bytes());
   return bytes;
 }
 
@@ -174,12 +140,14 @@ void TestFriPcsCommitOpenVerifyRoundtrip() {
 
   CHECK(swgr::fri::commitment_domain_supported(commitment));
   CHECK(swgr::fri::opening_point_valid(commitment, alpha));
+  CHECK_EQ(commitment.stats.serialized_bytes,
+           swgr::fri::serialized_message_bytes(commitment));
   CHECK_EQ(opening.claim.value, polynomial.evaluate(ctx, alpha));
   CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value, opening));
   CHECK(verifier.verify(commitment, compat.opening.claim.alpha,
                         compat.opening.claim.value, compat));
   CHECK_EQ(opening.proof.stats.serialized_bytes,
-           CompactFriOpeningBytes(ctx, opening));
+           swgr::fri::serialized_message_bytes(ctx, opening));
   CHECK_EQ(opening.proof.committed_oracle_proof.queried_indices.size(),
            std::size_t{6});
   CHECK_EQ(opening.proof.quotient_proof.rounds.size(), std::size_t{2});
@@ -405,7 +373,8 @@ void TestFri3HonestRoundtripAndRoundShape() {
   CHECK_EQ(proof.rounds[0].oracle_proof.queried_indices.size(), std::size_t{2});
   CHECK_EQ(proof.rounds[1].oracle_proof.queried_indices.size(), std::size_t{1});
   CHECK_EQ(proof.rounds[2].oracle_proof.queried_indices.size(), std::size_t{1});
-  CHECK_EQ(proof.stats.serialized_bytes, CompactFriBytes(ctx, proof));
+  CHECK_EQ(proof.stats.serialized_bytes,
+           swgr::fri::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, artifact));
 }
 
@@ -481,7 +450,8 @@ void TestFri9HonestRoundtripAndRoundShape() {
   CHECK(round0_queries >= std::size_t{1});
   CHECK(round0_queries <= std::size_t{2});
   CHECK_EQ(proof.rounds[1].oracle_proof.queried_indices.size(), round0_queries);
-  CHECK_EQ(proof.stats.serialized_bytes, CompactFriBytes(ctx, proof));
+  CHECK_EQ(proof.stats.serialized_bytes,
+           swgr::fri::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, artifact));
 }
 

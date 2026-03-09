@@ -24,7 +24,7 @@ This repository is **prototype / research code**. It is intended for protocol ex
 
 - `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
 - `FRI-3` and `FRI-9` now expose a sparse-opening PCS surface over Teichmuller-supported domains, but they remain prototype implementations rather than theorem-4.1-complete, production-ready FRI-based PCS code
-- Current FRI openings terminate with `final_polynomial` plus terminal sparse checks; exact external-proof serialization is still deferred to Phase 4
+- Current FRI openings terminate with `final_polynomial` plus terminal sparse checks; proof-byte reporting now comes from a deterministic length-prefixed serializer over the actual external opening/proof messages
 - `stir::StirProver::prove()` still returns the Phase 1 compatibility carrier `{ proof, witness }`; the slim external proof object lives in `artifact.proof`
 - `poly_utils::bs08` is still a placeholder interface
 - Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
@@ -126,10 +126,11 @@ Run parameter search:
 Benchmark notes:
 
 - For single-thread comparisons, pin both `OMP_NUM_THREADS=1` and `--threads 1`
-- `bench_time` is the end-to-end timing surface for prover / verifier behavior and compact proof-byte accounting
+- `bench_time` is the end-to-end timing surface for prover / verifier behavior and exact serializer-backed proof-byte accounting
 - Current `fri3` / `fri9` rows already run `commit + open + verify`; `prover_total_ms` includes both `commit` and `open`
-- `serialized_bytes_actual` excludes transcript-derived metadata and redundant prover-only witness caches; it counts the compact sparse-opening payload carried by the current protocol surface
-- For current FRI Phase 3 rows, `serialized_bytes_actual` counts the opening payload (`value + committed sparse opening + quotient sparse proof`) rather than `commitment + opening` combined bytes; exact proof serialization is still deferred to Phase 4
+- `serialized_bytes_actual` is computed from the deterministic serializer of the actual external message shape rather than from hand-written compact payload formulas
+- Current FRI rows count the prover reply opening message (`value + opening proof`) rather than `commitment + opening` combined bytes; `alpha` remains verifier-chosen context and is not charged to the prover reply
+- Current STIR rows count the exact serialized bytes of the slim external `artifact.proof`; the compatibility witness carrier is not charged
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 
 ## Preset Workloads

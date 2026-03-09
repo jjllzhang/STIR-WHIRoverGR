@@ -25,68 +25,32 @@ using swgr::algebra::GRContext;
 using swgr::algebra::GRElem;
 using swgr::poly_utils::Polynomial;
 
-std::uint64_t MerkleOpeningPayloadBytes(
-    const swgr::crypto::MerkleProof& proof) {
-  std::uint64_t bytes = 0;
-  for (const auto& payload : proof.leaf_payloads) {
-    bytes += static_cast<std::uint64_t>(payload.size());
-  }
-  for (const auto& sibling : proof.sibling_hashes) {
-    bytes += static_cast<std::uint64_t>(sibling.size());
-  }
-  return bytes;
+std::uint64_t EncodedRingVectorBytes(const GRContext& ctx,
+                                     std::size_t value_count) {
+  return sizeof(std::uint64_t) +
+         static_cast<std::uint64_t>(value_count) *
+             (sizeof(std::uint64_t) +
+              static_cast<std::uint64_t>(ctx.elem_bytes()));
 }
 
-std::uint64_t CompactStirBytes(const GRContext& ctx,
-                               const swgr::stir::StirProof& proof) {
-  std::uint64_t bytes = 0;
-  for (std::size_t round_index = 0;
-       round_index < proof.rounds.size() && round_index < proof.oracle_roots.size();
-       ++round_index) {
-    const auto& round = proof.rounds[round_index];
-    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
-    bytes += static_cast<std::uint64_t>(round.ood_answers.size()) *
-             static_cast<std::uint64_t>(ctx.elem_bytes());
-    bytes += MerkleOpeningPayloadBytes(round.input_oracle_proof);
-    bytes += MerkleOpeningPayloadBytes(round.shift_oracle_proof);
-  }
-  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
-           static_cast<std::uint64_t>(ctx.elem_bytes());
-  return bytes;
+std::uint64_t EncodedPolynomialBytes(const GRContext& ctx,
+                                     const Polynomial& polynomial) {
+  return EncodedRingVectorBytes(ctx, polynomial.coefficients().size());
 }
 
 std::uint64_t LegacyRawStirBytes(const GRContext& ctx,
                                  const swgr::stir::StirProofWithWitness& artifact) {
-  const auto& proof = artifact.proof;
-  std::uint64_t bytes = 0;
-  for (std::size_t round_index = 0;
-       round_index < proof.rounds.size() && round_index < proof.oracle_roots.size();
-       ++round_index) {
-    const auto& round = proof.rounds[round_index];
-    const auto& round_witness = artifact.witness.rounds[round_index];
-    bytes += static_cast<std::uint64_t>(round_witness.shifted_oracle_evals.size()) *
-             static_cast<std::uint64_t>(ctx.elem_bytes());
-    bytes += static_cast<std::uint64_t>(round.ood_answers.size() +
-                                        round.shift_query_answers.size()) *
-             static_cast<std::uint64_t>(ctx.elem_bytes());
-    bytes += static_cast<std::uint64_t>(
-                 round_witness.answer_polynomial.coefficients().size() +
-                 round_witness.vanishing_polynomial.coefficients().size() +
-                 round_witness.quotient_polynomial.coefficients().size() +
-                 round_witness.next_polynomial.coefficients().size() +
-                 round_witness.input_polynomial.coefficients().size() +
-                 round_witness.folded_polynomial.coefficients().size()) *
-             static_cast<std::uint64_t>(ctx.elem_bytes());
-    bytes += static_cast<std::uint64_t>(proof.oracle_roots[round_index].size());
-    bytes += static_cast<std::uint64_t>(round.fold_query_positions.size()) *
-             sizeof(std::uint64_t);
-    bytes += static_cast<std::uint64_t>(round.shift_query_positions.size()) *
-             sizeof(std::uint64_t);
-    bytes += MerkleOpeningPayloadBytes(round.input_oracle_proof);
-    bytes += MerkleOpeningPayloadBytes(round.shift_oracle_proof);
+  std::uint64_t bytes = swgr::stir::serialized_message_bytes(ctx, artifact.proof);
+  bytes += sizeof(std::uint64_t);
+  for (const auto& round_witness : artifact.witness.rounds) {
+    bytes += EncodedPolynomialBytes(ctx, round_witness.input_polynomial);
+    bytes += EncodedPolynomialBytes(ctx, round_witness.folded_polynomial);
+    bytes += EncodedRingVectorBytes(ctx, round_witness.shifted_oracle_evals.size());
+    bytes += EncodedPolynomialBytes(ctx, round_witness.answer_polynomial);
+    bytes += EncodedPolynomialBytes(ctx, round_witness.vanishing_polynomial);
+    bytes += EncodedPolynomialBytes(ctx, round_witness.quotient_polynomial);
+    bytes += EncodedPolynomialBytes(ctx, round_witness.next_polynomial);
   }
-  bytes += static_cast<std::uint64_t>(proof.final_polynomial.coefficients().size()) *
-           static_cast<std::uint64_t>(ctx.elem_bytes());
   return bytes;
 }
 
@@ -213,7 +177,8 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
   CHECK(proof.final_polynomial.degree() <= params.stop_degree);
   CHECK_EQ(proof.final_polynomial.coefficients(),
            artifact.witness.rounds[0].next_polynomial.coefficients());
-  CHECK_EQ(proof.stats.serialized_bytes, CompactStirBytes(ctx, proof));
+  CHECK_EQ(proof.stats.serialized_bytes,
+           swgr::stir::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
 }
 
@@ -236,7 +201,8 @@ void TestStirMultiRoundCachesNextRoundInputOracle() {
   CHECK(verifier.verify(instance, artifact));
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
-  CHECK_EQ(proof.stats.serialized_bytes, CompactStirBytes(ctx, proof));
+  CHECK_EQ(proof.stats.serialized_bytes,
+           swgr::stir::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
   ctx.with_ntl_context([&] {
     CHECK_EQ(artifact.witness.rounds[1].input_polynomial.coefficients(),

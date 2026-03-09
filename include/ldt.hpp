@@ -1,9 +1,57 @@
 #ifndef SWGR_LDT_HPP_
 #define SWGR_LDT_HPP_
 
+#include <cstddef>
 #include <cstdint>
+#include <span>
+#include <vector>
 
 namespace swgr {
+
+class CountingSink {
+ public:
+  void append_byte(std::uint8_t /*byte*/) { ++size_; }
+
+  void append_bytes(std::span<const std::uint8_t> bytes) {
+    size_ += static_cast<std::uint64_t>(bytes.size());
+  }
+
+  std::uint64_t size() const { return size_; }
+
+ private:
+  std::uint64_t size_ = 0;
+};
+
+template <typename Sink>
+inline void SerializeUint64(Sink& sink, std::uint64_t value) {
+  for (std::size_t i = 0; i < sizeof(std::uint64_t); ++i) {
+    sink.append_byte(static_cast<std::uint8_t>((value >> (8U * i)) & 0xFFU));
+  }
+}
+
+template <typename Sink>
+inline void SerializeBytes(Sink& sink, std::span<const std::uint8_t> bytes) {
+  SerializeUint64(sink, static_cast<std::uint64_t>(bytes.size()));
+  sink.append_bytes(bytes);
+}
+
+template <typename Sink>
+inline void SerializeUint64Vector(Sink& sink,
+                                  std::span<const std::uint64_t> values) {
+  SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+  for (const auto value : values) {
+    SerializeUint64(sink, value);
+  }
+}
+
+template <typename Sink>
+inline void SerializeByteVector(
+    Sink& sink, std::span<const std::vector<std::uint8_t>> values) {
+  SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+  for (const auto& value : values) {
+    SerializeBytes(sink, value);
+  }
+}
 
 struct ProofStatistics {
   std::uint64_t prover_rounds = 0;

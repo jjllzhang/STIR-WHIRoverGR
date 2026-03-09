@@ -45,7 +45,7 @@
 | G2 | `FriRoundProof` 仍包含整轮 `oracle_evals` | 不是 sparse-opening proof | P0 |
 | G3 | `StirRoundProof` 仍包含大量中间多项式和整轮 witness | verifier 能力模型远强于论文式 opening verifier | P1 |
 | G4 | verifier 依赖整轮 oracle / polynomial 重算 | 不是 “commitment + queried openings” 验证模型 | P0 |
-| G5 | `serialized_bytes_actual` 只统计 compact payload，但 verifier 仍依赖未计费字段 | proof-size 统计和真实 proof object 仍未完全统一 | P1 |
+| G5 | `serialized_bytes_actual` 现已按确定性 serializer 统计真实 external message bytes | 此项已由 Phase 4 收口；FRI 维持 opening-only bytes，STIR 计 slim external proof | DONE |
 | G6 | auto queries / security bits 仍是工程启发式 | 还没有按论文 `m` 重复参数给出协议级安全口径 | P1 |
 | G7 | FRI 只支持 `fold_factor ∈ {3, 9}`，STIR 固定 `9 -> 3` | 属于论文可行子集实现，而不是 theorem-level 全一般性实现 | P2 |
 
@@ -58,7 +58,7 @@
 - [x] FRI 证明阶段针对的是 `g = (f-v)/(X-α)` 的 proximity，而不是直接对完整 `f` 做当前这套 heavy-witness 校验
 - [x] 对外 `FriProof` 不再包含整轮 `oracle_evals`
 - [ ] verifier 不再依赖整轮 oracle / 中间 polynomial 的显式传输
-- [ ] proof-size 统计来自“真实传输 proof”的确定性序列化或固定宽度编码
+- [x] proof-size 统计来自“真实传输 proof”的确定性序列化或固定宽度编码
 - [ ] README 与 benchmark 文案不再把 prototype-heavy verifier 描述成论文式 PCS verifier
 
 ## 5. 执行策略
@@ -239,12 +239,11 @@
 
 **任务**
 
-- [ ] 为外部 proof 定义固定宽度或确定性序列化格式
-- [ ] `serialized_bytes_actual` 改为：
-  - [ ] 直接序列化 proof 后取字节数
-  - 或 [ ] 由统一 serializer/CountingSink 统计
-- [ ] 删除当前所有“proof 里还在、但字节统计故意不算”的灰区
-- [ ] 让 `bench_time` 里的 proof-size 和真正 `FriProof` / `StirProof` 对外对象一一对应
+- [x] 为外部 proof 定义固定宽度或确定性序列化格式
+- [x] `serialized_bytes_actual` 改为：
+  - [x] 由统一 serializer/CountingSink 统计
+- [x] 删除当前所有“proof 里还在、但字节统计故意不算”的灰区
+- [x] 让 `bench_time` 里的 proof-size 和真正 `FriProof` / `StirProof` 对外对象一一对应
 
 **建议涉及文件**
 
@@ -256,8 +255,8 @@
 
 **验收标准**
 
-- [ ] `serialized_bytes_actual` 与“真正发送的 proof 对象”完全一致
-- [ ] 不再需要解释“verifier 用得到但这里没计费”的字段差异
+- [x] `serialized_bytes_actual` 与“真正发送的 proof 对象”完全一致
+- [x] 不再需要解释“verifier 用得到但这里没计费”的字段差异
 
 ---
 
@@ -371,15 +370,15 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 | Phase 1 proof/witness 分层 | DONE | Codex | 2026-03-09 | external proof 已瘦身，compat carrier 保留旧 verifier 所需 witness |
 | Phase 2 PCS commit/open | DONE | Codex | 2026-03-09 | FRI 已具备 `commit/open/verify` PCS 表面；`FriOpeningArtifact` 已降级为内部 / compat 层，FRI benchmark 已切到 PCS 路径 |
 | Phase 3 sparse-opening FRI verifier | DONE | Codex | 2026-03-09 | public `FriOpening` / `FriProof` 已改成 sparse-opening external proof；verifier 只依赖 roots + sparse openings + `final_polynomial` |
-| Phase 4 exact proof bytes | TODO |  |  |  |
+| Phase 4 exact proof bytes | DONE | Codex | 2026-03-09 | `serialized_bytes_actual` 已切到 deterministic serializer；FRI 维持 opening-only bytes，STIR 计 slim external proof |
 | Phase 5 STIR proof 瘦身 | TODO |  |  |  |
 | Phase 6 参数与文档回收 | TODO |  |  |  |
 
 ## 11. 下一步建议
 
-最合理的下一步不是继续回头碰 FRI proof 形状，而是：
+最合理的下一步是：
 
-- 先执行 **Phase 4**
-- 目标是把 `serialized_bytes_actual` 和真实 external proof 的确定性编码彻底对齐
+- 执行 **Phase 5**
+- 目标是把 STIR 也从当前 compat/heavy-witness verifier 继续推进到真正的 sparse-opening verifier
 
-只有这一步完成，benchmark 的 proof-size 才会完全对应当前已经落地的 sparse-opening public proof object。
+FRI 这边的 benchmark proof-size 已经和当前 sparse-opening public proof object 对齐，后续重点应转向 STIR proof/witness 瘦身。
