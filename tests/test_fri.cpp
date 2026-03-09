@@ -50,6 +50,12 @@ std::uint64_t CompactFriBytes(const GRContext& ctx,
   return bytes;
 }
 
+std::uint64_t CompactFriOpeningBytes(const GRContext& ctx,
+                                     const swgr::fri::FriOpeningArtifact& opening) {
+  return static_cast<std::uint64_t>(ctx.elem_bytes()) +
+         CompactFriBytes(ctx, opening.opening.proof.quotient_proof);
+}
+
 std::uint64_t LegacyRawFriBytes(const GRContext& ctx,
                                 const swgr::fri::FriProofWithWitness& artifact) {
   const auto& proof = artifact.proof;
@@ -132,6 +138,247 @@ void TamperTerminalOracleTable(const GRContext& ctx,
     artifact.witness.rounds.back().oracle_evals[0] += ctx.one();
     return 0;
   });
+}
+
+swgr::algebra::GRElem NonTeichAlpha(const GRContext& ctx) {
+  return ctx.with_ntl_context([&] {
+    auto candidate = ctx.one();
+    candidate += ctx.one();
+    candidate += ctx.one();
+    return candidate;
+  });
+}
+
+void TamperOpeningValue(const GRContext& ctx,
+                        swgr::fri::FriOpeningArtifact* opening) {
+  ctx.with_ntl_context([&] {
+    opening->opening.claim.value += ctx.one();
+    return 0;
+  });
+}
+
+void TamperCommittedOracle(const GRContext& ctx,
+                           swgr::fri::FriOpeningArtifact* opening) {
+  ctx.with_ntl_context([&] {
+    opening->witness.committed_oracle_evals[0] += ctx.one();
+    return 0;
+  });
+}
+
+// Phase 2 baseline: FRI now exposes a PCS-like commit/open/verify surface
+// with explicit alpha and value, while verifier correctness still flows
+// through a witness-backed compatibility artifact until Phase 3.
+void TestFriPcsCommitOpenVerifyRoundtrip() {
+  testutil::PrintInfo(
+      "fri pcs commit/open/verify accepts alpha in T \\\\ L and proves the quotient oracle");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  const auto alpha = ctx.zero();
+  const auto reduced_instance = swgr::fri::opening_instance(commitment);
+  const auto opening = prover.open(commitment, polynomial, alpha);
+
+  CHECK(swgr::fri::commitment_domain_supported(commitment));
+  CHECK(swgr::fri::opening_point_valid(commitment, alpha));
+  CHECK_EQ(reduced_instance.claimed_degree, std::uint64_t{7});
+  CHECK_EQ(opening.opening.claim.value, polynomial.evaluate(ctx, alpha));
+  CHECK(verifier.verify(commitment, opening.opening.claim.alpha,
+                        opening.opening.claim.value, opening));
+
+  const auto adapted_oracle = swgr::fri::build_virtual_oracle(
+      commitment.domain, opening.witness.committed_oracle_evals,
+      opening.opening.claim.alpha, opening.opening.claim.value);
+  CHECK_EQ(opening.opening.proof.stats.serialized_bytes,
+           CompactFriOpeningBytes(ctx, opening));
+  CHECK_EQ(opening.witness.quotient_witness.rounds.front().oracle_evals,
+           adapted_oracle);
+}
+
+void TestFriPcsRejectsAlphaInsideDomain() {
+  testutil::PrintInfo("fri pcs rejects alpha that lies inside L");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  const auto alpha = instance.domain.element(0);
+
+  CHECK(!swgr::fri::opening_point_valid(commitment, alpha));
+  bool threw = false;
+  try {
+    (void)prover.open(commitment, polynomial, alpha);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+}
+
+void TestFriPcsRejectsWrongPolynomialForCommitment() {
+  testutil::PrintInfo(
+      "fri pcs open rejects a polynomial that does not match the commitment");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto committed_polynomial = SamplePolynomial(ctx, instance.domain, 9);
+  auto wrong_polynomial = committed_polynomial;
+  ctx.with_ntl_context([&] {
+    auto coefficients = wrong_polynomial.coefficients();
+    coefficients[0] += ctx.one();
+    wrong_polynomial = Polynomial(std::move(coefficients));
+    return 0;
+  });
+
+  const swgr::fri::FriProver prover(params);
+  const auto commitment = prover.commit(instance, committed_polynomial);
+
+  bool threw = false;
+  try {
+    (void)prover.open(commitment, wrong_polynomial, ctx.zero());
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+}
+
+void TestFriPcsRejectsNonTeichAlpha() {
+  testutil::PrintInfo("fri pcs rejects alpha outside the teichmuller set");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  const auto alpha = NonTeichAlpha(ctx);
+
+  CHECK(!swgr::fri::opening_point_valid(commitment, alpha));
+  bool threw = false;
+  try {
+    (void)prover.open(commitment, polynomial, alpha);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+}
+
+void TestFriPcsRejectsNonTeichCommitmentDomain() {
+  testutil::PrintInfo("fri pcs rejects commitments whose evaluation domain is not contained in T");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto params = MakeParams(3);
+  const auto non_teich_offset = NonTeichAlpha(ctx);
+  const swgr::fri::FriInstance bad_instance{
+      .domain = Domain::teichmuller_coset(ctx, non_teich_offset, 9),
+      .claimed_degree = 8,
+  };
+  const auto polynomial = SamplePolynomial(ctx, bad_instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  CHECK(!swgr::fri::commitment_domain_supported(
+      swgr::fri::FriCommitment{.domain = bad_instance.domain, .degree_bound = 8}));
+  bool threw = false;
+  try {
+    (void)prover.commit(bad_instance, polynomial);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+}
+
+void TestFriPcsRejectsTamperedClaimValue() {
+  testutil::PrintInfo("fri pcs verifier rejects a tampered claimed value");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  auto opening = prover.open(commitment, polynomial, ctx.zero());
+
+  TamperOpeningValue(ctx, &opening);
+
+  CHECK(!verifier.verify(commitment, opening.opening.claim.alpha,
+                         opening.opening.claim.value, opening));
+}
+
+void TestFriPcsRejectsTamperedCommittedOracle() {
+  testutil::PrintInfo(
+      "fri pcs verifier rejects a committed oracle that no longer matches the commitment");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  auto opening = prover.open(commitment, polynomial, ctx.zero());
+
+  TamperCommittedOracle(ctx, &opening);
+
+  CHECK(!verifier.verify(commitment, opening.opening.claim.alpha,
+                         opening.opening.claim.value, opening));
+}
+
+void TestFriPcsRejectsMismatchedAlpha() {
+  testutil::PrintInfo(
+      "fri pcs verifier rejects reusing an opening artifact with a different alpha");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  const auto opening = prover.open(commitment, polynomial, ctx.zero());
+  const auto wrong_alpha = ctx.teich_generator();
+
+  CHECK(swgr::fri::opening_point_valid(commitment, wrong_alpha));
+  CHECK(!verifier.verify(commitment, wrong_alpha, opening.opening.claim.value,
+                         opening));
+}
+
+void TestFriPcsRejectsMismatchedCommitment() {
+  testutil::PrintInfo(
+      "fri pcs verifier rejects reusing an opening artifact under a different commitment");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+  auto other_polynomial = polynomial;
+  ctx.with_ntl_context([&] {
+    auto coefficients = other_polynomial.coefficients();
+    coefficients[1] += ctx.one();
+    other_polynomial = Polynomial(std::move(coefficients));
+    return 0;
+  });
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  const auto other_commitment = prover.commit(instance, other_polynomial);
+  const auto opening = prover.open(commitment, polynomial, ctx.zero());
+
+  CHECK(!verifier.verify(other_commitment, opening.opening.claim.alpha,
+                         opening.opening.claim.value, opening));
 }
 
 // Phase 1 baseline: the public `FriProof` is slimmed, while the temporary
@@ -403,6 +650,15 @@ void TestFriValidationRejectsBadInputs() {
 
 int main() {
   try {
+    RUN_TEST(TestFriPcsCommitOpenVerifyRoundtrip);
+    RUN_TEST(TestFriPcsRejectsAlphaInsideDomain);
+    RUN_TEST(TestFriPcsRejectsWrongPolynomialForCommitment);
+    RUN_TEST(TestFriPcsRejectsNonTeichAlpha);
+    RUN_TEST(TestFriPcsRejectsNonTeichCommitmentDomain);
+    RUN_TEST(TestFriPcsRejectsTamperedClaimValue);
+    RUN_TEST(TestFriPcsRejectsTamperedCommittedOracle);
+    RUN_TEST(TestFriPcsRejectsMismatchedAlpha);
+    RUN_TEST(TestFriPcsRejectsMismatchedCommitment);
     RUN_TEST(TestFri3HonestRoundtripAndRoundShape);
     RUN_TEST(TestFri3RejectsTamperedOpening);
     RUN_TEST(TestFri3RejectsTamperedFinalPolynomial);

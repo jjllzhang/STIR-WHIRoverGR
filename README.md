@@ -24,7 +24,8 @@ This repository is **prototype / research code**. It is intended for protocol ex
 
 - `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
 - `FRI-3`, `FRI-9`, and `STIR(9->3)` still use prototype-heavy verifiers that depend on full or reconstructed witness material; they should not be described as theorem-4.1-complete FRI-based PCS verifiers
-- During the current Phase 1 transition, `fri::FriProver::prove()` and `stir::StirProver::prove()` return a compatibility carrier `{ proof, witness }`; the slim external proof object lives in `artifact.proof`
+- During the current Phase 2 transition, `fri::FriProver::commit()` / `open()` expose a PCS-like surface over Teichmuller-supported domains, but `fri::FriVerifier::verify()` still consumes `FriOpeningArtifact { opening, witness }` until Phase 3 removes the compatibility witness carrier
+- `stir::StirProver::prove()` still returns the Phase 1 compatibility carrier `{ proof, witness }`; the slim external proof object lives in `artifact.proof`
 - `poly_utils::bs08` is still a placeholder interface
 - Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
@@ -126,7 +127,9 @@ Benchmark notes:
 
 - For single-thread comparisons, pin both `OMP_NUM_THREADS=1` and `--threads 1`
 - `bench_time` is the end-to-end timing surface for prover / verifier behavior and compact proof-byte accounting
+- Current `fri3` / `fri9` rows already run `commit + open + verify`; `prover_total_ms` includes both `commit` and `open`
 - `serialized_bytes_actual` excludes transcript-derived metadata and redundant prover-only witness caches; it counts the compact proof payload carried by the current protocol surface
+- For current FRI Phase 2 rows, `serialized_bytes_actual` counts the opening payload (`value + quotient proof`) rather than `commitment + opening` combined bytes; that proof-size unification is deferred to Phase 4
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 
 ## Preset Workloads

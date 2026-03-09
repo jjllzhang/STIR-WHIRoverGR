@@ -20,6 +20,18 @@ struct FriInstance {
   std::uint64_t claimed_degree = 0;
 };
 
+struct FriCommitment {
+  Domain domain;
+  std::uint64_t degree_bound = 0;
+  std::vector<std::uint8_t> oracle_root;
+  swgr::ProofStatistics stats;
+};
+
+struct FriOpeningClaim {
+  swgr::algebra::GRElem alpha;
+  swgr::algebra::GRElem value;
+};
+
 struct FriRoundState {
   std::uint64_t round_index = 0;
   std::uint64_t fold_factor = 0;
@@ -53,9 +65,58 @@ struct FriProofWithWitness {
   FriWitness witness;
 };
 
+struct FriOpeningProof {
+  FriProof quotient_proof;
+  swgr::ProofStatistics stats;
+};
+
+struct FriOpeningWitness {
+  std::vector<swgr::algebra::GRElem> committed_oracle_evals;
+  FriWitness quotient_witness;
+};
+
+struct FriOpening {
+  FriOpeningClaim claim;
+  FriOpeningProof proof;
+};
+
+struct FriOpeningArtifact {
+  FriOpening opening;
+  FriOpeningWitness witness;
+};
+
 std::size_t folding_round_count(const FriInstance& instance,
                                 std::uint64_t fold_factor,
                                 std::uint64_t stop_degree);
+
+std::uint64_t opening_degree_bound(std::uint64_t degree_bound);
+
+inline std::uint64_t quotient_degree_bound(std::uint64_t degree_bound) {
+  return opening_degree_bound(degree_bound);
+}
+
+FriInstance opening_instance(const FriCommitment& commitment);
+
+inline FriInstance quotient_instance(const FriCommitment& commitment) {
+  return opening_instance(commitment);
+}
+
+bool commitment_domain_supported(const FriCommitment& commitment);
+
+bool opening_point_valid(const FriCommitment& commitment,
+                         const swgr::algebra::GRElem& alpha);
+
+std::vector<swgr::algebra::GRElem> build_virtual_oracle(
+    const Domain& domain, std::span<const swgr::algebra::GRElem> oracle_evals,
+    const swgr::algebra::GRElem& alpha,
+    const swgr::algebra::GRElem& value);
+
+inline std::vector<swgr::algebra::GRElem> adapt_virtual_oracle(
+    const Domain& domain, std::span<const swgr::algebra::GRElem> oracle_evals,
+    const swgr::algebra::GRElem& alpha,
+    const swgr::algebra::GRElem& value) {
+  return build_virtual_oracle(domain, oracle_evals, alpha, value);
+}
 
 std::vector<std::uint64_t> query_schedule(
     std::size_t folding_rounds, const std::vector<std::uint64_t>& configured);

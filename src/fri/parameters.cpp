@@ -105,4 +105,26 @@ bool validate(const FriParameters& params, const FriInstance& instance) {
   return true;
 }
 
+bool validate(const FriParameters& params, const FriCommitment& commitment) {
+  if (!validate(params)) {
+    return false;
+  }
+  if (!commitment_domain_supported(commitment)) {
+    return false;
+  }
+  if (commitment.oracle_root.empty()) {
+    return false;
+  }
+  return validate(params, FriInstance{
+                              .domain = commitment.domain,
+                              .claimed_degree = commitment.degree_bound,
+                          });
+}
+
+bool validate(const FriCommitment& commitment, const FriOpeningClaim& claim) {
+  return !commitment.oracle_root.empty() &&
+         commitment_domain_supported(commitment) &&
+         opening_point_valid(commitment, claim.alpha);
+}
+
 }  // namespace swgr::fri

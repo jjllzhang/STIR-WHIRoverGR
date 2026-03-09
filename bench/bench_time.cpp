@@ -97,6 +97,13 @@ double SafeMean(double total, std::uint64_t reps) {
   return reps == 0 ? 0.0 : total / static_cast<double>(reps);
 }
 
+double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
+                           std::chrono::steady_clock::time_point end) {
+  return std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(
+             end - start)
+      .count();
+}
+
 double ClampNonNegative(double value) {
   return value < 0.0 ? 0.0 : value;
 }
@@ -798,26 +805,49 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
+  const swgr::fri::FriCommitment commitment_shape{
+      .domain = instance.domain,
+      .degree_bound = options.d,
+  };
   PrintQueryWarnings(fold_factor == 3 ? "fri3" : "fri9",
-                     swgr::fri::resolve_query_rounds_metadata(params, instance));
+                     swgr::fri::resolve_query_rounds_metadata(
+                         params, swgr::fri::opening_instance(commitment_shape)));
   const auto polynomial =
       SamplePolynomial(*ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
   const swgr::fri::FriProver prover(params);
   const swgr::fri::FriVerifier verifier(params);
 
-  return RunBenchLoop(options, fold_factor == 3 ? "fri3" : "fri9", fold_factor, 0,
-                      0, [&](TimeBenchRow* row) {
-                        const auto artifact = prover.prove(instance, polynomial);
-                        const auto& proof = artifact.proof;
+  auto row = RunBenchLoop(options, fold_factor == 3 ? "fri3" : "fri9", fold_factor,
+                          0, 0, [&](TimeBenchRow* current_row) {
+                        const auto prover_start = std::chrono::steady_clock::now();
+                        const auto commitment = prover.commit(instance, polynomial);
+                        const double commit_ms = ElapsedMilliseconds(
+                            prover_start, std::chrono::steady_clock::now());
+                        const auto opening =
+                            prover.open(commitment, polynomial, ctx->zero());
+                        const double prover_total_ms = ElapsedMilliseconds(
+                            prover_start, std::chrono::steady_clock::now());
+                        const auto& proof = opening.opening.proof.quotient_proof;
                         swgr::ProofStatistics verify_stats;
-                        if (!verifier.verify(instance, artifact, &verify_stats)) {
+                        if (!verifier.verify(commitment, opening.opening.claim.alpha,
+                                             opening.opening.claim.value, opening,
+                                             &verify_stats)) {
                           throw std::runtime_error("fri verifier rejected honest proof");
                         }
-                        if (row != nullptr) {
-                          AddRunStats(*row, proof.stats, verify_stats);
-                          row->verifier_hashes_actual = proof.stats.verifier_hashes;
+                        if (current_row != nullptr) {
+                          auto prover_stats = opening.opening.proof.stats;
+                          prover_stats.commit_ms += commit_ms;
+                          prover_stats.prover_total_ms = prover_total_ms;
+                          AddRunStats(*current_row, prover_stats, verify_stats);
+                          current_row->verifier_hashes_actual =
+                              proof.stats.verifier_hashes;
                         }
                       });
+  FillSoundnessMetadata(row, options.sec_mode, options.lambda_target,
+                        options.pow_bits, options.queries,
+                        static_cast<double>(options.d) /
+                            static_cast<double>(options.n));
+  return row;
 }
 
 TimeBenchRow MakeStirRow(const TimeBenchOptions& options,

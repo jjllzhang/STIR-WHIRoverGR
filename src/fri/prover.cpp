@@ -3,13 +3,14 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "crypto/fs/transcript.hpp"
 #include "poly_utils/folding.hpp"
 #include "poly_utils/interpolation.hpp"
+#include "poly_utils/quotient.hpp"
 
 namespace swgr::fri {
 namespace {
@@ -61,6 +62,131 @@ std::uint64_t CompactFriProofBytes(const swgr::algebra::GRContext& ctx,
 }  // namespace
 
 FriProver::FriProver(FriParameters params) : params_(std::move(params)) {}
+
+FriCommitment FriProver::commit(
+    const FriInstance& instance,
+    const swgr::poly_utils::Polynomial& polynomial) const {
+  if (!validate(params_, instance)) {
+    throw std::invalid_argument(
+        "fri::FriProver::commit received invalid instance");
+  }
+  if (polynomial.degree() > instance.claimed_degree) {
+    throw std::invalid_argument(
+        "fri::FriProver::commit polynomial exceeds claimed degree");
+  }
+
+  FriCommitment commitment{
+      .domain = instance.domain,
+      .degree_bound = instance.claimed_degree,
+      .oracle_root = {},
+      .stats = {},
+  };
+  if (!commitment_domain_supported(commitment)) {
+    throw std::invalid_argument(
+        "fri::FriProver::commit requires an evaluation domain L contained in T");
+  }
+
+  const auto commit_start = std::chrono::steady_clock::now();
+  const auto encode_start = std::chrono::steady_clock::now();
+  const auto oracle = swgr::poly_utils::rs_encode(instance.domain, polynomial);
+  commitment.stats.prover_encode_ms =
+      ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
+  const auto merkle_start = std::chrono::steady_clock::now();
+  commitment.oracle_root =
+      build_oracle_tree(params_.hash_profile, instance.domain.context(), oracle, 1)
+          .root();
+  commitment.stats.prover_merkle_ms =
+      ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
+  if (!validate(params_, commitment)) {
+    throw std::runtime_error(
+        "fri::FriProver::commit produced an invalid commitment");
+  }
+  commitment.stats.commit_ms =
+      ElapsedMilliseconds(commit_start, std::chrono::steady_clock::now());
+  commitment.stats.prover_total_ms = commitment.stats.commit_ms;
+  commitment.stats.serialized_bytes =
+      static_cast<std::uint64_t>(commitment.oracle_root.size());
+  return commitment;
+}
+
+FriOpeningArtifact FriProver::open(
+    const FriCommitment& commitment,
+    const swgr::poly_utils::Polynomial& polynomial,
+    const swgr::algebra::GRElem& alpha) const {
+  if (!validate(params_, commitment)) {
+    throw std::invalid_argument(
+        "fri::FriProver::open received invalid commitment");
+  }
+  if (!opening_point_valid(commitment, alpha)) {
+    throw std::invalid_argument("fri::FriProver::open requires alpha in T \\\\ L");
+  }
+  if (polynomial.degree() > commitment.degree_bound) {
+    throw std::invalid_argument(
+        "fri::FriProver::open polynomial exceeds commitment degree bound");
+  }
+
+  const auto open_start = std::chrono::steady_clock::now();
+  const auto& ctx = commitment.domain.context();
+  double encode_ms = 0.0;
+  double merkle_ms = 0.0;
+  double answer_ms = 0.0;
+  double quotient_ms = 0.0;
+
+  const auto encode_start = std::chrono::steady_clock::now();
+  auto committed_oracle = swgr::poly_utils::rs_encode(commitment.domain, polynomial);
+  encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
+
+  const auto merkle_start = std::chrono::steady_clock::now();
+  const auto expected_root =
+      build_oracle_tree(params_.hash_profile, ctx, committed_oracle, 1)
+          .root();
+  merkle_ms += ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
+  if (expected_root != commitment.oracle_root) {
+    throw std::invalid_argument(
+        "fri::FriProver::open polynomial does not match the commitment root");
+  }
+
+  const auto answer_start = std::chrono::steady_clock::now();
+  const auto value = polynomial.evaluate(ctx, alpha);
+  answer_ms += ElapsedMilliseconds(answer_start, std::chrono::steady_clock::now());
+
+  const auto quotient_start = std::chrono::steady_clock::now();
+  const auto quotient_polynomial = swgr::poly_utils::quotient_polynomial_from_answers(
+      ctx, polynomial, {alpha}, {value});
+  const auto virtual_oracle =
+      build_virtual_oracle(commitment.domain, committed_oracle, alpha, value);
+  quotient_ms +=
+      ElapsedMilliseconds(quotient_start, std::chrono::steady_clock::now());
+
+  const FriInstance reduced_instance = opening_instance(commitment);
+  if (!validate(params_, reduced_instance)) {
+    throw std::invalid_argument(
+        "fri::FriProver::open derived an invalid quotient instance");
+  }
+  auto quotient_artifact = prove_with_witness(reduced_instance, quotient_polynomial);
+  if (quotient_artifact.witness.rounds.empty() ||
+      quotient_artifact.witness.rounds.front().oracle_evals != virtual_oracle) {
+    throw std::runtime_error(
+        "fri::FriProver::open virtual oracle adapter diverged from quotient proof");
+  }
+
+  FriOpeningArtifact artifact;
+  artifact.opening.claim.alpha = alpha;
+  artifact.opening.claim.value = value;
+  artifact.opening.proof.quotient_proof = std::move(quotient_artifact.proof);
+  artifact.opening.proof.stats = artifact.opening.proof.quotient_proof.stats;
+  artifact.opening.proof.stats.serialized_bytes +=
+      static_cast<std::uint64_t>(ctx.elem_bytes());
+  artifact.opening.proof.stats.prover_encode_ms += encode_ms;
+  artifact.opening.proof.stats.prover_merkle_ms += merkle_ms;
+  artifact.opening.proof.stats.prover_answer_ms += answer_ms;
+  artifact.opening.proof.stats.prover_quotient_ms += quotient_ms;
+  artifact.opening.proof.stats.prover_total_ms =
+      ElapsedMilliseconds(open_start, std::chrono::steady_clock::now());
+  artifact.witness.committed_oracle_evals = std::move(committed_oracle);
+  artifact.witness.quotient_witness = std::move(quotient_artifact.witness);
+  return artifact;
+}
 
 FriProofWithWitness FriProver::prove(
     const FriInstance& instance,

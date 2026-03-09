@@ -33,6 +33,8 @@ class Domain {
 
   algebra::GRElem element(std::uint64_t i) const;
   std::vector<algebra::GRElem> elements() const;
+  bool contains(const algebra::GRElem& value) const;
+  bool is_teichmuller_subset() const;
 
   Domain scale(std::uint64_t power) const;
   Domain scale_offset(std::uint64_t power) const;

@@ -30,6 +30,8 @@ struct QueryRoundMetadata {
 
 bool validate(const FriParameters& params);
 bool validate(const FriParameters& params, const FriInstance& instance);
+bool validate(const FriParameters& params, const FriCommitment& commitment);
+bool validate(const FriCommitment& commitment, const FriOpeningClaim& claim);
 std::vector<std::uint64_t> resolve_query_repetitions(
     const FriParameters& params, const FriInstance& instance);
 QueryRoundMetadata resolve_query_round_metadata(std::uint64_t requested_count,

@@ -37,9 +37,78 @@ double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
       .count();
 }
 
+void AccumulateVerifierStats(swgr::ProofStatistics& dst,
+                             const swgr::ProofStatistics& src) {
+  dst.verifier_merkle_ms += src.verifier_merkle_ms;
+  dst.verifier_transcript_ms += src.verifier_transcript_ms;
+  dst.verifier_query_phase_ms += src.verifier_query_phase_ms;
+  dst.verifier_algebra_ms += src.verifier_algebra_ms;
+}
+
 }  // namespace
 
 FriVerifier::FriVerifier(FriParameters params) : params_(std::move(params)) {}
+
+bool FriVerifier::verify(const FriCommitment& commitment,
+                         const swgr::algebra::GRElem& alpha,
+                         const swgr::algebra::GRElem& value,
+                         const FriOpeningArtifact& opening,
+                         swgr::ProofStatistics* stats) const {
+  swgr::ProofStatistics local_stats;
+  const auto verify_start = std::chrono::steady_clock::now();
+  try {
+    if (!validate(params_, commitment) ||
+        !validate(commitment, FriOpeningClaim{.alpha = alpha, .value = value})) {
+      return false;
+    }
+
+    const auto& ctx = commitment.domain.context();
+    const auto algebra_start = std::chrono::steady_clock::now();
+    if (opening.witness.committed_oracle_evals.size() !=
+        static_cast<std::size_t>(commitment.domain.size())) {
+      return false;
+    }
+    const auto expected_virtual_oracle =
+        build_virtual_oracle(commitment.domain, opening.witness.committed_oracle_evals,
+                             alpha, value);
+    local_stats.verifier_algebra_ms +=
+        ElapsedMilliseconds(algebra_start, std::chrono::steady_clock::now());
+
+    const auto merkle_start = std::chrono::steady_clock::now();
+    const auto expected_root =
+        build_oracle_tree(params_.hash_profile, ctx,
+                          opening.witness.committed_oracle_evals, 1)
+            .root();
+    local_stats.verifier_merkle_ms +=
+        ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
+    if (expected_root != commitment.oracle_root) {
+      return false;
+    }
+
+    FriProofWithWitness quotient_artifact;
+    quotient_artifact.proof = opening.opening.proof.quotient_proof;
+    quotient_artifact.witness = opening.witness.quotient_witness;
+    if (quotient_artifact.witness.rounds.empty() ||
+        quotient_artifact.witness.rounds.front().oracle_evals !=
+            expected_virtual_oracle) {
+      return false;
+    }
+
+    swgr::ProofStatistics quotient_stats;
+    if (!verify(opening_instance(commitment), quotient_artifact, &quotient_stats)) {
+      return false;
+    }
+    AccumulateVerifierStats(local_stats, quotient_stats);
+    local_stats.verifier_total_ms =
+        ElapsedMilliseconds(verify_start, std::chrono::steady_clock::now());
+    if (stats != nullptr) {
+      *stats = local_stats;
+    }
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
 
 bool FriVerifier::verify(const FriInstance& instance,
                          const FriProofWithWitness& artifact,

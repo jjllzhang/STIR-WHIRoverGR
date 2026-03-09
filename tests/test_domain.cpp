@@ -57,6 +57,73 @@ void TestDomainRootOrderAndPowMap() {
   CHECK_EQ(pow9.element(0), ctx.one());
 }
 
+void TestTeichmullerMembershipHelpers() {
+  testutil::PrintInfo(
+      "teichmuller helper recognizes supported teichmuller elements and rejects nilpotent drift");
+
+  const swgr::algebra::GRContext ctx(
+      swgr::algebra::GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto domain = swgr::Domain::teichmuller_subgroup(ctx, 9);
+  const auto coset =
+      swgr::Domain::teichmuller_coset(ctx, ctx.teich_generator(), 9);
+
+  auto two = ctx.with_ntl_context([&] { return ctx.one() + ctx.one(); });
+
+  CHECK(swgr::algebra::is_teichmuller_element(ctx, ctx.zero()));
+  CHECK(swgr::algebra::is_teichmuller_element(ctx, ctx.one()));
+  CHECK(swgr::algebra::is_teichmuller_element(ctx, ctx.teich_generator()));
+  CHECK(swgr::algebra::is_teichmuller_element(ctx, domain.element(4)));
+  CHECK(swgr::algebra::is_teichmuller_element(ctx, coset.element(2)));
+  CHECK(!swgr::algebra::is_teichmuller_element(ctx, two));
+}
+
+void TestDomainContainsHelper() {
+  testutil::PrintInfo(
+      "domain contains helper accepts in-domain teichmuller points and rejects outside points");
+
+  const swgr::algebra::GRContext ctx(
+      swgr::algebra::GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const swgr::Domain subgroup = swgr::Domain::teichmuller_subgroup(ctx, 9);
+  const swgr::Domain coset =
+      swgr::Domain::teichmuller_coset(ctx, ctx.teich_generator(), 9);
+
+  auto two = ctx.with_ntl_context([&] { return ctx.one() + ctx.one(); });
+
+  CHECK(subgroup.contains(ctx.one()));
+  CHECK(subgroup.contains(subgroup.element(7)));
+  CHECK(!subgroup.contains(coset.element(0)));
+  CHECK(!subgroup.contains(ctx.zero()));
+  CHECK(!subgroup.contains(two));
+
+  CHECK(coset.contains(coset.element(3)));
+  CHECK(!coset.contains(subgroup.element(0)));
+  CHECK(!coset.contains(ctx.zero()));
+}
+
+void TestDomainTeichmullerSubsetHelper() {
+  testutil::PrintInfo(
+      "domain teichmuller-subset helper distinguishes teich cosets from generic unit cosets");
+
+  const swgr::algebra::GRContext ctx(
+      swgr::algebra::GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const swgr::Domain subgroup = swgr::Domain::teichmuller_subgroup(ctx, 9);
+  const swgr::Domain teich_coset =
+      swgr::Domain::teichmuller_coset(ctx, ctx.teich_generator(), 9);
+  const auto non_teich_unit = ctx.with_ntl_context([&] {
+    auto three = ctx.one();
+    three += ctx.one();
+    three += ctx.one();
+    return three;
+  });
+  const swgr::Domain non_teich_coset =
+      swgr::Domain::teichmuller_coset(ctx, non_teich_unit, 9);
+
+  CHECK(subgroup.is_teichmuller_subset());
+  CHECK(teich_coset.is_teichmuller_subset());
+  CHECK(!non_teich_coset.is_teichmuller_subset());
+  CHECK(non_teich_coset.contains(non_teich_coset.element(4)));
+}
+
 void TestDomainRejectsInvalidTeichmullerInputs() {
   testutil::PrintInfo(
       "teichmuller-only domain construction fails fast on invalid size or coset offset");
@@ -158,6 +225,9 @@ int main() {
   try {
     RUN_TEST(TestDomainBasicShape);
     RUN_TEST(TestDomainRootOrderAndPowMap);
+    RUN_TEST(TestTeichmullerMembershipHelpers);
+    RUN_TEST(TestDomainContainsHelper);
+    RUN_TEST(TestDomainTeichmullerSubsetHelper);
     RUN_TEST(TestDomainRejectsInvalidTeichmullerInputs);
     RUN_TEST(TestLargeExtensionTeichGeneratorFallback);
     RUN_TEST(TestMidExtensionPrimitiveTeichGeneratorPath);

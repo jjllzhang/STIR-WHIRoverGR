@@ -110,6 +110,20 @@ bool teichmuller_subgroup_size_supported(const GRContext& ctx,
   return order % ZZ(size) == 0;
 }
 
+bool is_teichmuller_element(const GRContext& ctx, const GRElem& element) {
+  return ctx.with_ntl_context([&] {
+    if (element == ctx.zero()) {
+      return true;
+    }
+    if (!ctx.is_unit(element)) {
+      return false;
+    }
+
+    return static_cast<bool>(
+        power(element, teichmuller_group_order(ctx)) == ctx.one());
+  });
+}
+
 GRElem teichmuller_subgroup_generator(const GRContext& ctx,
                                       std::uint64_t size) {
   if (!teichmuller_subgroup_size_supported(ctx, size)) {

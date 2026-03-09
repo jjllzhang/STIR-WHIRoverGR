@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "algebra/teichmuller.hpp"
 #include "crypto/merkle_tree/merkle_tree.hpp"
 
 namespace swgr::fri {
@@ -145,6 +146,75 @@ std::size_t folding_round_count(const FriInstance& instance,
     ++rounds;
   }
   return rounds;
+}
+
+std::uint64_t opening_degree_bound(std::uint64_t degree_bound) {
+  return degree_bound == 0 ? 0 : degree_bound - 1U;
+}
+
+FriInstance opening_instance(const FriCommitment& commitment) {
+  return FriInstance{
+      .domain = commitment.domain,
+      .claimed_degree = opening_degree_bound(commitment.degree_bound),
+  };
+}
+
+bool commitment_domain_supported(const FriCommitment& commitment) {
+  return commitment.domain.is_teichmuller_subset();
+}
+
+bool opening_point_valid(const FriCommitment& commitment,
+                         const swgr::algebra::GRElem& alpha) {
+  const auto& ctx = commitment.domain.context();
+  if (!commitment_domain_supported(commitment) ||
+      !swgr::algebra::is_teichmuller_element(ctx, alpha) ||
+      commitment.domain.contains(alpha)) {
+    return false;
+  }
+
+  return ctx.with_ntl_context([&] {
+    for (std::uint64_t index = 0; index < commitment.domain.size(); ++index) {
+      if (!ctx.is_unit(commitment.domain.element(index) - alpha)) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+std::vector<swgr::algebra::GRElem> build_virtual_oracle(
+    const Domain& domain, std::span<const swgr::algebra::GRElem> oracle_evals,
+    const swgr::algebra::GRElem& alpha,
+    const swgr::algebra::GRElem& value) {
+  if (oracle_evals.size() != static_cast<std::size_t>(domain.size())) {
+    throw std::invalid_argument(
+        "build_virtual_oracle requires one evaluation per domain point");
+  }
+
+  const auto& ctx = domain.context();
+  if (!domain.is_teichmuller_subset()) {
+    throw std::invalid_argument(
+        "build_virtual_oracle requires a Teichmuller evaluation domain");
+  }
+  if (!swgr::algebra::is_teichmuller_element(ctx, alpha) || domain.contains(alpha)) {
+    throw std::invalid_argument(
+        "build_virtual_oracle requires alpha in T \\\\ L");
+  }
+
+  return ctx.with_ntl_context([&] {
+    std::vector<swgr::algebra::GRElem> denominators;
+    denominators.reserve(oracle_evals.size());
+    for (std::uint64_t index = 0; index < domain.size(); ++index) {
+      denominators.push_back(domain.element(index) - alpha);
+    }
+    const auto inverses = ctx.batch_inv(denominators);
+
+    std::vector<swgr::algebra::GRElem> adapted(oracle_evals.size());
+    for (std::size_t index = 0; index < oracle_evals.size(); ++index) {
+      adapted[index] = (oracle_evals[index] - value) * inverses[index];
+    }
+    return adapted;
+  });
 }
 
 std::vector<std::uint64_t> query_schedule(

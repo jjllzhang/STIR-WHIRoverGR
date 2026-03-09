@@ -14,6 +14,8 @@ GRElem teichmuller_generator(const GRContext& ctx);
 
 NTL::ZZ teichmuller_group_order(const GRContext& ctx);
 
+bool is_teichmuller_element(const GRContext& ctx, const GRElem& element);
+
 bool teichmuller_subgroup_size_supported(const GRContext& ctx,
                                          std::uint64_t size);
 

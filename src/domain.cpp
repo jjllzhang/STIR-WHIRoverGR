@@ -98,6 +98,24 @@ std::vector<algebra::GRElem> Domain::elements() const {
   return out;
 }
 
+bool Domain::contains(const algebra::GRElem& value) const {
+  return ctx_->with_ntl_context([&] {
+    auto current = offset_;
+    for (std::uint64_t i = 0; i < size_; ++i) {
+      if (current == value) {
+        return true;
+      }
+      current *= root_;
+    }
+    return false;
+  });
+}
+
+bool Domain::is_teichmuller_subset() const {
+  return algebra::is_teichmuller_element(*ctx_, offset_) &&
+         algebra::is_teichmuller_element(*ctx_, root_);
+}
+
 Domain Domain::scale(std::uint64_t power_factor) const {
   if (power_factor == 0 || size_ % power_factor != 0) {
     throw std::invalid_argument("Domain::scale requires power dividing size");
