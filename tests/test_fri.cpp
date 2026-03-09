@@ -121,6 +121,17 @@ void TamperFirstQueriedOpening(const GRContext& ctx, swgr::fri::FriProof& proof)
   });
 }
 
+void TamperTerminalOracleTable(const GRContext& ctx, swgr::fri::FriProof& proof) {
+  ctx.with_ntl_context([&] {
+    proof.rounds.back().oracle_evals[0] += ctx.one();
+    return 0;
+  });
+}
+
+// Phase 0 baseline: FRI still exposes full `oracle_evals` tables in the proof,
+// and the verifier consumes them for queried bundles and the terminal table.
+// TODO(fri-phase1-proof-thinning): replace these guards with sparse-opening
+// checks once `FriRoundWitness` and a slimmer external proof are introduced.
 void TestFri3HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
       "fri-3 honest prover/verifier passes and round sizes shrink 9 -> 3 -> 1");
@@ -186,6 +197,26 @@ void TestFri3RejectsTamperedFinalPolynomial() {
   CHECK(!verifier.verify(instance, proof));
 }
 
+void TestFri3RejectsTamperedTerminalOracleTable() {
+  testutil::PrintInfo("fri-3 verifier rejects a tampered terminal oracle table");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperTerminalOracleTable(ctx, proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+// TODO(fri-phase1-proof-thinning): keep the schedule and helper coverage below
+// when slimming the proof, but rewrite them against the future external proof
+// object instead of the current round-witness-shaped struct.
 void TestFri9HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
       "fri-9 honest prover/verifier passes and round sizes shrink 27 -> 3");
@@ -362,6 +393,7 @@ int main() {
     RUN_TEST(TestFri3HonestRoundtripAndRoundShape);
     RUN_TEST(TestFri3RejectsTamperedOpening);
     RUN_TEST(TestFri3RejectsTamperedFinalPolynomial);
+    RUN_TEST(TestFri3RejectsTamperedTerminalOracleTable);
     RUN_TEST(TestFri9HonestRoundtripAndRoundShape);
     RUN_TEST(TestFri9RejectsTamperedOpening);
     RUN_TEST(TestFriAutoScheduleMatchesConjectureCapacityDefault);

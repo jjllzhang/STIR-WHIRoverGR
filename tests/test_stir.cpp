@@ -132,11 +132,32 @@ swgr::stir::StirInstance MakeInstance(const GRContext& ctx,
   };
 }
 
+void NudgePolynomial(const GRContext& ctx, Polynomial* polynomial) {
+  ctx.with_ntl_context([&] {
+    auto coefficients = polynomial->coefficients();
+    if (coefficients.empty()) {
+      coefficients.push_back(ctx.one());
+    } else {
+      coefficients[0] += ctx.one();
+    }
+    *polynomial = Polynomial(std::move(coefficients));
+    return 0;
+  });
+}
+
 void TamperShiftedOracle(const GRContext& ctx, swgr::stir::StirProof& proof) {
   ctx.with_ntl_context([&] {
     proof.rounds[0].shifted_oracle_evals[0] += ctx.one();
     return 0;
   });
+}
+
+void TamperInputPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
+  NudgePolynomial(ctx, &proof.rounds[0].input_polynomial);
+}
+
+void TamperFoldedPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
+  NudgePolynomial(ctx, &proof.rounds[0].folded_polynomial);
 }
 
 void TamperOodAnswer(const GRContext& ctx, swgr::stir::StirProof& proof) {
@@ -146,19 +167,18 @@ void TamperOodAnswer(const GRContext& ctx, swgr::stir::StirProof& proof) {
   });
 }
 
-void TamperNextPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
-  ctx.with_ntl_context([&] {
-    auto coefficients = proof.rounds[0].next_polynomial.coefficients();
-    if (coefficients.empty()) {
-      coefficients.push_back(ctx.one());
-    } else {
-      coefficients[0] += ctx.one();
-    }
-    proof.rounds[0].next_polynomial = Polynomial(std::move(coefficients));
-    return 0;
-  });
+void TamperQuotientPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
+  NudgePolynomial(ctx, &proof.rounds[0].quotient_polynomial);
 }
 
+void TamperNextPolynomial(const GRContext& ctx, swgr::stir::StirProof& proof) {
+  NudgePolynomial(ctx, &proof.rounds[0].next_polynomial);
+}
+
+// Phase 0 baseline: STIR still publishes prover-side witness material inside
+// `StirRoundProof`, and the verifier re-derives each stage from those fields.
+// TODO(stir-phase1-proof-thinning): move these guards to an internal witness /
+// external proof split before changing the verifier model.
 void TestStir9to3HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
       "stir-9to3 honest prover/verifier passes and exposes one explicit round");
@@ -330,6 +350,40 @@ void TestStirRejectsTamperedShiftedOracle() {
   CHECK(!verifier.verify(instance, proof));
 }
 
+void TestStirRejectsTamperedInputPolynomial() {
+  testutil::PrintInfo("stir verifier rejects a tampered input polynomial");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperInputPolynomial(ctx, proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedFoldedPolynomial() {
+  testutil::PrintInfo("stir verifier rejects a tampered folded polynomial");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperFoldedPolynomial(ctx, proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
 void TestStirRejectsTamperedOodAnswer() {
   testutil::PrintInfo("stir verifier rejects a tampered OOD answer");
 
@@ -347,6 +401,26 @@ void TestStirRejectsTamperedOodAnswer() {
   CHECK(!verifier.verify(instance, proof));
 }
 
+void TestStirRejectsTamperedQuotientPolynomial() {
+  testutil::PrintInfo("stir verifier rejects a tampered quotient polynomial");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperQuotientPolynomial(ctx, proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+// TODO(stir-phase1-proof-thinning): once the external proof stops carrying the
+// heavy witness fields below, keep the semantic coverage but retarget the
+// tamper cases to sparse openings and transcript-derived metadata only.
 void TestStirRejectsTamperedDegreeCorrection() {
   testutil::PrintInfo("stir verifier rejects a tampered degree-correction step");
 
@@ -408,7 +482,10 @@ int main() {
     RUN_TEST(TestStirManualQueriesOverrideAutoSchedule);
     RUN_TEST(TestStirCapsOversubscribedQueriesWithDegreeBudget);
     RUN_TEST(TestStirRejectsTamperedShiftedOracle);
+    RUN_TEST(TestStirRejectsTamperedInputPolynomial);
+    RUN_TEST(TestStirRejectsTamperedFoldedPolynomial);
     RUN_TEST(TestStirRejectsTamperedOodAnswer);
+    RUN_TEST(TestStirRejectsTamperedQuotientPolynomial);
     RUN_TEST(TestStirRejectsTamperedDegreeCorrection);
     RUN_TEST(TestStirValidationRejectsBadInputs);
   } catch (const std::exception& ex) {

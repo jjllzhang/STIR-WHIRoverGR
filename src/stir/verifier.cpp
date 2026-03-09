@@ -86,6 +86,9 @@ bool StirVerifier::verify(const StirInstance& instance,
       const auto effective_query_count =
           query_metadata[round_index].effective_query_count;
       const auto& round = proof.rounds[round_index];
+      // Phase 0 baseline: `input_polynomial` is still a verifier-visible
+      // witness field. It anchors the current round state and, on cache misses,
+      // is re-encoded to rebuild the input oracle root.
       if (round.round_index != round_index ||
           round.input_domain_size != current_domain.size() ||
           round.input_degree_bound != current_degree_bound ||
@@ -138,12 +141,17 @@ bool StirVerifier::verify(const StirInstance& instance,
           round.folding_alpha);
       const auto expected_folded_polynomial =
           swgr::poly_utils::rs_interpolate(folded_domain, folded_table);
+      // Phase 0 baseline: the verifier still expects the full folded witness
+      // polynomial and rejects if it cannot match the prover's interpolation.
       if (!SamePolynomial(round.folded_polynomial, expected_folded_polynomial)) {
         return false;
       }
 
       const auto expected_shifted_oracle =
           swgr::poly_utils::rs_encode(shift_domain, expected_folded_polynomial);
+      // Phase 0 baseline: `shifted_oracle_evals` is a public witness cache used
+      // both for equality against the shifted codeword and for the committed
+      // shift-oracle root that drives transcript challenges.
       if (!SameVector(round.shifted_oracle_evals, expected_shifted_oracle)) {
         return false;
       }
@@ -282,6 +290,9 @@ bool StirVerifier::verify(const StirInstance& instance,
       const auto expected_quotient_polynomial =
           swgr::poly_utils::quotient_polynomial_from_answers(
               ctx, expected_folded_polynomial, answer_points, answer_values);
+      // Phase 0 baseline: STIR still exposes intermediate answer/vanishing/
+      // quotient witness polynomials, and the verifier re-derives all of them
+      // before accepting the round.
       if (!SamePolynomial(round.answer_polynomial, expected_answer_polynomial) ||
           !SamePolynomial(round.vanishing_polynomial,
                           expected_vanishing_polynomial) ||
@@ -296,6 +307,9 @@ bool StirVerifier::verify(const StirInstance& instance,
           swgr::poly_utils::degree_correction_polynomial(
               ctx, expected_quotient_polynomial, next_degree_bound,
               quotient_degree_bound, expected_combination);
+      // Phase 0 baseline: `next_polynomial` remains the verifier-visible bridge
+      // into the next round and the final proof output, so shrinking it out of
+      // the public proof changes both transition and terminal checks.
       if (!SamePolynomial(round.next_polynomial, expected_next_polynomial) ||
           round.next_polynomial.degree() > next_degree_bound) {
         return false;

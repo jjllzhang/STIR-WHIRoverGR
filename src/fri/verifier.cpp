@@ -69,6 +69,8 @@ bool FriVerifier::verify(const FriInstance& instance,
       const auto& round = proof.rounds[round_index];
       const bool is_terminal = (round_index == fold_rounds);
       const std::uint64_t bundle_size = is_terminal ? 1 : params_.fold_factor;
+      // Phase 0 baseline: the verifier still needs the full round oracle table
+      // to rebuild the Merkle root before any sparse-opening slimming lands.
       const auto merkle_start = std::chrono::steady_clock::now();
       const auto oracle_tree = build_oracle_tree(
           params_.hash_profile, current_domain.context(), round.oracle_evals,
@@ -98,6 +100,8 @@ bool FriVerifier::verify(const FriInstance& instance,
         if (stats != nullptr) {
           *stats = local_stats;
         }
+        // Phase 0 baseline: terminal verification still compares the full last
+        // RS table against `round.oracle_evals`.
         return expected_terminal == round.oracle_evals;
       }
 
@@ -132,6 +136,8 @@ bool FriVerifier::verify(const FriInstance& instance,
       local_stats.verifier_merkle_ms += ElapsedMilliseconds(
           verify_merkle_start, std::chrono::steady_clock::now());
       const auto algebra_start = std::chrono::steady_clock::now();
+      // Phase 0 baseline: queried Merkle payloads are checked by reserializing
+      // the corresponding bundles out of `round.oracle_evals`.
       for (std::size_t i = 0; i < expected_unique_queries.size(); ++i) {
         if (round.oracle_proof.leaf_payloads[i] !=
             serialize_oracle_bundle(current_domain.context(), round.oracle_evals,
@@ -148,6 +154,9 @@ bool FriVerifier::verify(const FriInstance& instance,
       }
 
       const auto query_phase_start = std::chrono::steady_clock::now();
+      // Phase 0 baseline: folding consistency also reads fiber values directly
+      // from `round.oracle_evals` and compares them against the next round
+      // table, so removing this field breaks both query and transition checks.
       for (const auto base_index : round.query_positions) {
         std::vector<swgr::algebra::GRElem> fiber_points;
         std::vector<swgr::algebra::GRElem> fiber_values;
