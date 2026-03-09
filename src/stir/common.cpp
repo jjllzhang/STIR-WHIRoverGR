@@ -56,27 +56,18 @@ void SerializeRingVector(Sink& sink, const swgr::algebra::GRContext& ctx,
 template <typename Sink>
 void SerializeStirProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
                             const StirProof& proof) {
+  swgr::SerializeBytes(sink, proof.initial_root);
   swgr::SerializeUint64(sink,
                         static_cast<std::uint64_t>(proof.rounds.size()));
   for (const auto& round : proof.rounds) {
-    swgr::SerializeUint64(sink, round.round_index);
-    swgr::SerializeUint64(sink, round.input_domain_size);
-    swgr::SerializeUint64(sink, round.folded_domain_size);
-    swgr::SerializeUint64(sink, round.shift_domain_size);
-    swgr::SerializeUint64(sink, round.input_degree_bound);
-    swgr::SerializeUint64(sink, round.folded_degree_bound);
-    SerializeRingElement(sink, ctx, round.folding_alpha);
-    SerializeRingElement(sink, ctx, round.comb_randomness);
-    swgr::SerializeUint64Vector(sink, round.fold_query_positions);
-    swgr::SerializeUint64Vector(sink, round.shift_query_positions);
-    SerializeRingVector(sink, ctx, round.shift_query_answers);
-    SerializeMerkleProof(sink, round.input_oracle_proof);
-    SerializeMerkleProof(sink, round.shift_oracle_proof);
-    SerializeRingVector(sink, ctx, round.ood_points);
-    SerializeRingVector(sink, ctx, round.ood_answers);
+    swgr::SerializeBytes(sink, round.g_root);
+    SerializeRingVector(sink, ctx, round.betas);
+    SerializePolynomial(sink, ctx, round.ans_polynomial);
+    SerializeMerkleProof(sink, round.queries_to_prev);
+    SerializePolynomial(sink, ctx, round.shake_polynomial);
   }
   SerializePolynomial(sink, ctx, proof.final_polynomial);
-  swgr::SerializeByteVector(sink, proof.oracle_roots);
+  SerializeMerkleProof(sink, proof.queries_to_final);
 }
 
 bool Contains(const std::vector<algebra::GRElem>& values,
@@ -313,6 +304,35 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
     throw std::runtime_error("derive_ood_points failed to find enough samples");
   }
   return result;
+}
+
+swgr::algebra::GRElem derive_shake_point(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    const std::vector<swgr::algebra::GRElem>& quotient_points,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix) {
+  const Domain candidate_domain = input_domain.scale_offset(1);
+  const auto shift_points = shift_domain.elements();
+  const auto folded_points = folded_domain.elements();
+  const auto& ctx = candidate_domain.context();
+
+  for (std::uint64_t attempt = 0; attempt < candidate_domain.size() * 4;
+       ++attempt) {
+    const auto index = transcript.challenge_index(
+        std::string(label_prefix) + ":" + std::to_string(attempt),
+        candidate_domain.size());
+    const auto candidate = candidate_domain.element(index);
+    if (Contains(shift_points, candidate) || Contains(folded_points, candidate) ||
+        Contains(quotient_points, candidate)) {
+      continue;
+    }
+    if (!ExceptionalAgainst(ctx, candidate, quotient_points)) {
+      continue;
+    }
+    return candidate;
+  }
+
+  throw std::runtime_error("derive_shake_point failed to find a valid sample");
 }
 
 bool try_reuse_next_round_input_oracle(

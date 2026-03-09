@@ -32,21 +32,11 @@ struct StirRoundState {
 };
 
 struct StirRoundProof {
-  std::uint64_t round_index = 0;
-  std::uint64_t input_domain_size = 0;
-  std::uint64_t folded_domain_size = 0;
-  std::uint64_t shift_domain_size = 0;
-  std::uint64_t input_degree_bound = 0;
-  std::uint64_t folded_degree_bound = 0;
-  swgr::algebra::GRElem folding_alpha;
-  swgr::algebra::GRElem comb_randomness;
-  std::vector<std::uint64_t> fold_query_positions;
-  std::vector<std::uint64_t> shift_query_positions;
-  std::vector<swgr::algebra::GRElem> shift_query_answers;
-  swgr::crypto::MerkleProof input_oracle_proof;
-  swgr::crypto::MerkleProof shift_oracle_proof;
-  std::vector<swgr::algebra::GRElem> ood_points;
-  std::vector<swgr::algebra::GRElem> ood_answers;
+  std::vector<std::uint8_t> g_root;
+  std::vector<swgr::algebra::GRElem> betas;
+  swgr::poly_utils::Polynomial ans_polynomial;
+  swgr::crypto::MerkleProof queries_to_prev;
+  swgr::poly_utils::Polynomial shake_polynomial;
 };
 
 struct StirRoundWitness {
@@ -60,9 +50,10 @@ struct StirRoundWitness {
 };
 
 struct StirProof {
+  std::vector<std::uint8_t> initial_root;
   std::vector<StirRoundProof> rounds;
   swgr::poly_utils::Polynomial final_polynomial;
-  std::vector<std::vector<std::uint8_t>> oracle_roots;
+  swgr::crypto::MerkleProof queries_to_final;
   swgr::ProofStatistics stats;
 };
 
@@ -102,6 +93,12 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain, swgr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count);
+
+swgr::algebra::GRElem derive_shake_point(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    const std::vector<swgr::algebra::GRElem>& quotient_points,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix);
 
 bool try_reuse_next_round_input_oracle(
     const Domain& domain,

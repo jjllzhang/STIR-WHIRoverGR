@@ -115,6 +115,10 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
       current_domain = shift_domain;
       current_degree_bound = next_degree_bound;
     }
+
+    if (current_domain.size() % params.virtual_fold_factor != 0) {
+      return false;
+    }
   } catch (...) {
     return false;
   }

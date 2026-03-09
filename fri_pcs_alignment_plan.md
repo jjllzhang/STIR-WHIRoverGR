@@ -267,10 +267,10 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 
 **任务**
 
-- [ ] 明确 STIR 当前对外要保留哪些字段才算协议消息
-- [ ] 把 `input_polynomial` / `folded_polynomial` / `shifted_oracle_evals` / `answer_polynomial` / `vanishing_polynomial` / `next_polynomial` 从外部 proof 中剥离
-- [ ] verifier 改为只依赖 queried openings、OOD answers、必要的 commitment roots、以及真正协议要求的 polynomial message
-- [ ] 明确 `quotient_polynomial` 是否属于真实协议消息；如果只是当前实现为了重算方便，就继续内化
+- [x] 明确 STIR 当前对外保留 `initial_root`、每轮 `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`、以及 `queries_to_final + final_polynomial`
+- [x] 把 `input_polynomial` / `folded_polynomial` / `shifted_oracle_evals` / `vanishing_polynomial` / `quotient_polynomial` / `next_polynomial` 从外部 proof 中剥离；`answer_polynomial` 改为论文式 public `ans_polynomial`
+- [x] verifier 改为只依赖 queried openings、OOD answers、必要的 commitment roots、以及真正协议要求的 polynomial message
+- [x] 将 `quotient_polynomial` 继续内化；`Fill_i` 不显式发送，改由 `ans_polynomial + shake_polynomial + virtual quotient + degree correction` 语义承载
 
 **建议涉及文件**
 
@@ -281,8 +281,8 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 
 **验收标准**
 
-- [ ] STIR proof 不再是“整轮 witness 打包”
-- [ ] verifier 的能力模型与对外 proof 字段一致
+- [x] STIR proof 不再是“整轮 witness 打包”
+- [x] verifier 的能力模型与对外 proof 字段一致
 
 ---
 
@@ -344,7 +344,7 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 
 - [x] `cmake --build build --target test_stir`
 - [x] `./build/test_stir`
-- [ ] `./build/bench_time --protocol stir9to3 --warmup 0 --reps 1 --format text`
+- [x] `./build/bench_time --protocol stir9to3 --warmup 0 --reps 1 --format text`
 
 ### 文档与基准
 
@@ -371,14 +371,14 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 | Phase 2 PCS commit/open | DONE | Codex | 2026-03-09 | FRI 已具备 `commit/open/verify` PCS 表面；`FriOpeningArtifact` 已降级为内部 / compat 层，FRI benchmark 已切到 PCS 路径 |
 | Phase 3 sparse-opening FRI verifier | DONE | Codex | 2026-03-09 | public `FriOpening` / `FriProof` 已改成 sparse-opening external proof；verifier 只依赖 roots + sparse openings + `final_polynomial` |
 | Phase 4 exact proof bytes | DONE | Codex | 2026-03-09 | `serialized_bytes_actual` 已切到 deterministic serializer；FRI 维持 opening-only bytes，STIR 计 slim external proof |
-| Phase 5 STIR proof 瘦身 | TODO |  |  |  |
+| Phase 5 STIR proof 瘦身 | DONE | Codex | 2026-03-09 | STIR 已迁到 route-2 proof-only verifier：public `StirProof` 保留 `initial_root`、每轮 `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`，以及 `queries_to_final + final_polynomial` |
 | Phase 6 参数与文档回收 | TODO |  |  |  |
 
 ## 11. 下一步建议
 
 最合理的下一步是：
 
-- 执行 **Phase 5**
-- 目标是把 STIR 也从当前 compat/heavy-witness verifier 继续推进到真正的 sparse-opening verifier
+- 执行 **Phase 6**
+- 目标是回收 README / benchmark / soundness 描述，让当前 FRI PCS 与 STIR route-2 proof-only 边界都表述清楚
 
-FRI 这边的 benchmark proof-size 已经和当前 sparse-opening public proof object 对齐，后续重点应转向 STIR proof/witness 瘦身。
+FRI 与 STIR 的 public proof/verifier 主线现已都摆脱 heavy-witness public surface；后续重点应转向参数语义、文档边界和 benchmark 说明收口。

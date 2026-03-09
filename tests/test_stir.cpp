@@ -8,8 +8,6 @@
 
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
-#include "fri/common.hpp"
-#include "poly_utils/interpolation.hpp"
 #include "poly_utils/polynomial.hpp"
 #include "stir/prover.hpp"
 #include "stir/verifier.hpp"
@@ -112,49 +110,57 @@ void NudgePolynomial(const GRContext& ctx, Polynomial* polynomial) {
   });
 }
 
-void TamperShiftedOracle(const GRContext& ctx,
-                         swgr::stir::StirProofWithWitness& artifact) {
+void FlipFirstByte(std::vector<std::uint8_t>* bytes) {
+  if (bytes->empty()) {
+    bytes->push_back(1U);
+  } else {
+    (*bytes)[0] ^= 0x01U;
+  }
+}
+
+void TamperInitialRoot(swgr::stir::StirProof* proof) {
+  FlipFirstByte(&proof->initial_root);
+}
+
+void TamperPrevQueryPayload(swgr::stir::StirProof* proof) {
+  FlipFirstByte(&proof->rounds[0].queries_to_prev.leaf_payloads[0]);
+}
+
+void TamperGRoot(swgr::stir::StirProof* proof) { FlipFirstByte(&proof->rounds[0].g_root); }
+
+void TamperBeta(const GRContext& ctx, swgr::stir::StirProof* proof) {
   ctx.with_ntl_context([&] {
-    artifact.witness.rounds[0].shifted_oracle_evals[0] += ctx.one();
+    proof->rounds[0].betas[0] += ctx.one();
     return 0;
   });
 }
 
-void TamperInputPolynomial(const GRContext& ctx,
-                           swgr::stir::StirProofWithWitness& artifact) {
-  NudgePolynomial(ctx, &artifact.witness.rounds[0].input_polynomial);
+void TamperAnsPolynomial(const GRContext& ctx, swgr::stir::StirProof* proof) {
+  NudgePolynomial(ctx, &proof->rounds[0].ans_polynomial);
 }
 
-void TamperFoldedPolynomial(const GRContext& ctx,
-                            swgr::stir::StirProofWithWitness& artifact) {
-  NudgePolynomial(ctx, &artifact.witness.rounds[0].folded_polynomial);
+void TamperShakePolynomial(const GRContext& ctx,
+                           swgr::stir::StirProof* proof) {
+  NudgePolynomial(ctx, &proof->rounds[0].shake_polynomial);
 }
 
-void TamperOodAnswer(const GRContext& ctx,
-                     swgr::stir::StirProofWithWitness& artifact) {
-  ctx.with_ntl_context([&] {
-    artifact.proof.rounds[0].ood_answers[0] += ctx.one();
-    return 0;
-  });
+void TamperFinalPolynomial(const GRContext& ctx,
+                           swgr::stir::StirProof* proof) {
+  NudgePolynomial(ctx, &proof->final_polynomial);
 }
 
-void TamperQuotientPolynomial(const GRContext& ctx,
-                              swgr::stir::StirProofWithWitness& artifact) {
-  NudgePolynomial(ctx, &artifact.witness.rounds[0].quotient_polynomial);
+void TamperFinalQueryPayload(swgr::stir::StirProof* proof) {
+  FlipFirstByte(&proof->queries_to_final.leaf_payloads[0]);
 }
 
-void TamperNextPolynomial(const GRContext& ctx,
-                          swgr::stir::StirProofWithWitness& artifact) {
-  NudgePolynomial(ctx, &artifact.witness.rounds[0].next_polynomial);
+void TamperCompatWitness(const GRContext& ctx,
+                         swgr::stir::StirProofWithWitness* artifact) {
+  NudgePolynomial(ctx, &artifact->witness.rounds[0].input_polynomial);
 }
 
-// Phase 1 baseline: the public `StirProof` is slimmed, while the compatibility
-// carrier still holds the witness material needed by the current verifier.
-// TODO(stir-phase3-sparse-verifier): retarget these guards to proof-only data
-// once the verifier no longer needs the witness carrier.
 void TestStir9to3HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
-      "stir-9to3 honest prover/verifier passes and exposes one explicit round");
+      "stir-9to3 honest prover/verifier passes on the proof-only route");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx);
@@ -163,28 +169,30 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  const auto artifact = prover.prove(instance, polynomial);
-  const auto& proof = artifact.proof;
+  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove_with_witness(instance, polynomial);
 
+  CHECK(verifier.verify(instance, proof));
   CHECK(verifier.verify(instance, artifact));
+  CHECK_EQ(proof.initial_root, artifact.proof.initial_root);
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{1});
   CHECK_EQ(proof.rounds.size(), std::size_t{1});
-  CHECK_EQ(proof.rounds[0].input_domain_size, std::uint64_t{27});
-  CHECK_EQ(proof.rounds[0].folded_domain_size, std::uint64_t{3});
-  CHECK_EQ(proof.rounds[0].shift_domain_size, std::uint64_t{9});
-  CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{1});
-  CHECK_EQ(proof.rounds[0].ood_points.size(), std::size_t{2});
-  CHECK(proof.final_polynomial.degree() <= params.stop_degree);
-  CHECK_EQ(proof.final_polynomial.coefficients(),
-           artifact.witness.rounds[0].next_polynomial.coefficients());
+  CHECK(!proof.initial_root.empty());
+  CHECK(!proof.rounds[0].g_root.empty());
+  CHECK_EQ(proof.rounds[0].betas.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[0].queries_to_prev.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[0].ans_polynomial.coefficients(),
+           artifact.witness.rounds[0].answer_polynomial.coefficients());
+  CHECK(proof.final_polynomial.degree() <= std::size_t{0});
   CHECK_EQ(proof.stats.serialized_bytes,
            swgr::stir::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
 }
 
-void TestStirMultiRoundCachesNextRoundInputOracle() {
+void TestStirMultiRoundUsesPublicRootChain() {
   testutil::PrintInfo(
-      "multi-round stir keeps next polynomial and next input oracle payloads aligned");
+      "multi-round stir maintains the public initial-root to g-root chain");
 
   const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
   const auto instance = MakeInstance(ctx, 243, 161);
@@ -195,35 +203,38 @@ void TestStirMultiRoundCachesNextRoundInputOracle() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  const auto artifact = prover.prove(instance, polynomial);
-  const auto& proof = artifact.proof;
+  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove_with_witness(instance, polynomial);
 
-  CHECK(verifier.verify(instance, artifact));
+  CHECK(verifier.verify(instance, proof));
   CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[0].queries_to_prev.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[1].queries_to_prev.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
   CHECK_EQ(proof.stats.serialized_bytes,
            swgr::stir::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
-  ctx.with_ntl_context([&] {
-    CHECK_EQ(artifact.witness.rounds[1].input_polynomial.coefficients(),
-             artifact.witness.rounds[0].next_polynomial.coefficients());
+}
 
-    const Domain round_one_shift_domain =
-        instance.domain.scale_offset(params.shift_power);
-    const auto expected_round_two_input_oracle =
-        swgr::poly_utils::rs_encode(round_one_shift_domain,
-                                    artifact.witness.rounds[1].input_polynomial);
-    CHECK_EQ(proof.rounds[1].input_oracle_proof.leaf_payloads.size(),
-             proof.rounds[1].fold_query_positions.size());
-    for (std::size_t i = 0; i < proof.rounds[1].fold_query_positions.size(); ++i) {
-      const auto position = proof.rounds[1].fold_query_positions[i];
-      CHECK_EQ(proof.rounds[1].input_oracle_proof.leaf_payloads[i],
-               swgr::fri::serialize_oracle_bundle(
-                   ctx, expected_round_two_input_oracle,
-                   params.virtual_fold_factor, position));
-    }
-    return 0;
-  });
+void TestStirZeroRoundFinalFoldStillVerifies() {
+  testutil::PrintInfo(
+      "zero-round stir still verifies via initial-root to final-fold consistency");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams({1}, 9);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  const auto proof = prover.prove(instance, polynomial);
+
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(proof.rounds.size(), std::size_t{0});
+  CHECK(!proof.initial_root.empty());
+  CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
+  CHECK(proof.final_polynomial.degree() <= std::size_t{0});
 }
 
 void TestStirAutoScheduleMatchesConjectureCapacityDefault() {
@@ -239,15 +250,14 @@ void TestStirAutoScheduleMatchesConjectureCapacityDefault() {
 
   const swgr::stir::StirProver prover(auto_params);
   const swgr::stir::StirVerifier verifier(auto_params);
-  const auto artifact = prover.prove(instance, polynomial);
-  const auto& proof = artifact.proof;
+  const auto proof = prover.prove(instance, polynomial);
 
-  CHECK(verifier.verify(instance, artifact));
+  CHECK(verifier.verify(instance, proof));
   CHECK_EQ(proof.rounds.size(), std::size_t{2});
-  CHECK_EQ(proof.rounds[0].fold_query_positions.size(), std::size_t{2});
-  CHECK_EQ(proof.rounds[0].shift_query_positions.size(), std::size_t{2});
-  CHECK_EQ(proof.rounds[1].fold_query_positions.size(), std::size_t{1});
-  CHECK_EQ(proof.rounds[1].shift_query_positions.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[0].queries_to_prev.queried_indices.size(),
+           std::size_t{2});
+  CHECK_EQ(proof.rounds[1].queries_to_prev.queried_indices.size(),
+           std::size_t{1});
 }
 
 void TestStirManualQueriesOverrideAutoSchedule() {
@@ -266,25 +276,22 @@ void TestStirManualQueriesOverrideAutoSchedule() {
 
   const swgr::stir::StirProver auto_prover(auto_params);
   const swgr::stir::StirVerifier auto_verifier(auto_params);
-  const auto auto_artifact = auto_prover.prove(instance, polynomial);
+  const auto auto_proof = auto_prover.prove(instance, polynomial);
 
   const swgr::stir::StirProver manual_prover(manual_params);
   const swgr::stir::StirVerifier manual_verifier(manual_params);
-  const auto manual_artifact = manual_prover.prove(instance, polynomial);
+  const auto manual_proof = manual_prover.prove(instance, polynomial);
 
-  const auto& auto_proof = auto_artifact.proof;
-  const auto& manual_proof = manual_artifact.proof;
-
-  CHECK(auto_verifier.verify(instance, auto_artifact));
-  CHECK(manual_verifier.verify(instance, manual_artifact));
-  CHECK_EQ(auto_proof.rounds[0].fold_query_positions.size(), std::size_t{2});
-  CHECK_EQ(auto_proof.rounds[0].shift_query_positions.size(), std::size_t{2});
-  CHECK_EQ(auto_proof.rounds[1].fold_query_positions.size(), std::size_t{1});
-  CHECK_EQ(auto_proof.rounds[1].shift_query_positions.size(), std::size_t{1});
-  CHECK_EQ(manual_proof.rounds[0].fold_query_positions.size(), std::size_t{1});
-  CHECK_EQ(manual_proof.rounds[0].shift_query_positions.size(), std::size_t{1});
-  CHECK_EQ(manual_proof.rounds[1].fold_query_positions.size(), std::size_t{1});
-  CHECK_EQ(manual_proof.rounds[1].shift_query_positions.size(), std::size_t{1});
+  CHECK(auto_verifier.verify(instance, auto_proof));
+  CHECK(manual_verifier.verify(instance, manual_proof));
+  CHECK_EQ(auto_proof.rounds[0].queries_to_prev.queried_indices.size(),
+           std::size_t{2});
+  CHECK_EQ(auto_proof.rounds[1].queries_to_prev.queried_indices.size(),
+           std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[0].queries_to_prev.queried_indices.size(),
+           std::size_t{1});
+  CHECK_EQ(manual_proof.rounds[1].queries_to_prev.queried_indices.size(),
+           std::size_t{1});
 }
 
 void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
@@ -307,116 +314,165 @@ void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
 
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
-  const auto artifact = prover.prove(instance, polynomial);
+  const auto proof = prover.prove(instance, polynomial);
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(proof.rounds.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[0].queries_to_prev.queried_indices.size(),
+           std::size_t{1});
+}
+
+void TestStirRejectsTamperedPrevQueryOpening() {
+  testutil::PrintInfo("stir verifier rejects a tampered previous-oracle opening");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperPrevQueryPayload(&proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedInitialRoot() {
+  testutil::PrintInfo("stir verifier rejects a tampered initial root");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperInitialRoot(&proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedGRoot() {
+  testutil::PrintInfo("stir verifier rejects a tampered g-root");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperGRoot(&proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedBeta() {
+  testutil::PrintInfo("stir verifier rejects a tampered OOD beta");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperBeta(ctx, &proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedAnsPolynomial() {
+  testutil::PrintInfo("stir verifier rejects a tampered ans polynomial");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperAnsPolynomial(ctx, &proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedShakePolynomial() {
+  testutil::PrintInfo("stir verifier rejects a tampered shake polynomial");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperShakePolynomial(ctx, &proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedFinalPolynomial() {
+  testutil::PrintInfo("stir verifier rejects a tampered final polynomial");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperFinalPolynomial(ctx, &proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirRejectsTamperedFinalOpening() {
+  testutil::PrintInfo("stir verifier rejects a tampered final sparse opening");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto proof = prover.prove(instance, polynomial);
+
+  TamperFinalQueryPayload(&proof);
+
+  CHECK(!verifier.verify(instance, proof));
+}
+
+void TestStirCompatWitnessNoLongerDrivesVerification() {
+  testutil::PrintInfo(
+      "stir compatibility witness no longer affects proof-only verification");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  auto artifact = prover.prove_with_witness(instance, polynomial);
+
+  TamperCompatWitness(ctx, &artifact);
+
   CHECK(verifier.verify(instance, artifact));
-  CHECK_EQ(artifact.proof.rounds.size(), std::size_t{1});
-  CHECK_EQ(artifact.proof.rounds[0].fold_query_positions.size(), std::size_t{1});
-  CHECK_EQ(artifact.proof.rounds[0].shift_query_positions.size(), std::size_t{1});
-}
-
-void TestStirRejectsTamperedShiftedOracle() {
-  testutil::PrintInfo("stir verifier rejects a tampered shifted oracle opening");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx);
-  const auto params = MakeParams();
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
-
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
-  auto artifact = prover.prove(instance, polynomial);
-
-  TamperShiftedOracle(ctx, artifact);
-
-  CHECK(!verifier.verify(instance, artifact));
-}
-
-void TestStirRejectsTamperedInputPolynomial() {
-  testutil::PrintInfo("stir verifier rejects a tampered input polynomial");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx);
-  const auto params = MakeParams();
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
-
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
-  auto artifact = prover.prove(instance, polynomial);
-
-  TamperInputPolynomial(ctx, artifact);
-
-  CHECK(!verifier.verify(instance, artifact));
-}
-
-void TestStirRejectsTamperedFoldedPolynomial() {
-  testutil::PrintInfo("stir verifier rejects a tampered folded polynomial");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx);
-  const auto params = MakeParams();
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
-
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
-  auto artifact = prover.prove(instance, polynomial);
-
-  TamperFoldedPolynomial(ctx, artifact);
-
-  CHECK(!verifier.verify(instance, artifact));
-}
-
-void TestStirRejectsTamperedOodAnswer() {
-  testutil::PrintInfo("stir verifier rejects a tampered OOD answer");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx);
-  const auto params = MakeParams();
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
-
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
-  auto artifact = prover.prove(instance, polynomial);
-
-  TamperOodAnswer(ctx, artifact);
-
-  CHECK(!verifier.verify(instance, artifact));
-}
-
-void TestStirRejectsTamperedQuotientPolynomial() {
-  testutil::PrintInfo("stir verifier rejects a tampered quotient polynomial");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx);
-  const auto params = MakeParams();
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
-
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
-  auto artifact = prover.prove(instance, polynomial);
-
-  TamperQuotientPolynomial(ctx, artifact);
-
-  CHECK(!verifier.verify(instance, artifact));
-}
-
-// TODO(stir-phase3-sparse-verifier): once the verifier consumes sparse openings
-// only, keep the semantic coverage below but retarget the tamper cases to the
-// external proof object rather than the witness carrier.
-void TestStirRejectsTamperedDegreeCorrection() {
-  testutil::PrintInfo("stir verifier rejects a tampered degree-correction step");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx);
-  const auto params = MakeParams();
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
-
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
-  auto artifact = prover.prove(instance, polynomial);
-
-  TamperNextPolynomial(ctx, artifact);
-
-  CHECK(!verifier.verify(instance, artifact));
 }
 
 void TestStirValidationRejectsBadInputs() {
@@ -451,6 +507,9 @@ void TestStirValidationRejectsBadInputs() {
   auto no_query_budget = MakeParams({1});
   no_query_budget.ood_samples = 3;
   CHECK(!swgr::stir::validate(no_query_budget, instance));
+
+  const auto tiny_instance = MakeInstance(ctx, 3, 2);
+  CHECK(!swgr::stir::validate(MakeParams(), tiny_instance));
 }
 
 }  // namespace
@@ -458,16 +517,20 @@ void TestStirValidationRejectsBadInputs() {
 int main() {
   try {
     RUN_TEST(TestStir9to3HonestRoundtripAndRoundShape);
-    RUN_TEST(TestStirMultiRoundCachesNextRoundInputOracle);
+    RUN_TEST(TestStirMultiRoundUsesPublicRootChain);
+    RUN_TEST(TestStirZeroRoundFinalFoldStillVerifies);
     RUN_TEST(TestStirAutoScheduleMatchesConjectureCapacityDefault);
     RUN_TEST(TestStirManualQueriesOverrideAutoSchedule);
     RUN_TEST(TestStirCapsOversubscribedQueriesWithDegreeBudget);
-    RUN_TEST(TestStirRejectsTamperedShiftedOracle);
-    RUN_TEST(TestStirRejectsTamperedInputPolynomial);
-    RUN_TEST(TestStirRejectsTamperedFoldedPolynomial);
-    RUN_TEST(TestStirRejectsTamperedOodAnswer);
-    RUN_TEST(TestStirRejectsTamperedQuotientPolynomial);
-    RUN_TEST(TestStirRejectsTamperedDegreeCorrection);
+    RUN_TEST(TestStirRejectsTamperedPrevQueryOpening);
+    RUN_TEST(TestStirRejectsTamperedInitialRoot);
+    RUN_TEST(TestStirRejectsTamperedGRoot);
+    RUN_TEST(TestStirRejectsTamperedBeta);
+    RUN_TEST(TestStirRejectsTamperedAnsPolynomial);
+    RUN_TEST(TestStirRejectsTamperedShakePolynomial);
+    RUN_TEST(TestStirRejectsTamperedFinalPolynomial);
+    RUN_TEST(TestStirRejectsTamperedFinalOpening);
+    RUN_TEST(TestStirCompatWitnessNoLongerDrivesVerification);
     RUN_TEST(TestStirValidationRejectsBadInputs);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";

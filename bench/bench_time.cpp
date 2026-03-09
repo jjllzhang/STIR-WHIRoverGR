@@ -876,10 +876,9 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
 
   return RunBenchLoop(options, "stir9to3", 9, 3, options.ood_samples,
                       [&](TimeBenchRow* row) {
-                        const auto artifact = prover.prove(instance, polynomial);
-                        const auto& proof = artifact.proof;
+                        const auto proof = prover.prove(instance, polynomial);
                         swgr::ProofStatistics verify_stats;
-                        if (!verifier.verify(instance, artifact, &verify_stats)) {
+                        if (!verifier.verify(instance, proof, &verify_stats)) {
                           throw std::runtime_error("stir verifier rejected honest proof");
                         }
                         if (row != nullptr) {

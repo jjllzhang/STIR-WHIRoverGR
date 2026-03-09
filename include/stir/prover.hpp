@@ -10,9 +10,8 @@ class StirProver {
  public:
   explicit StirProver(StirParameters params);
 
-  StirProofWithWitness prove(
-      const StirInstance& instance,
-      const swgr::poly_utils::Polynomial& polynomial) const;
+  StirProof prove(const StirInstance& instance,
+                  const swgr::poly_utils::Polynomial& polynomial) const;
   StirProofWithWitness prove_with_witness(
       const StirInstance& instance,
       const swgr::poly_utils::Polynomial& polynomial) const;

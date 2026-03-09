@@ -10,6 +10,8 @@ class StirVerifier {
  public:
   explicit StirVerifier(StirParameters params);
 
+  bool verify(const StirInstance& instance, const StirProof& proof,
+              swgr::ProofStatistics* stats = nullptr) const;
   bool verify(const StirInstance& instance, const StirProofWithWitness& artifact,
               swgr::ProofStatistics* stats = nullptr) const;
 

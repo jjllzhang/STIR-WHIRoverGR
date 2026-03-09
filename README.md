@@ -25,7 +25,7 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
 - `FRI-3` and `FRI-9` now expose a sparse-opening PCS surface over Teichmuller-supported domains, but they remain prototype implementations rather than theorem-4.1-complete, production-ready FRI-based PCS code
 - Current FRI openings terminate with `final_polynomial` plus terminal sparse checks; proof-byte reporting now comes from a deterministic length-prefixed serializer over the actual external opening/proof messages
-- `stir::StirProver::prove()` still returns the Phase 1 compatibility carrier `{ proof, witness }`; the slim external proof object lives in `artifact.proof`
+- `STIR(9->3)` now exposes a proof-only public surface built around `initial_root`, per-round `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`, and `queries_to_final + final_polynomial`; it remains a prototype, fixed-parameter, Galois-ring adaptation rather than a theorem-level complete implementation of the paper
 - `poly_utils::bs08` is still a placeholder interface
 - Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
@@ -130,7 +130,7 @@ Benchmark notes:
 - Current `fri3` / `fri9` rows already run `commit + open + verify`; `prover_total_ms` includes both `commit` and `open`
 - `serialized_bytes_actual` is computed from the deterministic serializer of the actual external message shape rather than from hand-written compact payload formulas
 - Current FRI rows count the prover reply opening message (`value + opening proof`) rather than `commitment + opening` combined bytes; `alpha` remains verifier-chosen context and is not charged to the prover reply
-- Current STIR rows count the exact serialized bytes of the slim external `artifact.proof`; the compatibility witness carrier is not charged
+- Current STIR rows count the exact serialized bytes of the public `StirProof`; the optional `prove_with_witness()` compatibility carrier is not charged
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 
 ## Preset Workloads
