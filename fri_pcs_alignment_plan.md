@@ -1,6 +1,6 @@
 # FRI PCS 论文对齐执行计划
 
-更新时间：2026-03-09  
+更新时间：2026-03-10
 对齐目标：`mineru-md/Z2KSNARK/hybrid_auto/Z2KSNARK.md:520`
 
 ## 1. 计划目标
@@ -57,9 +57,9 @@
 - [x] `open` 显式接收或派生 `α`，显式校验 `v = f(α)`
 - [x] FRI 证明阶段针对的是 `g = (f-v)/(X-α)` 的 proximity，而不是直接对完整 `f` 做当前这套 heavy-witness 校验
 - [x] 对外 `FriProof` 不再包含整轮 `oracle_evals`
-- [ ] verifier 不再依赖整轮 oracle / 中间 polynomial 的显式传输
+- [x] verifier 不再依赖整轮 oracle / 中间 polynomial 的显式传输
 - [x] proof-size 统计来自“真实传输 proof”的确定性序列化或固定宽度编码
-- [ ] README 与 benchmark 文案不再把 prototype-heavy verifier 描述成论文式 PCS verifier
+- [x] README 与 benchmark 文案不再把 prototype-heavy verifier 描述成论文式 PCS verifier
 
 ## 5. 执行策略
 
@@ -376,9 +376,11 @@ STIR 虽然不等于论文 4.1 的 FRI PCS，但当前它也存在和 FRI 类似
 
 ## 11. 下一步建议
 
-最合理的下一步是：
+本计划首轮 `Phase 0-6` 已完成。
 
-- 执行 **Phase 6**
-- 目标是回收 README / benchmark / soundness 描述，让当前 FRI PCS 与 STIR route-2 proof-only 边界都表述清楚
+如果继续推进，建议另开新计划，处理当前已明确列为首轮范围外的事项，例如：
 
-FRI 与 STIR 的 public proof/verifier 主线现已都摆脱 heavy-witness public surface；后续重点应转向参数语义、文档边界和 benchmark 说明收口。
+- `pi_FRICom` full version 拿到后的逐步骤映射
+- 更一般的 FRI fold factor / 参数族支持
+- `WHIR` 实现
+- theorem-level soundness 证明与更完整的论文对齐
