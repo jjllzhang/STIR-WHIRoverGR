@@ -10,6 +10,10 @@
 
 namespace swgr::fri {
 
+// Current FriParameters still describe the prototype / engineering scheduling
+// surface. Theorem-facing FRI soundness repair is expected to introduce an
+// explicit repetition-count parameter `m` (or similarly named field) on a
+// separate paper-facing path instead of overloading these heuristic knobs.
 struct FriParameters {
   std::uint64_t fold_factor = 3;
   std::uint64_t stop_degree = 3;

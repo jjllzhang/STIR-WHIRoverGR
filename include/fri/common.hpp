@@ -107,9 +107,15 @@ inline FriInstance quotient_instance(const FriCommitment& commitment) {
 
 bool commitment_domain_supported(const FriCommitment& commitment);
 
+// Current prototype PCS path reconstructs the round-0 virtual oracle directly
+// from sparse openings of committed `f|L`, so it only accepts `alpha in T \ L`.
+// Phase 0 of the soundness-repair plan freezes a later theorem-facing target of
+// `alpha <- T`, with `alpha in L` handled by a distinct upgraded PCS path.
 bool opening_point_valid(const FriCommitment& commitment,
                          const swgr::algebra::GRElem& alpha);
 
+// This helper implements the current sparse-opening shortcut, not the final
+// theorem-facing `pi_FRICom` semantics for `alpha <- T`.
 std::vector<swgr::algebra::GRElem> build_virtual_oracle(
     const Domain& domain, std::span<const swgr::algebra::GRElem> oracle_evals,
     const swgr::algebra::GRElem& alpha,

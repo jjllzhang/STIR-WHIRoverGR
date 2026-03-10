@@ -34,6 +34,12 @@ This repository is **prototype / research code**. It is intended for protocol ex
 
 Current FRI support should be read as a paper-aligned subset of the Section 4.1 PCS semantics, not as a full `pi_FRICom` implementation.
 
+Phase-0 target freeze for the soundness-repair plan:
+
+- the eventual theorem-facing PCS path is intended to support verifier challenges `alpha <- T` across the full Teichmuller set, not only the current prototype subset `T \ L`
+- the eventual theorem-facing FRI API is intended to expose the paper's repetition parameter `m` explicitly instead of reusing the current engineering query-schedule knobs
+- the current sparse-opening `commit / open / verify` surface remains a prototype / benchmark-oriented path during the transition and should not be mistaken for the final theorem-facing PCS contract
+
 Supported now:
 
 - a public `commit / open / verify` PCS surface over Teichmuller-supported domains

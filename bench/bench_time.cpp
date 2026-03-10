@@ -199,6 +199,8 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --hash-profile STIR_NATIVE|WHIR_NATIVE\n"
          "  --stop-degree <uint> --ood-samples <uint>\n"
          "  --queries auto|q0[,q1,...] --threads <uint>\n"
+         "    note: --queries is the current engineering / benchmark query-schedule\n"
+         "    surface, not the theorem-facing FRI repetition parameter m\n"
          "  --warmup <uint> --reps <uint>\n"
          "  --format text|csv|json\n";
 }
