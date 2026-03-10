@@ -393,6 +393,12 @@ swgr::algebra::GRElem derive_round_challenge(
   return transcript.challenge_ring(ctx, label);
 }
 
+swgr::algebra::GRElem derive_fri_folding_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label) {
+  return transcript.challenge_teichmuller(ctx, label);
+}
+
 std::vector<std::uint64_t> derive_query_positions(
     const std::vector<std::uint8_t>& oracle_commitment,
     std::uint64_t round_index, std::uint64_t modulus,

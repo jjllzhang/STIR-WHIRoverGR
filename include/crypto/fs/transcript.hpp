@@ -19,6 +19,8 @@ class Transcript {
   void absorb_ring(const algebra::GRContext& ctx, const algebra::GRElem& x);
   algebra::GRElem challenge_ring(const algebra::GRContext& ctx,
                                  std::string_view label);
+  algebra::GRElem challenge_teichmuller(const algebra::GRContext& ctx,
+                                        std::string_view label);
   std::uint64_t challenge_index(std::string_view label,
                                 std::uint64_t modulus);
 

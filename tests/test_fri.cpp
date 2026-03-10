@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include "algebra/teichmuller.hpp"
+#include "crypto/fs/transcript.hpp"
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
 #include "fri/common.hpp"
@@ -118,6 +120,81 @@ swgr::algebra::GRElem NonTeichAlpha(const GRContext& ctx) {
     candidate += ctx.one();
     return candidate;
   });
+}
+
+std::string FoldRoundLabel(std::size_t round_index) {
+  return "fri.fold_alpha:" + std::to_string(round_index);
+}
+
+std::vector<std::uint8_t> RoundRootBytes(std::size_t round_index) {
+  return {
+      static_cast<std::uint8_t>(0xA0U + (round_index & 0x0FU)),
+      static_cast<std::uint8_t>((round_index * 17U + 3U) & 0xFFU),
+      static_cast<std::uint8_t>((round_index * 29U + 5U) & 0xFFU),
+      static_cast<std::uint8_t>((round_index * 43U + 7U) & 0xFFU),
+  };
+}
+
+void TestFriFoldChallengesAlwaysLieInTeichmullerSet() {
+  testutil::PrintInfo("fri folding challenges are always sampled from T");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  swgr::crypto::Transcript transcript(swgr::HashProfile::STIR_NATIVE);
+
+  for (std::size_t round_index = 0; round_index < 16; ++round_index) {
+    transcript.absorb_bytes(RoundRootBytes(round_index));
+    const auto beta = swgr::fri::derive_fri_folding_challenge(
+        transcript, ctx, FoldRoundLabel(round_index));
+    CHECK(swgr::algebra::is_teichmuller_element(ctx, beta));
+  }
+}
+
+void TestFriFoldChallengeReplayMatchesAcrossTranscripts() {
+  testutil::PrintInfo(
+      "fri prover and verifier replay the same teichmuller folding challenges");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  swgr::crypto::Transcript prover(swgr::HashProfile::STIR_NATIVE);
+  swgr::crypto::Transcript verifier(swgr::HashProfile::STIR_NATIVE);
+
+  for (std::size_t round_index = 0; round_index < 16; ++round_index) {
+    const auto root_bytes = RoundRootBytes(round_index);
+    prover.absorb_bytes(root_bytes);
+    verifier.absorb_bytes(root_bytes);
+    const auto prover_beta = swgr::fri::derive_fri_folding_challenge(
+        prover, ctx, FoldRoundLabel(round_index));
+    const auto verifier_beta = swgr::fri::derive_fri_folding_challenge(
+        verifier, ctx, FoldRoundLabel(round_index));
+    CHECK(prover_beta == verifier_beta);
+  }
+}
+
+void TestFriFoldChallengesDoNotReuseGenericRingSampling() {
+  testutil::PrintInfo(
+      "fri folding challenges no longer reuse unrestricted ring sampling");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  bool found_non_teich_generic = false;
+
+  for (std::size_t attempt = 0; attempt < 16 && !found_non_teich_generic;
+       ++attempt) {
+    swgr::crypto::Transcript generic(swgr::HashProfile::STIR_NATIVE);
+    swgr::crypto::Transcript theorem(swgr::HashProfile::STIR_NATIVE);
+    const auto root_bytes = RoundRootBytes(attempt);
+    generic.absorb_bytes(root_bytes);
+    theorem.absorb_bytes(root_bytes);
+
+    const auto generic_beta = generic.challenge_ring(ctx, FoldRoundLabel(0));
+    const auto theorem_beta = swgr::fri::derive_fri_folding_challenge(
+        theorem, ctx, FoldRoundLabel(0));
+    if (!swgr::algebra::is_teichmuller_element(ctx, generic_beta)) {
+      found_non_teich_generic = true;
+      CHECK(swgr::algebra::is_teichmuller_element(ctx, theorem_beta));
+      CHECK(!(generic_beta == theorem_beta));
+    }
+  }
+
+  CHECK(found_non_teich_generic);
 }
 
 // Phase 3 baseline: public PCS verification now consumes only the external
@@ -609,6 +686,9 @@ void TestFriValidationRejectsBadInputs() {
 
 int main() {
   try {
+    RUN_TEST(TestFriFoldChallengesAlwaysLieInTeichmullerSet);
+    RUN_TEST(TestFriFoldChallengeReplayMatchesAcrossTranscripts);
+    RUN_TEST(TestFriFoldChallengesDoNotReuseGenericRingSampling);
     RUN_TEST(TestFriPcsCommitOpenVerifyRoundtrip);
     RUN_TEST(TestFriPcsRejectsAlphaInsideDomain);
     RUN_TEST(TestFriPcsRejectsWrongPolynomialForCommitment);

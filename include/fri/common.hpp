@@ -162,6 +162,12 @@ swgr::algebra::GRElem derive_round_challenge(
     swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
     std::string_view label);
 
+// Paper-facing FRI folding challenges are sampled from the maximal
+// Teichmuller exceptional set `T`, not from the ambient ring.
+swgr::algebra::GRElem derive_fri_folding_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label);
+
 std::vector<std::uint64_t> derive_query_positions(
     const std::vector<std::uint8_t>& oracle_commitment,
     std::uint64_t round_index, std::uint64_t modulus,

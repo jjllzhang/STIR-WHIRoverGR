@@ -141,7 +141,7 @@ SparseProofBuildResult BuildSparseProof(
 
     const auto transcript_start = std::chrono::steady_clock::now();
     transcript.absorb_bytes(oracle_commitment);
-    const auto folding_alpha = derive_round_challenge(
+    const auto folding_alpha = derive_fri_folding_challenge(
         transcript, current_domain.context(),
         RoundLabel("fri.fold_alpha", round_offset + round_index));
     const std::uint64_t next_domain_size =
@@ -368,7 +368,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
 
     const auto transcript_start = std::chrono::steady_clock::now();
     transcript.absorb_bytes(commitment.oracle_root);
-    const auto folding_alpha = derive_round_challenge(
+    const auto folding_alpha = derive_fri_folding_challenge(
         transcript, ctx, RoundLabel("fri.fold_alpha", 0));
     const std::uint64_t next_domain_size =
         reduced_instance.domain.size() / params_.fold_factor;
@@ -444,7 +444,7 @@ FriOpeningArtifact FriProver::open_with_witness(
 
   swgr::crypto::Transcript transcript(params_.hash_profile);
   transcript.absorb_bytes(commitment.oracle_root);
-  const auto folding_alpha = derive_round_challenge(
+  const auto folding_alpha = derive_fri_folding_challenge(
       transcript, commitment.domain.context(), RoundLabel("fri.fold_alpha", 0));
   const std::uint64_t next_domain_size =
       reduced_instance.domain.size() / params_.fold_factor;

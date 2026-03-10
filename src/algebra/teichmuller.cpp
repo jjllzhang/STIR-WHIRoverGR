@@ -13,6 +13,8 @@
 #include <NTL/ZZ_pE.h>
 
 using NTL::ZZ;
+using NTL::bit;
+using NTL::NumBits;
 using NTL::power;
 using NTL::set;
 
@@ -92,12 +94,36 @@ bool element_has_exact_order(const GRContext& ctx, const GRElem& x,
   });
 }
 
+GRElem PowerByZZ(const GRElem& base, const ZZ& exponent) {
+  if (exponent < 0) {
+    throw std::invalid_argument("PowerByZZ requires non-negative exponent");
+  }
+
+  GRElem result;
+  set(result);
+  GRElem current = base;
+  const long bit_count = NumBits(exponent);
+  for (long bit_index = 0; bit_index < bit_count; ++bit_index) {
+    if (bit(exponent, bit_index) != 0) {
+      result *= current;
+    }
+    if (bit_index + 1 < bit_count) {
+      current *= current;
+    }
+  }
+  return result;
+}
+
 }  // namespace
 
 GRElem teichmuller_generator(const GRContext& ctx) { return ctx.teich_generator(); }
 
 ZZ teichmuller_group_order(const GRContext& ctx) {
   return power(ctx.prime(), CheckedLong(ctx.config().r)) - ZZ(1);
+}
+
+ZZ teichmuller_set_size(const GRContext& ctx) {
+  return teichmuller_group_order(ctx) + ZZ(1);
 }
 
 bool teichmuller_subgroup_size_supported(const GRContext& ctx,
@@ -121,6 +147,22 @@ bool is_teichmuller_element(const GRContext& ctx, const GRElem& element) {
 
     return static_cast<bool>(
         power(element, teichmuller_group_order(ctx)) == ctx.one());
+  });
+}
+
+GRElem teichmuller_element_by_index(const GRContext& ctx, const ZZ& index) {
+  const ZZ size = teichmuller_set_size(ctx);
+  if (index < 0 || index >= size) {
+    throw std::invalid_argument(
+        "teichmuller_element_by_index requires index in [0, |T|-1]");
+  }
+
+  const GRElem generator = teichmuller_generator(ctx);
+  return ctx.with_ntl_context([&] {
+    if (index == 0) {
+      return ctx.zero();
+    }
+    return PowerByZZ(generator, index - ZZ(1));
   });
 }
 

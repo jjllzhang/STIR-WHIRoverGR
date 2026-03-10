@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "algebra/gr_context.hpp"
+#include "algebra/teichmuller.hpp"
 #include "crypto/hash.hpp"
 #include "crypto/fs/transcript.hpp"
 #include "crypto/merkle_tree/merkle_tree.hpp"
@@ -62,6 +63,32 @@ void TestTranscriptIsDeterministicAndDomainSeparated() {
   swgr::crypto::Transcript different(swgr::HashProfile::STIR_NATIVE);
   different.absorb_bytes(std::vector<std::uint8_t>{1, 2, 3, 9});
   CHECK(!(different.challenge_ring(ctx, "alpha") == lhs_ring));
+}
+
+void TestTranscriptTeichmullerChallengeIsDeterministicAndInT() {
+  testutil::PrintInfo(
+      "transcript teichmuller challenges stay deterministic and inside T");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  swgr::crypto::Transcript lhs(swgr::HashProfile::STIR_NATIVE);
+  swgr::crypto::Transcript rhs(swgr::HashProfile::STIR_NATIVE);
+  lhs.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 6});
+  rhs.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 6});
+
+  for (std::size_t round_index = 0; round_index < 16; ++round_index) {
+    const auto label = std::string("beta:") + std::to_string(round_index);
+    const auto lhs_beta = lhs.challenge_teichmuller(ctx, label);
+    const auto rhs_beta = rhs.challenge_teichmuller(ctx, label);
+    CHECK(lhs_beta == rhs_beta);
+    CHECK(swgr::algebra::is_teichmuller_element(ctx, lhs_beta));
+  }
+
+  swgr::crypto::Transcript different(swgr::HashProfile::STIR_NATIVE);
+  different.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 5});
+  swgr::crypto::Transcript baseline(swgr::HashProfile::STIR_NATIVE);
+  baseline.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 6});
+  CHECK(!(different.challenge_teichmuller(ctx, "beta:0") ==
+          baseline.challenge_teichmuller(ctx, "beta:0")));
 }
 
 void TestHashBackendIsBlake3Only() {
@@ -188,6 +215,7 @@ int main() {
   try {
     RUN_TEST(TestHashBackendIsBlake3Only);
     RUN_TEST(TestTranscriptIsDeterministicAndDomainSeparated);
+    RUN_TEST(TestTranscriptTeichmullerChallengeIsDeterministicAndInT);
     RUN_TEST(TestMerkleOpenVerifyAndRejectTamper);
     RUN_TEST(TestProofPlannerMatchesUniqueQueriesAndUpperBound);
     RUN_TEST(TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount);

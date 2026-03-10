@@ -1,5 +1,7 @@
 #include "crypto/fs/transcript.hpp"
 
+#include <NTL/ZZ.h>
+
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -7,6 +9,7 @@
 #include <vector>
 
 #include "algebra/gr_serialization.hpp"
+#include "algebra/teichmuller.hpp"
 #include "crypto/hash.hpp"
 
 namespace swgr::crypto {
@@ -111,6 +114,37 @@ algebra::GRElem Transcript::challenge_ring(const algebra::GRContext& ctx,
                                            std::string_view label) {
   const auto bytes = squeeze_bytes(label, ctx.elem_bytes());
   return algebra::deserialize_ring_element(ctx, bytes);
+}
+
+algebra::GRElem Transcript::challenge_teichmuller(
+    const algebra::GRContext& ctx, std::string_view label) {
+  const NTL::ZZ teich_size = algebra::teichmuller_set_size(ctx);
+  if (teich_size <= 0) {
+    throw std::invalid_argument(
+        "challenge_teichmuller requires a positive Teichmuller set size");
+  }
+
+  const long sample_bits = NTL::NumBits(teich_size - 1);
+  const std::size_t sample_bytes =
+      static_cast<std::size_t>((sample_bits + 7) / 8);
+  if (sample_bytes == 0) {
+    return algebra::teichmuller_element_by_index(ctx, NTL::ZZ(0));
+  }
+
+  NTL::ZZ sample_space(1);
+  sample_space <<= static_cast<long>(sample_bytes * 8U);
+  const NTL::ZZ limit = sample_space - (sample_space % teich_size);
+  while (true) {
+    const auto bytes = squeeze_bytes(label, sample_bytes);
+    NTL::ZZ candidate;
+    NTL::ZZFromBytes(
+        candidate, reinterpret_cast<const unsigned char*>(bytes.data()),
+        static_cast<long>(bytes.size()));
+    if (candidate < limit) {
+      return algebra::teichmuller_element_by_index(ctx,
+                                                   candidate % teich_size);
+    }
+  }
 }
 
 std::uint64_t Transcript::challenge_index(std::string_view label,
