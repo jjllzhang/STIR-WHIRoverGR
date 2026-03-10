@@ -4,11 +4,11 @@ Date: 2026-03-10
 
 Owner: Codex + user follow-up execution
 
-Status: Phase 2 landed; Phase 3 pending
+Status: Phase 3 landed; Phase 4 pending
 
 ## Goal
 
-Repair the three currently known gaps between the repository's FRI implementation and the Z2KSNARK paper/full-version soundness story:
+This plan tracks the three gaps that originally separated the repository's FRI implementation from the Z2KSNARK paper/full-version soundness story:
 
 1. FRI folding challenges `beta_i` are sampled from the full ring instead of from the paper's exceptional set `T`.
 2. FRI soundness parameterization is driven by repo-local per-round query schedules and engineering heuristics instead of the paper's repetition parameter `m`.
@@ -26,16 +26,16 @@ The output of this plan should be a repo state where:
 - This plan does not attempt to prove the missing Galois-ring soundness arguments inside the repo; it only makes the implementation match the paper-facing protocol contract as closely as practical.
 - This plan does not reopen unrelated performance work.
 
-## Verified Current Baseline
+## Original Baseline
 
-The current repo already has:
+At the start of this repair line, the repo had:
 
 - a sparse-opening PCS surface with `commit / open / verify`,
 - correct virtual-quotient construction for the current `alpha in T \\ L` subset,
 - prover/verifier self-consistency under the current prototype semantics,
 - explicit benchmark disclaimers that the current soundness metadata is engineering-only.
 
-The three gaps above remain real and should be fixed in that order.
+The three gaps above were the basis for the phased repair below.
 
 ## Execution Strategy
 
@@ -212,18 +212,18 @@ Current repo behavior differs from the full-version protocol shape in at least t
 
 ### Implementation Tasks
 
-- [ ] Split protocol objects cleanly:
+- [x] Split protocol objects cleanly:
   - theorem-facing external proof/opening types,
   - optional prototype/compat witness types,
   - benchmark serialization over the actual external theorem-facing object.
-- [ ] Decide whether to keep the current sparse path under a separate experimental API.
-- [ ] Implement the exact round structure required by the target interpretation of Procedure 5.
-- [ ] Re-check the `alpha` semantics from Phase 0:
+- [x] Decide whether to keep the current sparse path under a separate experimental API.
+- [x] Implement the exact round structure required by the target interpretation of Procedure 5.
+- [x] Re-check the `alpha` semantics from Phase 0:
   - if full `alpha <- T` support is required, implement a path that handles `alpha in L` correctly instead of relying on pointwise division over `L`,
   - if the paper-facing subset still excludes `alpha in L`, document the proof/reference justification explicitly.
-- [ ] Replace the current "subset" README language once the theorem-facing path exists.
-- [ ] Rework serializer accounting so proof bytes for the theorem-facing PCS are computed from the real external object only.
-- [ ] Audit verifier logic line by line against Procedure 5 after implementation and record any remaining deltas in this file.
+- [x] Replace the current "subset" README language once the theorem-facing path exists.
+- [x] Rework serializer accounting so proof bytes for the theorem-facing PCS are computed from the real external object only.
+- [x] Audit verifier logic line by line against Procedure 5 after implementation and record any remaining deltas in this file.
 
 ### Suggested Code Touchpoints
 
@@ -239,11 +239,11 @@ Current repo behavior differs from the full-version protocol shape in at least t
 
 ### Required Tests
 
-- [ ] Honest end-to-end theorem-facing PCS roundtrip.
-- [ ] Tamper tests for each external proof component.
-- [ ] Serialization/proof-size tests for the new external object.
-- [ ] If `alpha in L` becomes supported, add explicit honest and reject-path tests for that case.
-- [ ] Run:
+- [x] Honest end-to-end theorem-facing PCS roundtrip.
+- [x] Tamper tests for each external proof component.
+- [x] Serialization/proof-size tests for the new external object.
+- [x] If `alpha in L` becomes supported, add explicit honest and reject-path tests for that case.
+- [x] Run:
 
 ```bash
 ctest --test-dir build --output-on-failure -R 'test_fri'
@@ -251,9 +251,9 @@ ctest --test-dir build --output-on-failure -R 'test_fri'
 
 ### Exit Criteria
 
-- [ ] The repo has a theorem-facing public FRI PCS path that no longer needs the README caveat "paper-aligned subset".
-- [ ] External proof objects, verifier checks, and proof-byte accounting all refer to the same protocol shape.
-- [ ] Any residual divergence from the paper is documented in one short, explicit list.
+- [x] The repo has a theorem-facing public FRI PCS path that no longer needs the README caveat "paper-aligned subset".
+- [x] External proof objects, verifier checks, and proof-byte accounting all refer to the same protocol shape.
+- [x] Any residual divergence from the paper is documented in one short, explicit list.
 
 ## Phase 4: Bench, Docs, and Cleanup
 
@@ -312,7 +312,7 @@ Stop and re-review before coding if any of these happens:
 - [x] Phase 0 completed
 - [x] Phase 1 completed
 - [x] Phase 2 completed
-- [ ] Phase 3 completed
+- [x] Phase 3 completed
 - [ ] Phase 4 completed
 
 ## Execution Notes
@@ -335,11 +335,9 @@ Use this section during follow-up implementation to record:
   (or a clearly synonymous field name such as `fri_repetitions`). This is a
   paper-facing parameter and should not be inferred from the current engineering
   heuristic knobs `query_repetitions`, `lambda_target`, `pow_bits`, or `sec_mode`.
-- The current sparse-opening PCS should remain available as a prototype /
-  benchmark-oriented API during the transition. Do not replace it in place during
-  the soundness repair. Later phases should introduce or route through a distinct
-  theorem-facing PCS path rather than silently changing the semantics of the current
-  prototype surface.
+- This Phase 0 transition note was later superseded by the Phase 3 decision to
+  replace the old sparse-opening public PCS path in place. It is kept here only as
+  historical context for why later execution notes explicitly record that reversal.
 - Target protocol contract for later phases:
   - theorem-facing PCS path: `alpha <- T`, `beta_i <- T`, explicit repetition count
     `m`, and an external proof/opening object that is audited against Procedure 5
@@ -347,15 +345,15 @@ Use this section during follow-up implementation to record:
   - benchmark / engineering path: existing heuristic query scheduling and
     soundness-calibration metadata remain available, but are explicitly marked as
     non-paper and must not be presented as theorem-backed parameters;
-  - compatibility / debug-only path: current witness-heavy or sparse-shortcut
-    helper surfaces may remain temporarily for transition and debugging, but must
-    stay labeled as non-theorem-facing.
+  - compatibility / debug-only path: any temporary witness-heavy or sparse-shortcut
+    helper surfaces remain non-theorem-facing and may be removed once the public
+    theorem-facing migration lands.
 - Residual deltas after Phase 0 remain intentional and tracked:
   - current code still rejects `alpha in L`;
   - current public benchmark CLI still keeps STIR engineering knobs, but FRI now
     has to move onto explicit theorem-facing repetition counts in Phase 2;
   - current public sparse-opening proof object remains a prototype path until the
-    later theorem-facing upgrade lands.
+    later theorem-facing upgrade lands. This note was resolved by Phase 3.
 
 ### Phase 1 Challenge Sampling Repair (2026-03-10)
 
@@ -401,11 +399,48 @@ Use this section during follow-up implementation to record:
 - Preset wrappers and the parameter-search entrypoint now pass an explicit
   `fri_repetitions` value through to `bench_time` so mixed-protocol benchmark
   runs still execute cleanly while STIR remains on its old engineering knobs.
-- `FriProver::prove(...)` / `FriVerifier::verify(instance, proof)` remain
-  available as lower-level FRI proof paths, but they now use the same
-  theorem-facing `m` semantics as the public sparse-opening PCS surface.
+- At Phase 2 landing, `FriProver::prove(...)` / `FriVerifier::verify(instance, proof)`
+  still remained available as lower-level FRI proof paths under the same theorem-facing
+  `m` semantics. Phase 3 later removed those low-level public entry points when the
+  theorem-facing PCS migration replaced the old sparse-opening surface in place.
 - Validation completed for this phase:
   - `cmake --build build -j4`
   - `ctest --test-dir build --output-on-failure -R 'test_fri|test_soundness_configurator'`
   - `./build/bench_time --protocol fri3 --n 9 --d 8 --fri-repetitions 2 --format text`
   - `./scripts/run_timing_benchmark_from_preset.sh --preset bench/presets/all_protocols_smoke_gr216_r54.json --build-dir build --warmup 0 --reps 1 --output /tmp/swgr_phase2_time.csv`
+
+### Phase 3 Full `pi_FRICom`-Style PCS Upgrade (2026-03-10)
+
+- The old public sparse-opening PCS surface was replaced in place rather than
+  retained as a long-lived prototype API. The public `FriOpening` / `FriProof`
+  object now follows the theorem-facing BCS-style PCS shape used by the repo:
+  - `g_0` remains a virtual oracle and is not separately committed;
+  - the prover commits to `g_i` roots only for `i >= 1`;
+  - the final stage reveals the entire final oracle table instead of a
+    `final_polynomial`.
+- The public theorem-facing verifier now accepts `alpha <- T` across the full
+  Teichmuller set, including `alpha in L`.
+- The first-round `alpha in L` handling no longer relies on pointwise division
+  over all of `L`; instead the verifier treats the `alpha` slot as the special
+  virtual-oracle exception while checking the rest of the queried fiber against
+  committed `f|L` values and the opened child oracle.
+- The transcript / oracle order was upgraded toward Procedure 5:
+  - absorb the commitment to `f`;
+  - absorb `(alpha, v)`;
+  - derive each `beta_i`, then commit and absorb each explicit `g_i` root;
+  - only after the root chain is fixed derive the theorem-facing query chains.
+- Proof-size accounting now comes from the actual theorem-facing external object:
+  roots for `g_1, ..., g_{r'}`, per-round Merkle openings, and the revealed
+  final oracle table.
+- Residual paper deltas after Phase 3:
+  - the repo keeps the Phase-2 carried-query-chain interpretation of repetition
+    parameter `m` rather than re-sampling every `gamma_i` independently as the
+    Procedure 5 prose suggests;
+  - the zero-fold PCS opening path reveals the full committed oracle and full
+    quotient oracle table together because there are no explicit folded-oracle
+    rounds to mediate the virtual-oracle relation.
+- Validation completed for this phase:
+  - `cmake --build build -j4`
+  - `ctest --test-dir build --output-on-failure -R 'test_fri'`
+  - `./build/bench_time --protocol fri3 --n 9 --d 8 --fri-repetitions 2 --format text`
+  - `./build/bench_time --protocol fri3 --n 9 --d 8 --stop-degree 1 --fri-repetitions 2 --format text`

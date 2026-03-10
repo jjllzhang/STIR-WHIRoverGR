@@ -23,8 +23,8 @@ This repository is **prototype / research code**. It is intended for protocol ex
 ## Current Limits
 
 - `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
-- `FRI-3` and `FRI-9` now expose a sparse-opening PCS surface over Teichmuller-supported domains, but they remain prototype implementations rather than theorem-4.1-complete, production-ready FRI-based PCS code
-- Current FRI openings terminate with `final_polynomial` plus terminal sparse checks; proof-byte reporting now comes from a deterministic length-prefixed serializer over the actual external opening/proof messages
+- `FRI-3` and `FRI-9` now expose a theorem-facing BCS-style PCS surface over Teichmuller-supported domains, but they remain prototype / research implementations rather than production-ready or audited FRI-based PCS code
+- Current FRI openings keep `g_0` as a virtual quotient oracle, commit to `g_i` for `i >= 1`, and terminate by revealing the full final oracle table; proof-byte reporting comes from a deterministic length-prefixed serializer over that actual external opening/proof object
 - `STIR(9->3)` now exposes a proof-only public surface built around `initial_root`, per-round `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`, and `queries_to_final + final_polynomial`; it remains a prototype, fixed-parameter, Galois-ring adaptation rather than a theorem-level complete implementation of the paper
 - `poly_utils::bs08` is still a placeholder interface
 - Current FRI benchmark rows now expose the paper-facing repetition parameter `m`; STIR benchmark rows still use engineering scheduling metadata during the transition
@@ -32,25 +32,29 @@ This repository is **prototype / research code**. It is intended for protocol ex
 
 ## Paper Alignment Boundaries
 
-Current FRI support should be read as a paper-aligned subset of the Section 4.1 PCS semantics, not as a full `pi_FRICom` implementation.
+Current FRI support should be read as a theorem-facing BCS-style implementation of the paper's Section 4.1 PCS contract over the repo's fixed parameter surface. It no longer uses the older public sparse-opening subset path.
 
-Phase-0 target freeze for the soundness-repair plan:
+Current theorem-facing FRI contract:
 
-- the eventual theorem-facing PCS path is intended to support verifier challenges `alpha <- T` across the full Teichmuller set, not only the current prototype subset `T \ L`
-- the theorem-facing FRI API now exposes the paper's repetition parameter `m` explicitly instead of reusing engineering query-schedule knobs
-- the current sparse-opening `commit / open / verify` surface remains a prototype / benchmark-oriented path during the transition and should not be mistaken for the final theorem-facing PCS contract
+- verifier challenges `alpha <- T` across the full Teichmuller set, including `alpha in L`
+- folding challenges `beta_i <- T`
+- explicit paper-facing repetition parameter `m`
+- a virtual first-round quotient oracle `g_0 = (f - v) / (X - alpha)`
+- explicit committed oracle messages `g_1, ..., g_{r'}`
+- a full final oracle table for `g_{r'}`
 
 Supported now:
 
 - a public `commit / open / verify` PCS surface over Teichmuller-supported domains
-- sparse Merkle openings with Fiat-Shamir-replayed round challenges and query positions
-- a virtual first-round quotient oracle `g = (f - v) / (X - alpha)` derived from sparse openings of committed `f|L`
-- terminal `final_polynomial` consistency checks rather than verifier-side full-table witness reconstruction
+- Merkle commitments for `f` and for each explicit folded oracle `g_i`, `i >= 1`
+- Fiat-Shamir-replayed folding challenges and theorem-facing repetition parameter `m`
+- a virtual `g_0` relation checked against committed `f|L`, including the `alpha in L` first-round exception path
+- terminal verifier-side interpolation and degree checking from the revealed final oracle table
 
-Not yet implemented or proven here:
+Residual deltas still worth keeping explicit:
 
-- the full self-contained `pi_FRICom` procedure deferred by the paper to its full version
-- a step-by-step theorem-level reproduction of all Section 4.1 details beyond the currently implemented `FRI-3` / `FRI-9` parameterized path
+- the repo keeps the Phase-2 carried query-chain interpretation of repetition parameter `m`, rather than resampling each `gamma_i` independently exactly as the prose of Procedure 5 states
+- the zero-fold PCS opening path reveals the full committed oracle and full quotient oracle table together, because there are no explicit folded-oracle rounds to mediate the virtual-oracle relation
 - a formal soundness proof for this fixed-parameter Galois-ring adaptation
 
 Current STIR support should be read similarly: the public proof shape now aligns with Construction 5.2-style rounds and final-polynomial consistency checks, but the repository still implements a fixed-parameter Galois-ring adaptation rather than a full theorem-level reproduction of the field-model paper.

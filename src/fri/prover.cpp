@@ -50,177 +50,26 @@ std::vector<std::uint64_t> CarryToBundleQueryChains(
   return queries;
 }
 
-std::vector<std::uint64_t> OpenedRoundQueries(
-    const std::vector<std::uint64_t>& carried_positions,
-    std::uint64_t bundle_count,
-    const std::vector<std::uint64_t>& fresh_query_chains) {
-  std::vector<std::uint64_t> opened =
-      CarryToBundleQueryChains(carried_positions, bundle_count);
-  opened.insert(opened.end(), fresh_query_chains.begin(),
-                fresh_query_chains.end());
-  return UniqueSorted(opened);
-}
-
-std::vector<std::uint64_t> NextCarriedQueryChains(
-    const std::vector<std::uint64_t>& carried_positions,
-    std::uint64_t bundle_count,
-    const std::vector<std::uint64_t>& fresh_query_chains) {
-  std::vector<std::uint64_t> next_positions =
-      CarryToBundleQueryChains(carried_positions, bundle_count);
-  next_positions.insert(next_positions.end(), fresh_query_chains.begin(),
-                        fresh_query_chains.end());
-  return next_positions;
-}
-
-std::vector<std::uint64_t> DeriveTerminalQueryChains(
-    swgr::crypto::Transcript& transcript, const FriParameters& params,
-    const FriInstance& instance, std::size_t round_index) {
-  return derive_query_positions(
-      transcript, RoundLabel("fri.final_query", round_index),
-      instance.domain.size(), terminal_query_chain_count(params));
-}
-
-std::vector<std::uint64_t> ExpandBundleIndices(
-    const std::vector<std::uint64_t>& bundle_queries,
-    std::uint64_t bundle_count, std::uint64_t bundle_size) {
+std::vector<std::uint64_t> ExpandFiberIndices(
+    const std::vector<std::uint64_t>& child_queries,
+    std::uint64_t child_domain_size, std::uint64_t fold_factor) {
   std::vector<std::uint64_t> indices;
-  indices.reserve(bundle_queries.size() *
-                  static_cast<std::size_t>(bundle_size));
-  for (const auto bundle_index : bundle_queries) {
-    for (std::uint64_t offset = 0; offset < bundle_size; ++offset) {
-      indices.push_back(bundle_index + offset * bundle_count);
+  indices.reserve(child_queries.size() *
+                  static_cast<std::size_t>(fold_factor));
+  for (const auto child_index : child_queries) {
+    for (std::uint64_t offset = 0; offset < fold_factor; ++offset) {
+      indices.push_back(child_index + offset * child_domain_size);
     }
   }
   return UniqueSorted(indices);
 }
 
-struct SparseProofBuildResult {
-  FriProof proof;
-  FriWitness witness;
-};
-
-SparseProofBuildResult BuildSparseProof(
-    const FriParameters& params, const FriInstance& instance,
-    const std::vector<swgr::algebra::GRElem>& initial_oracle,
-    swgr::crypto::Transcript& transcript, std::size_t round_offset,
-    std::vector<std::uint64_t> carried_positions, bool collect_witness,
-    double* merkle_ms, double* transcript_ms, double* fold_ms,
-    double* interpolate_ms, double* query_open_ms, double* query_phase_ms) {
-  SparseProofBuildResult result;
-  auto& proof = result.proof;
-  auto& witness = result.witness;
-
-  Domain current_domain = instance.domain;
-  std::uint64_t current_degree = instance.claimed_degree;
-  auto current_oracle = initial_oracle;
-
-  const std::size_t fold_rounds =
-      folding_round_count(instance, params.fold_factor, params.stop_degree);
-  const auto query_rounds = resolve_query_rounds_metadata(params, instance);
-
-  for (std::size_t round_index = 0; round_index < fold_rounds; ++round_index) {
-    if (collect_witness) {
-      witness.rounds.push_back(FriRoundWitness{.oracle_evals = current_oracle});
-    }
-
-    const auto merkle_start = std::chrono::steady_clock::now();
-    const auto oracle_tree = build_oracle_tree(
-        params.hash_profile, current_domain.context(), current_oracle,
-        params.fold_factor);
-    const auto oracle_commitment = oracle_tree.root();
-    *merkle_ms +=
-        ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
-    proof.oracle_roots.push_back(oracle_commitment);
-
-    const auto transcript_start = std::chrono::steady_clock::now();
-    transcript.absorb_bytes(oracle_commitment);
-    const auto folding_alpha = derive_fri_folding_challenge(
-        transcript, current_domain.context(),
-        RoundLabel("fri.fold_alpha", round_offset + round_index));
-    const std::uint64_t next_domain_size =
-        current_domain.size() / params.fold_factor;
-    const auto fresh_query_chains = derive_query_positions(
-        transcript, RoundLabel("fri.query", round_offset + round_index),
-        next_domain_size, query_rounds[round_index].fresh_query_count);
-    const auto round_queries = OpenedRoundQueries(
-        carried_positions, next_domain_size, fresh_query_chains);
-    *transcript_ms +=
-        ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
-
-    const auto query_start = std::chrono::steady_clock::now();
-    proof.rounds.push_back(
-        FriRoundProof{.oracle_proof = oracle_tree.open(round_queries)});
-    const double open_elapsed =
-        ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
-    *query_open_ms += open_elapsed;
-    *query_phase_ms += open_elapsed;
-
-    const auto fold_start = std::chrono::steady_clock::now();
-    current_oracle = swgr::poly_utils::fold_table_k(
-        current_domain, current_oracle, params.fold_factor, folding_alpha);
-    *fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
-    current_domain = current_domain.pow_map(params.fold_factor);
-    current_degree /= params.fold_factor;
-    carried_positions = NextCarriedQueryChains(
-        carried_positions, next_domain_size, fresh_query_chains);
-  }
-
-  if (collect_witness) {
-    witness.rounds.push_back(FriRoundWitness{.oracle_evals = current_oracle});
-  }
-
-  const auto final_merkle_start = std::chrono::steady_clock::now();
-  const auto final_tree = build_oracle_tree(params.hash_profile,
-                                            current_domain.context(),
-                                            current_oracle, 1);
-  const auto final_root = final_tree.root();
-  *merkle_ms +=
-      ElapsedMilliseconds(final_merkle_start, std::chrono::steady_clock::now());
-  proof.oracle_roots.push_back(final_root);
-
-  auto final_query_chains = carried_positions;
-  if (final_query_chains.empty()) {
-    const auto transcript_start = std::chrono::steady_clock::now();
-    transcript.absorb_bytes(final_root);
-    final_query_chains = DeriveTerminalQueryChains(
-        transcript, params,
-        FriInstance{
-            .domain = current_domain,
-            .claimed_degree = current_degree,
-        },
-        round_offset + fold_rounds);
-    *transcript_ms +=
-        ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
-  }
-  const auto final_queries = UniqueSorted(final_query_chains);
-
-  const auto final_query_start = std::chrono::steady_clock::now();
-  proof.rounds.push_back(
-      FriRoundProof{.oracle_proof = final_tree.open(final_queries)});
-  const double final_open_elapsed =
-      ElapsedMilliseconds(final_query_start, std::chrono::steady_clock::now());
-  *query_open_ms += final_open_elapsed;
-  *query_phase_ms += final_open_elapsed;
-
-  const auto interpolate_start = std::chrono::steady_clock::now();
-  proof.final_polynomial =
-      swgr::poly_utils::rs_interpolate(current_domain, current_oracle);
-  *interpolate_ms +=
-      ElapsedMilliseconds(interpolate_start, std::chrono::steady_clock::now());
-  if (proof.final_polynomial.degree() > current_degree) {
-    throw std::runtime_error(
-        "fri::BuildSparseProof terminal polynomial violates degree bound");
-  }
-
-  proof.stats.prover_rounds = static_cast<std::uint64_t>(fold_rounds);
-  proof.stats.verifier_hashes = 0;
-  for (const auto& round : proof.rounds) {
-    proof.stats.verifier_hashes += static_cast<std::uint64_t>(
-        round.oracle_proof.sibling_hashes.size());
-  }
-  proof.stats.serialized_bytes =
-      serialized_message_bytes(instance.domain.context(), proof);
-  return result;
+void AbsorbEvaluationClaim(swgr::crypto::Transcript& transcript,
+                           const swgr::algebra::GRContext& ctx,
+                           const swgr::algebra::GRElem& alpha,
+                           const swgr::algebra::GRElem& value) {
+  transcript.absorb_bytes(ctx.serialize(alpha));
+  transcript.absorb_bytes(ctx.serialize(value));
 }
 
 }  // namespace
@@ -280,7 +129,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
         "fri::FriProver::open received invalid commitment");
   }
   if (!opening_point_valid(commitment, alpha)) {
-    throw std::invalid_argument("fri::FriProver::open requires alpha in T \\ L");
+    throw std::invalid_argument("fri::FriProver::open requires alpha in T");
   }
   if (polynomial.degree() > commitment.degree_bound) {
     throw std::invalid_argument(
@@ -295,12 +144,12 @@ FriOpening FriProver::open(const FriCommitment& commitment,
   double quotient_ms = 0.0;
   double transcript_ms = 0.0;
   double fold_ms = 0.0;
-  double interpolate_ms = 0.0;
   double query_open_ms = 0.0;
   double query_phase_ms = 0.0;
 
   const auto encode_start = std::chrono::steady_clock::now();
-  auto committed_oracle = swgr::poly_utils::rs_encode(commitment.domain, polynomial);
+  const auto committed_oracle =
+      swgr::poly_utils::rs_encode(commitment.domain, polynomial);
   encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
 
   const auto merkle_start = std::chrono::steady_clock::now();
@@ -318,8 +167,12 @@ FriOpening FriProver::open(const FriCommitment& commitment,
   answer_ms += ElapsedMilliseconds(answer_start, std::chrono::steady_clock::now());
 
   const auto quotient_start = std::chrono::steady_clock::now();
-  const auto quotient_polynomial = swgr::poly_utils::quotient_polynomial_from_answers(
-      ctx, polynomial, {alpha}, {value});
+  const auto quotient_polynomial =
+      swgr::poly_utils::quotient_polynomial_from_answers(ctx, polynomial, {alpha},
+                                                         {value});
+  const auto quotient_oracle =
+      swgr::poly_utils::rs_encode(opening_instance(commitment).domain,
+                                  quotient_polynomial);
   quotient_ms +=
       ElapsedMilliseconds(quotient_start, std::chrono::steady_clock::now());
 
@@ -336,80 +189,97 @@ FriOpening FriProver::open(const FriCommitment& commitment,
   const std::size_t total_rounds =
       folding_round_count(reduced_instance, params_.fold_factor, params_.stop_degree);
   swgr::crypto::Transcript transcript(params_.hash_profile);
+  transcript.absorb_bytes(commitment.oracle_root);
+  AbsorbEvaluationClaim(transcript, ctx, alpha, value);
 
   if (total_rounds == 0) {
-    const auto transcript_start = std::chrono::steady_clock::now();
-    transcript.absorb_bytes(commitment.oracle_root);
-    const auto terminal_query_chains =
-        DeriveTerminalQueryChains(transcript, params_, reduced_instance, 0);
-    transcript_ms +=
-        ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
-
-    const auto query_start = std::chrono::steady_clock::now();
-    opening.proof.committed_oracle_proof =
-        commitment_tree.open(UniqueSorted(terminal_query_chains));
-    const double open_elapsed =
-        ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
-    query_open_ms += open_elapsed;
-    query_phase_ms += open_elapsed;
-
-    const auto virtual_oracle =
-        build_virtual_oracle(commitment.domain, committed_oracle, alpha, value);
-    auto quotient_result = BuildSparseProof(
-        params_, reduced_instance, virtual_oracle, transcript, 0,
-        terminal_query_chains, false, &merkle_ms, &transcript_ms, &fold_ms,
-        &interpolate_ms, &query_open_ms, &query_phase_ms);
-    opening.proof.quotient_proof = std::move(quotient_result.proof);
-    opening.proof.quotient_proof.final_polynomial = quotient_polynomial;
+    opening.proof.final_oracle = quotient_oracle;
+    opening.proof.revealed_committed_oracle = committed_oracle;
   } else {
     const auto query_rounds = resolve_query_rounds_metadata(params_, reduced_instance);
 
+    Domain current_domain = reduced_instance.domain;
+    auto current_oracle = quotient_oracle;
+    std::vector<Domain> oracle_domains;
+    oracle_domains.reserve(total_rounds);
+    std::vector<swgr::crypto::MerkleTree> oracle_trees;
+    oracle_trees.reserve(total_rounds);
+
+    for (std::size_t round_index = 0; round_index < total_rounds; ++round_index) {
+      const auto transcript_start = std::chrono::steady_clock::now();
+      const auto folding_alpha = derive_fri_folding_challenge(
+          transcript, ctx, RoundLabel("fri.fold_alpha", round_index));
+      transcript_ms +=
+          ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
+
+      const auto fold_start = std::chrono::steady_clock::now();
+      current_oracle = swgr::poly_utils::fold_table_k(
+          current_domain, current_oracle, params_.fold_factor, folding_alpha);
+      fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
+      current_domain = current_domain.pow_map(params_.fold_factor);
+
+      const auto round_merkle_start = std::chrono::steady_clock::now();
+      auto oracle_tree =
+          build_oracle_tree(params_.hash_profile, ctx, current_oracle, 1);
+      merkle_ms += ElapsedMilliseconds(round_merkle_start,
+                                       std::chrono::steady_clock::now());
+
+      opening.proof.oracle_roots.push_back(oracle_tree.root());
+      oracle_domains.push_back(current_domain);
+      oracle_trees.push_back(std::move(oracle_tree));
+
+      const auto absorb_start = std::chrono::steady_clock::now();
+      transcript.absorb_bytes(opening.proof.oracle_roots.back());
+      transcript_ms +=
+          ElapsedMilliseconds(absorb_start, std::chrono::steady_clock::now());
+    }
+
+    opening.proof.final_oracle = current_oracle;
+
     const auto transcript_start = std::chrono::steady_clock::now();
-    transcript.absorb_bytes(commitment.oracle_root);
-    const auto folding_alpha = derive_fri_folding_challenge(
-        transcript, ctx, RoundLabel("fri.fold_alpha", 0));
-    const std::uint64_t next_domain_size =
-        reduced_instance.domain.size() / params_.fold_factor;
-    const auto first_query_chains = derive_query_positions(
-        transcript, RoundLabel("fri.query", 0), next_domain_size,
+    auto current_query_chains = derive_query_positions(
+        transcript, RoundLabel("fri.query", 0), oracle_domains.front().size(),
         query_rounds.front().fresh_query_count);
     transcript_ms +=
         ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
 
-    const auto input_indices =
-        ExpandBundleIndices(first_query_chains, next_domain_size,
-                            params_.fold_factor);
-    const auto query_start = std::chrono::steady_clock::now();
-    opening.proof.committed_oracle_proof = commitment_tree.open(input_indices);
-    const double open_elapsed =
-        ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
-    query_open_ms += open_elapsed;
-    query_phase_ms += open_elapsed;
+    for (std::size_t round_index = 0; round_index < total_rounds; ++round_index) {
+      FriRoundProof round;
+      const Domain& child_domain = oracle_domains[round_index];
+      const auto parent_indices = ExpandFiberIndices(
+          current_query_chains, child_domain.size(), params_.fold_factor);
 
-    const auto virtual_oracle =
-        build_virtual_oracle(commitment.domain, committed_oracle, alpha, value);
-    const auto fold_start = std::chrono::steady_clock::now();
-    const auto first_folded_oracle = swgr::poly_utils::fold_table_k(
-        reduced_instance.domain, virtual_oracle, params_.fold_factor,
-        folding_alpha);
-    fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
+      const auto query_start = std::chrono::steady_clock::now();
+      if (round_index == 0) {
+        round.parent_oracle_proof = commitment_tree.open(parent_indices);
+      } else {
+        round.parent_oracle_proof =
+            oracle_trees[round_index - 1].open(parent_indices);
+      }
+      if (round_index + 1U < total_rounds) {
+        round.child_oracle_proof =
+            oracle_trees[round_index].open(UniqueSorted(current_query_chains));
+      }
+      const double open_elapsed =
+          ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
+      query_open_ms += open_elapsed;
+      query_phase_ms += open_elapsed;
+      opening.proof.rounds.push_back(std::move(round));
 
-    const FriInstance suffix_instance{
-        .domain = reduced_instance.domain.pow_map(params_.fold_factor),
-        .claimed_degree = reduced_instance.claimed_degree / params_.fold_factor,
-    };
-    auto suffix_result = BuildSparseProof(
-        params_, suffix_instance, first_folded_oracle, transcript, 1,
-        first_query_chains, false, &merkle_ms, &transcript_ms, &fold_ms,
-        &interpolate_ms, &query_open_ms, &query_phase_ms);
-    opening.proof.quotient_proof = std::move(suffix_result.proof);
+      if (round_index + 1U < total_rounds) {
+        current_query_chains = CarryToBundleQueryChains(
+            current_query_chains, oracle_domains[round_index + 1].size());
+      }
+    }
   }
 
-  opening.proof.stats = opening.proof.quotient_proof.stats;
-  opening.proof.stats.prover_rounds =
-      static_cast<std::uint64_t>(total_rounds);
-  opening.proof.stats.verifier_hashes += static_cast<std::uint64_t>(
-      opening.proof.committed_oracle_proof.sibling_hashes.size());
+  opening.proof.stats.prover_rounds = static_cast<std::uint64_t>(total_rounds);
+  opening.proof.stats.verifier_hashes = 0;
+  for (const auto& round : opening.proof.rounds) {
+    opening.proof.stats.verifier_hashes += static_cast<std::uint64_t>(
+        round.parent_oracle_proof.sibling_hashes.size() +
+        round.child_oracle_proof.sibling_hashes.size());
+  }
   opening.proof.stats.serialized_bytes = serialized_message_bytes(ctx, opening);
   opening.proof.stats.prover_encode_ms += encode_ms;
   opening.proof.stats.prover_merkle_ms += merkle_ms;
@@ -417,148 +287,11 @@ FriOpening FriProver::open(const FriCommitment& commitment,
   opening.proof.stats.prover_quotient_ms += quotient_ms;
   opening.proof.stats.prover_transcript_ms += transcript_ms;
   opening.proof.stats.prover_fold_ms += fold_ms;
-  opening.proof.stats.prover_interpolate_ms += interpolate_ms;
   opening.proof.stats.prover_query_open_ms += query_open_ms;
   opening.proof.stats.prove_query_phase_ms += query_phase_ms;
   opening.proof.stats.prover_total_ms =
       ElapsedMilliseconds(open_start, std::chrono::steady_clock::now());
   return opening;
-}
-
-FriOpeningArtifact FriProver::open_with_witness(
-    const FriCommitment& commitment,
-    const swgr::poly_utils::Polynomial& polynomial,
-    const swgr::algebra::GRElem& alpha) const {
-  FriOpeningArtifact artifact;
-  artifact.opening = open(commitment, polynomial, alpha);
-  artifact.witness.committed_oracle_evals =
-      swgr::poly_utils::rs_encode(commitment.domain, polynomial);
-
-  const FriInstance reduced_instance = opening_instance(commitment);
-  const std::size_t total_rounds =
-      folding_round_count(reduced_instance, params_.fold_factor, params_.stop_degree);
-  if (total_rounds == 0) {
-    return artifact;
-  }
-
-  swgr::crypto::Transcript transcript(params_.hash_profile);
-  transcript.absorb_bytes(commitment.oracle_root);
-  const auto folding_alpha = derive_fri_folding_challenge(
-      transcript, commitment.domain.context(), RoundLabel("fri.fold_alpha", 0));
-  const std::uint64_t next_domain_size =
-      reduced_instance.domain.size() / params_.fold_factor;
-  const auto query_rounds = resolve_query_rounds_metadata(params_, reduced_instance);
-  const auto first_query_chains = derive_query_positions(
-      transcript, RoundLabel("fri.query", 0), next_domain_size,
-      query_rounds.front().fresh_query_count);
-  const auto virtual_oracle = build_virtual_oracle(
-      commitment.domain, artifact.witness.committed_oracle_evals, alpha,
-      artifact.opening.claim.value);
-  const auto first_folded_oracle = swgr::poly_utils::fold_table_k(
-      reduced_instance.domain, virtual_oracle, params_.fold_factor,
-      folding_alpha);
-  const FriInstance suffix_instance{
-      .domain = reduced_instance.domain.pow_map(params_.fold_factor),
-      .claimed_degree = reduced_instance.claimed_degree / params_.fold_factor,
-  };
-  double merkle_ms = 0.0;
-  double transcript_ms = 0.0;
-  double fold_ms = 0.0;
-  double interpolate_ms = 0.0;
-  double query_open_ms = 0.0;
-  double query_phase_ms = 0.0;
-  auto suffix_result = BuildSparseProof(
-      params_, suffix_instance, first_folded_oracle, transcript, 1,
-      first_query_chains,
-      true, &merkle_ms, &transcript_ms, &fold_ms, &interpolate_ms,
-      &query_open_ms, &query_phase_ms);
-  artifact.witness.quotient_witness = std::move(suffix_result.witness);
-  return artifact;
-}
-
-FriProof FriProver::prove(const FriInstance& instance,
-                          const swgr::poly_utils::Polynomial& polynomial) const {
-  if (!validate(params_, instance)) {
-    throw std::invalid_argument("fri::FriProver::prove received invalid instance");
-  }
-  if (polynomial.degree() > instance.claimed_degree) {
-    throw std::invalid_argument(
-        "fri::FriProver::prove polynomial exceeds claimed degree");
-  }
-
-  swgr::crypto::Transcript transcript(params_.hash_profile);
-  const auto prover_start = std::chrono::steady_clock::now();
-  double encode_ms = 0.0;
-  double merkle_ms = 0.0;
-  double transcript_ms = 0.0;
-  double fold_ms = 0.0;
-  double interpolate_ms = 0.0;
-  double query_open_ms = 0.0;
-  double query_phase_ms = 0.0;
-
-  const auto encode_start = std::chrono::steady_clock::now();
-  const auto current_oracle = swgr::poly_utils::rs_encode(instance.domain, polynomial);
-  encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
-
-  auto result = BuildSparseProof(params_, instance, current_oracle, transcript, 0, {},
-                                 false, &merkle_ms, &transcript_ms, &fold_ms,
-                                 &interpolate_ms, &query_open_ms, &query_phase_ms);
-  auto& proof = result.proof;
-  proof.stats.prover_encode_ms = encode_ms;
-  proof.stats.prover_merkle_ms = merkle_ms;
-  proof.stats.prover_transcript_ms = transcript_ms;
-  proof.stats.prover_fold_ms = fold_ms;
-  proof.stats.prover_interpolate_ms = interpolate_ms;
-  proof.stats.prover_query_open_ms = query_open_ms;
-  proof.stats.prove_query_phase_ms = query_phase_ms;
-  proof.stats.prover_total_ms =
-      ElapsedMilliseconds(prover_start, std::chrono::steady_clock::now());
-  return proof;
-}
-
-FriProofWithWitness FriProver::prove_with_witness(
-    const FriInstance& instance,
-    const swgr::poly_utils::Polynomial& polynomial) const {
-  if (!validate(params_, instance)) {
-    throw std::invalid_argument("fri::FriProver::prove received invalid instance");
-  }
-  if (polynomial.degree() > instance.claimed_degree) {
-    throw std::invalid_argument(
-        "fri::FriProver::prove polynomial exceeds claimed degree");
-  }
-
-  swgr::crypto::Transcript transcript(params_.hash_profile);
-  const auto prover_start = std::chrono::steady_clock::now();
-  double encode_ms = 0.0;
-  double merkle_ms = 0.0;
-  double transcript_ms = 0.0;
-  double fold_ms = 0.0;
-  double interpolate_ms = 0.0;
-  double query_open_ms = 0.0;
-  double query_phase_ms = 0.0;
-
-  const auto encode_start = std::chrono::steady_clock::now();
-  const auto current_oracle = swgr::poly_utils::rs_encode(instance.domain, polynomial);
-  encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
-
-  auto result = BuildSparseProof(params_, instance, current_oracle, transcript, 0, {},
-                                 true, &merkle_ms, &transcript_ms, &fold_ms,
-                                 &interpolate_ms, &query_open_ms, &query_phase_ms);
-  auto& proof = result.proof;
-  proof.stats.prover_encode_ms = encode_ms;
-  proof.stats.prover_merkle_ms = merkle_ms;
-  proof.stats.prover_transcript_ms = transcript_ms;
-  proof.stats.prover_fold_ms = fold_ms;
-  proof.stats.prover_interpolate_ms = interpolate_ms;
-  proof.stats.prover_query_open_ms = query_open_ms;
-  proof.stats.prove_query_phase_ms = query_phase_ms;
-  proof.stats.prover_total_ms =
-      ElapsedMilliseconds(prover_start, std::chrono::steady_clock::now());
-
-  FriProofWithWitness artifact;
-  artifact.proof = std::move(proof);
-  artifact.witness = std::move(result.witness);
-  return artifact;
 }
 
 }  // namespace swgr::fri

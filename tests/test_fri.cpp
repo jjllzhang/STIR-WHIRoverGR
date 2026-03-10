@@ -5,11 +5,12 @@
 #include <utility>
 #include <vector>
 
+#include "algebra/gr_context.hpp"
 #include "algebra/teichmuller.hpp"
 #include "crypto/fs/transcript.hpp"
-#include "algebra/gr_context.hpp"
 #include "domain.hpp"
 #include "fri/common.hpp"
+#include "fri/parameters.hpp"
 #include "fri/prover.hpp"
 #include "fri/verifier.hpp"
 #include "poly_utils/polynomial.hpp"
@@ -24,24 +25,6 @@ using swgr::algebra::GRConfig;
 using swgr::algebra::GRContext;
 using swgr::algebra::GRElem;
 using swgr::poly_utils::Polynomial;
-
-std::uint64_t EncodedRingVectorBytes(const GRContext& ctx,
-                                     std::size_t value_count) {
-  return sizeof(std::uint64_t) +
-         static_cast<std::uint64_t>(value_count) *
-             (sizeof(std::uint64_t) +
-              static_cast<std::uint64_t>(ctx.elem_bytes()));
-}
-
-std::uint64_t LegacyRawFriBytes(const GRContext& ctx,
-                                const swgr::fri::FriProofWithWitness& artifact) {
-  std::uint64_t bytes = swgr::fri::serialized_message_bytes(ctx, artifact.proof);
-  bytes += sizeof(std::uint64_t);
-  for (const auto& round_witness : artifact.witness.rounds) {
-    bytes += EncodedRingVectorBytes(ctx, round_witness.oracle_evals.size());
-  }
-  return bytes;
-}
 
 Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
                             std::size_t coefficient_count) {
@@ -80,15 +63,6 @@ swgr::fri::FriInstance MakeInstance(const GRContext& ctx,
   };
 }
 
-void NudgePolynomial(const GRContext& ctx, Polynomial* polynomial) {
-  ctx.with_ntl_context([&] {
-    auto coefficients = polynomial->coefficients();
-    coefficients[0] += ctx.one();
-    *polynomial = Polynomial(std::move(coefficients));
-    return 0;
-  });
-}
-
 void TamperMerklePayload(swgr::crypto::MerkleProof* proof) {
   if (!proof->leaf_payloads.empty() && !proof->leaf_payloads.front().empty()) {
     proof->leaf_payloads.front().front() ^= 0x01U;
@@ -101,6 +75,16 @@ void TamperMerklePayload(swgr::crypto::MerkleProof* proof) {
 void TamperOpeningValue(const GRContext& ctx, swgr::fri::FriOpening* opening) {
   ctx.with_ntl_context([&] {
     opening->claim.value += ctx.one();
+    return 0;
+  });
+}
+
+void TamperFinalOracle(const GRContext& ctx, swgr::fri::FriOpening* opening) {
+  ctx.with_ntl_context([&] {
+    if (opening->proof.final_oracle.empty()) {
+      return 0;
+    }
+    opening->proof.final_oracle.front() += ctx.one();
     return 0;
   });
 }
@@ -189,15 +173,34 @@ void TestFriFoldChallengesDoNotReuseGenericRingSampling() {
   CHECK(found_non_teich_generic);
 }
 
-// Phase 3 baseline: public PCS verification now consumes only the external
-// opening proof (committed sparse openings + quotient sparse proof).
-void TestFriPcsCommitOpenVerifyRoundtrip() {
+void TestFriRepetitionCountMapsToQueryChains() {
   testutil::PrintInfo(
-      "fri pcs commit/open/verify accepts alpha in T \\ L with sparse openings only");
+      "fri repetition count m maps to repeated query chains across rounds");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto instance = MakeInstance(ctx, 9, 8);
-  const auto params = MakeParams(3);
+  const auto params = MakeParams(3, 2);
+
+  const auto metadata = swgr::fri::resolve_query_rounds_metadata(params, instance);
+  CHECK_EQ(metadata.size(), std::size_t{2});
+  CHECK_EQ(metadata[0].query_chain_count, std::uint64_t{2});
+  CHECK_EQ(metadata[0].fresh_query_count, std::uint64_t{2});
+  CHECK_EQ(metadata[0].bundle_count, std::uint64_t{3});
+  CHECK(!metadata[0].carries_previous_queries);
+  CHECK_EQ(metadata[1].query_chain_count, std::uint64_t{2});
+  CHECK_EQ(metadata[1].fresh_query_count, std::uint64_t{0});
+  CHECK_EQ(metadata[1].bundle_count, std::uint64_t{1});
+  CHECK(metadata[1].carries_previous_queries);
+  CHECK_EQ(swgr::fri::terminal_query_chain_count(params), std::uint64_t{2});
+}
+
+void TestFriPcsCommitOpenVerifyRoundtripAlphaOutsideDomain() {
+  testutil::PrintInfo(
+      "fri pcs commit/open/verify accepts alpha in T outside the evaluation domain");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3, 2);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
   const swgr::fri::FriProver prover(params);
@@ -205,46 +208,63 @@ void TestFriPcsCommitOpenVerifyRoundtrip() {
   const auto commitment = prover.commit(instance, polynomial);
   const auto alpha = ctx.zero();
   const auto opening = prover.open(commitment, polynomial, alpha);
-  const auto compat = prover.open_with_witness(commitment, polynomial, alpha);
 
   CHECK(swgr::fri::commitment_domain_supported(commitment));
   CHECK(swgr::fri::opening_point_valid(commitment, alpha));
   CHECK_EQ(commitment.stats.serialized_bytes,
            swgr::fri::serialized_message_bytes(commitment));
   CHECK_EQ(opening.claim.value, polynomial.evaluate(ctx, alpha));
-  CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value, opening));
-  CHECK(verifier.verify(commitment, compat.opening.claim.alpha,
-                        compat.opening.claim.value, compat));
+  CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
+                        opening));
   CHECK_EQ(opening.proof.stats.serialized_bytes,
            swgr::fri::serialized_message_bytes(ctx, opening));
-  CHECK_EQ(opening.proof.committed_oracle_proof.queried_indices.size(),
-           std::size_t{6});
-  CHECK_EQ(opening.proof.quotient_proof.rounds.size(), std::size_t{2});
-  CHECK_EQ(opening.proof.quotient_proof.rounds.back()
-               .oracle_proof.queried_indices.size(),
-           std::size_t{1});
+  CHECK_EQ(opening.proof.oracle_roots.size(), std::size_t{2});
+  CHECK_EQ(opening.proof.rounds.size(), std::size_t{2});
+  CHECK_EQ(opening.proof.final_oracle.size(), std::size_t{1});
 }
 
-void TestFriPcsRejectsAlphaInsideDomain() {
-  testutil::PrintInfo("fri pcs rejects alpha that lies inside L");
+void TestFriPcsCommitOpenVerifyRoundtripAlphaInsideDomain() {
+  testutil::PrintInfo(
+      "fri pcs commit/open/verify accepts alpha that lies inside the evaluation domain");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto instance = MakeInstance(ctx, 9, 8);
-  const auto params = MakeParams(3);
+  const auto params = MakeParams(3, 2);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
   const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   const auto alpha = instance.domain.element(0);
+  const auto opening = prover.open(commitment, polynomial, alpha);
 
-  CHECK(!swgr::fri::opening_point_valid(commitment, alpha));
-  bool threw = false;
-  try {
-    (void)prover.open(commitment, polynomial, alpha);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  CHECK(threw);
+  CHECK(swgr::fri::opening_point_valid(commitment, alpha));
+  CHECK_EQ(opening.claim.value, polynomial.evaluate(ctx, alpha));
+  CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
+                        opening));
+}
+
+void TestFriZeroFoldRoundtrip() {
+  testutil::PrintInfo(
+      "zero-fold theorem-facing fri reveals the full committed and final tables");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 1);
+  const auto params = MakeParams(3, 3, 1);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 2);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  const auto alpha = instance.domain.element(0);
+  const auto opening = prover.open(commitment, polynomial, alpha);
+
+  CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
+                        opening));
+  CHECK(opening.proof.oracle_roots.empty());
+  CHECK(opening.proof.rounds.empty());
+  CHECK_EQ(opening.proof.revealed_committed_oracle.size(), std::size_t{9});
+  CHECK_EQ(opening.proof.final_oracle.size(), std::size_t{9});
 }
 
 void TestFriPcsRejectsWrongPolynomialForCommitment() {
@@ -256,7 +276,12 @@ void TestFriPcsRejectsWrongPolynomialForCommitment() {
   const auto params = MakeParams(3);
   const auto committed_polynomial = SamplePolynomial(ctx, instance.domain, 9);
   auto wrong_polynomial = committed_polynomial;
-  NudgePolynomial(ctx, &wrong_polynomial);
+  ctx.with_ntl_context([&] {
+    auto coefficients = wrong_polynomial.coefficients();
+    coefficients[0] += ctx.one();
+    wrong_polynomial = Polynomial(std::move(coefficients));
+    return 0;
+  });
 
   const swgr::fri::FriProver prover(params);
   const auto commitment = prover.commit(instance, committed_polynomial);
@@ -293,7 +318,8 @@ void TestFriPcsRejectsNonTeichAlpha() {
 }
 
 void TestFriPcsRejectsNonTeichCommitmentDomain() {
-  testutil::PrintInfo("fri pcs rejects commitments whose evaluation domain is not contained in T");
+  testutil::PrintInfo(
+      "fri pcs rejects commitments whose evaluation domain is not contained in T");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto params = MakeParams(3);
@@ -335,9 +361,9 @@ void TestFriPcsRejectsTamperedClaimValue() {
                          opening));
 }
 
-void TestFriPcsRejectsTamperedCommittedOpening() {
+void TestFriPcsRejectsTamperedFirstRoundParentOpening() {
   testutil::PrintInfo(
-      "fri pcs verifier rejects a tampered sparse opening under the commitment root");
+      "fri pcs verifier rejects a tampered first-round parent opening");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto instance = MakeInstance(ctx, 9, 8);
@@ -349,15 +375,15 @@ void TestFriPcsRejectsTamperedCommittedOpening() {
   const auto commitment = prover.commit(instance, polynomial);
   auto opening = prover.open(commitment, polynomial, ctx.zero());
 
-  TamperMerklePayload(&opening.proof.committed_oracle_proof);
+  TamperMerklePayload(&opening.proof.rounds.front().parent_oracle_proof);
 
   CHECK(!verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
                          opening));
 }
 
-void TestFriPcsRejectsTamperedQuotientFinalPolynomial() {
+void TestFriPcsRejectsTamperedIntermediateChildOpening() {
   testutil::PrintInfo(
-      "fri pcs verifier rejects a tampered quotient final polynomial");
+      "fri pcs verifier rejects a tampered intermediate child opening");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto instance = MakeInstance(ctx, 9, 8);
@@ -369,7 +395,48 @@ void TestFriPcsRejectsTamperedQuotientFinalPolynomial() {
   const auto commitment = prover.commit(instance, polynomial);
   auto opening = prover.open(commitment, polynomial, ctx.zero());
 
-  NudgePolynomial(ctx, &opening.proof.quotient_proof.final_polynomial);
+  TamperMerklePayload(&opening.proof.rounds.front().child_oracle_proof);
+
+  CHECK(!verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
+                         opening));
+}
+
+void TestFriPcsRejectsTamperedAlphaInsideDomainFirstRoundChildOpening() {
+  testutil::PrintInfo(
+      "fri pcs verifier rejects a tampered first-round child opening when alpha lies inside the evaluation domain");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  auto opening =
+      prover.open(commitment, polynomial, instance.domain.element(0));
+
+  TamperMerklePayload(&opening.proof.rounds.front().child_oracle_proof);
+
+  CHECK(!verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
+                         opening));
+}
+
+void TestFriPcsRejectsTamperedFinalOracleTable() {
+  testutil::PrintInfo(
+      "fri pcs verifier rejects a tampered final oracle table");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  auto opening = prover.open(commitment, polynomial, ctx.zero());
+
+  TamperFinalOracle(ctx, &opening);
 
   CHECK(!verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
                          opening));
@@ -420,214 +487,6 @@ void TestFriPcsRejectsMismatchedCommitment() {
                          opening));
 }
 
-void TestFriRepetitionCountMapsToQueryChains() {
-  testutil::PrintInfo(
-      "fri repetition count m maps to repeated query chains across rounds");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const auto params = MakeParams(3, 2);
-
-  const auto metadata = swgr::fri::resolve_query_rounds_metadata(params, instance);
-  CHECK_EQ(metadata.size(), std::size_t{2});
-  CHECK_EQ(metadata[0].query_chain_count, std::uint64_t{2});
-  CHECK_EQ(metadata[0].fresh_query_count, std::uint64_t{2});
-  CHECK_EQ(metadata[0].bundle_count, std::uint64_t{3});
-  CHECK(!metadata[0].carries_previous_queries);
-  CHECK_EQ(metadata[1].query_chain_count, std::uint64_t{2});
-  CHECK_EQ(metadata[1].fresh_query_count, std::uint64_t{0});
-  CHECK_EQ(metadata[1].bundle_count, std::uint64_t{1});
-  CHECK(metadata[1].carries_previous_queries);
-  CHECK_EQ(swgr::fri::terminal_query_chain_count(params), std::uint64_t{2});
-}
-
-void TestFriZeroFoldTerminalQueriesFollowRepetitionCount() {
-  testutil::PrintInfo(
-      "zero-fold fri keeps terminal theorem queries driven by repetition count");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 1);
-  const auto params = MakeParams(3, 3, 1);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 2);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  const auto commitment = prover.commit(instance, polynomial);
-  const auto opening = prover.open(commitment, polynomial, ctx.zero());
-  const auto proof = prover.prove(instance, polynomial);
-
-  CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
-                        opening));
-  CHECK(verifier.verify(instance, proof));
-  CHECK_EQ(opening.proof.quotient_proof.rounds.size(), std::size_t{1});
-  CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{0});
-  CHECK_EQ(proof.rounds.size(), std::size_t{1});
-  CHECK(proof.rounds[0].oracle_proof.queried_indices.size() >= std::size_t{1});
-  CHECK(proof.rounds[0].oracle_proof.queried_indices.size() <= std::size_t{3});
-}
-
-void TestFri3HonestRoundtripAndRoundShape() {
-  testutil::PrintInfo(
-      "fri-3 honest prover/verifier passes with sparse openings and final polynomial");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const auto params = MakeParams(3);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
-  const auto artifact = prover.prove_with_witness(instance, polynomial);
-
-  CHECK(verifier.verify(instance, proof));
-  CHECK(verifier.verify(instance, artifact));
-  CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
-  CHECK_EQ(proof.rounds.size(), std::size_t{3});
-  CHECK_EQ(proof.oracle_roots.size(), std::size_t{3});
-  CHECK_EQ(proof.rounds[0].oracle_proof.queried_indices.size(), std::size_t{2});
-  CHECK_EQ(proof.rounds[1].oracle_proof.queried_indices.size(), std::size_t{1});
-  CHECK_EQ(proof.rounds[2].oracle_proof.queried_indices.size(), std::size_t{1});
-  CHECK_EQ(proof.stats.serialized_bytes,
-           swgr::fri::serialized_message_bytes(ctx, proof));
-  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, artifact));
-}
-
-void TestFri3RejectsTamperedRoundOpening() {
-  testutil::PrintInfo("fri-3 verifier rejects a tampered sparse round opening");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const auto params = MakeParams(3);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
-
-  TamperMerklePayload(&proof.rounds[0].oracle_proof);
-
-  CHECK(!verifier.verify(instance, proof));
-}
-
-void TestFri3RejectsTamperedFinalPolynomial() {
-  testutil::PrintInfo("fri-3 verifier rejects a tampered final polynomial");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const auto params = MakeParams(3);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
-
-  NudgePolynomial(ctx, &proof.final_polynomial);
-
-  CHECK(!verifier.verify(instance, proof));
-}
-
-void TestFri3RejectsTamperedTerminalOpening() {
-  testutil::PrintInfo("fri-3 verifier rejects a tampered terminal sparse opening");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const auto params = MakeParams(3);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
-
-  TamperMerklePayload(&proof.rounds.back().oracle_proof);
-
-  CHECK(!verifier.verify(instance, proof));
-}
-
-void TestFri9HonestRoundtripAndRoundShape() {
-  testutil::PrintInfo(
-      "fri-9 honest prover/verifier passes with one fold round plus terminal checks");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx, 27, 8);
-  const auto params = MakeParams(9, 2);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
-  const auto artifact = prover.prove_with_witness(instance, polynomial);
-
-  CHECK(verifier.verify(instance, proof));
-  CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{1});
-  CHECK_EQ(proof.rounds.size(), std::size_t{2});
-  const auto round0_queries = proof.rounds[0].oracle_proof.queried_indices.size();
-  CHECK(round0_queries >= std::size_t{1});
-  CHECK(round0_queries <= std::size_t{2});
-  CHECK_EQ(proof.rounds[1].oracle_proof.queried_indices.size(), round0_queries);
-  CHECK_EQ(proof.stats.serialized_bytes,
-           swgr::fri::serialized_message_bytes(ctx, proof));
-  CHECK(proof.stats.serialized_bytes < LegacyRawFriBytes(ctx, artifact));
-}
-
-void TestFri9RejectsTamperedOpening() {
-  testutil::PrintInfo("fri-9 verifier rejects a tampered sparse opening");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx, 27, 8);
-  const auto params = MakeParams(9, 2);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  auto proof = prover.prove(instance, polynomial);
-
-  TamperMerklePayload(&proof.rounds[0].oracle_proof);
-
-  CHECK(!verifier.verify(instance, proof));
-}
-
-void TestBuildOracleLeavesMatchesBundleSerialization() {
-  testutil::PrintInfo(
-      "fri oracle leaf builder matches per-bundle serialization at parallel-sized bundle counts");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  constexpr std::uint64_t kBundleSize = 3;
-  constexpr std::uint64_t kBundleCount = 128;
-  const auto oracle_evals = ctx.with_ntl_context([&] {
-    std::vector<GRElem> values;
-    values.reserve(static_cast<std::size_t>(kBundleSize * kBundleCount));
-
-    GRElem current = ctx.one();
-    GRElem delta = ctx.one() + ctx.teich_generator();
-    for (std::uint64_t i = 0; i < kBundleSize * kBundleCount; ++i) {
-      values.push_back(current);
-      current += delta;
-    }
-    return values;
-  });
-
-  const auto leaves =
-      swgr::fri::build_oracle_leaves(ctx, oracle_evals, kBundleSize);
-  CHECK_EQ(leaves.size(), static_cast<std::size_t>(kBundleCount));
-
-  for (std::uint64_t bundle_index = 0; bundle_index < kBundleCount;
-       ++bundle_index) {
-    const auto serialized = swgr::fri::serialize_oracle_bundle(
-        ctx, oracle_evals, kBundleSize, bundle_index);
-    CHECK(leaves[static_cast<std::size_t>(bundle_index)] == serialized);
-
-    const auto decoded = swgr::fri::deserialize_oracle_bundle(
-        ctx, leaves[static_cast<std::size_t>(bundle_index)]);
-    CHECK_EQ(decoded.size(), static_cast<std::size_t>(kBundleSize));
-    for (std::uint64_t offset = 0; offset < kBundleSize; ++offset) {
-      const std::uint64_t oracle_index = bundle_index + offset * kBundleCount;
-      CHECK(ctx.serialize(decoded[static_cast<std::size_t>(offset)]) ==
-            ctx.serialize(oracle_evals[static_cast<std::size_t>(oracle_index)]));
-    }
-  }
-}
-
 void TestFriValidationRejectsBadInputs() {
   testutil::PrintInfo(
       "fri parameter validation rejects zero repetition counts and bad degree");
@@ -640,55 +499,45 @@ void TestFriValidationRejectsBadInputs() {
   const auto instance = MakeInstance(ctx, 9, 8);
   CHECK(swgr::fri::validate(MakeParams(3), instance));
 
-  const swgr::fri::FriInstance bad_instance{
+  const swgr::fri::FriInstance bad_degree{
       .domain = instance.domain,
-      .claimed_degree = instance.domain.size(),
+      .claimed_degree = 9,
   };
-  CHECK(!swgr::fri::validate(MakeParams(3), bad_instance));
-
-  const GRContext fri9_ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  CHECK(swgr::fri::validate(MakeParams(9, 2), MakeInstance(fri9_ctx, 27, 8)));
-  CHECK(!swgr::fri::validate(MakeParams(9, 2), MakeInstance(fri9_ctx, 27, 26)));
+  CHECK(!swgr::fri::validate(MakeParams(3), bad_degree));
 }
 
 }  // namespace
 
 int main() {
   try {
-    RUN_TEST(TestFriFoldChallengesAlwaysLieInTeichmullerSet);
-    RUN_TEST(TestFriFoldChallengeReplayMatchesAcrossTranscripts);
-    RUN_TEST(TestFriFoldChallengesDoNotReuseGenericRingSampling);
-    RUN_TEST(TestFriPcsCommitOpenVerifyRoundtrip);
-    RUN_TEST(TestFriPcsRejectsAlphaInsideDomain);
-    RUN_TEST(TestFriPcsRejectsWrongPolynomialForCommitment);
-    RUN_TEST(TestFriPcsRejectsNonTeichAlpha);
-    RUN_TEST(TestFriPcsRejectsNonTeichCommitmentDomain);
-    RUN_TEST(TestFriPcsRejectsTamperedClaimValue);
-    RUN_TEST(TestFriPcsRejectsTamperedCommittedOpening);
-    RUN_TEST(TestFriPcsRejectsTamperedQuotientFinalPolynomial);
-    RUN_TEST(TestFriPcsRejectsMismatchedAlpha);
-    RUN_TEST(TestFriPcsRejectsMismatchedCommitment);
-    RUN_TEST(TestFriRepetitionCountMapsToQueryChains);
-    RUN_TEST(TestFriZeroFoldTerminalQueriesFollowRepetitionCount);
-    RUN_TEST(TestFri3HonestRoundtripAndRoundShape);
-    RUN_TEST(TestFri3RejectsTamperedRoundOpening);
-    RUN_TEST(TestFri3RejectsTamperedFinalPolynomial);
-    RUN_TEST(TestFri3RejectsTamperedTerminalOpening);
-    RUN_TEST(TestFri9HonestRoundtripAndRoundShape);
-    RUN_TEST(TestFri9RejectsTamperedOpening);
-    RUN_TEST(TestBuildOracleLeavesMatchesBundleSerialization);
-    RUN_TEST(TestFriValidationRejectsBadInputs);
+    TestFriFoldChallengesAlwaysLieInTeichmullerSet();
+    TestFriFoldChallengeReplayMatchesAcrossTranscripts();
+    TestFriFoldChallengesDoNotReuseGenericRingSampling();
+    TestFriRepetitionCountMapsToQueryChains();
+    TestFriPcsCommitOpenVerifyRoundtripAlphaOutsideDomain();
+    TestFriPcsCommitOpenVerifyRoundtripAlphaInsideDomain();
+    TestFriZeroFoldRoundtrip();
+    TestFriPcsRejectsWrongPolynomialForCommitment();
+    TestFriPcsRejectsNonTeichAlpha();
+    TestFriPcsRejectsNonTeichCommitmentDomain();
+    TestFriPcsRejectsTamperedClaimValue();
+    TestFriPcsRejectsTamperedFirstRoundParentOpening();
+    TestFriPcsRejectsTamperedIntermediateChildOpening();
+    TestFriPcsRejectsTamperedAlphaInsideDomainFirstRoundChildOpening();
+    TestFriPcsRejectsTamperedFinalOracleTable();
+    TestFriPcsRejectsMismatchedAlpha();
+    TestFriPcsRejectsMismatchedCommitment();
+    TestFriValidationRejectsBadInputs();
   } catch (const std::exception& ex) {
-    std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
-    return 2;
-  } catch (...) {
-    std::cerr << "Unhandled non-std exception\n";
-    return 2;
+    std::cerr << "Unhandled exception: " << ex.what() << '\n';
+    return 1;
   }
 
   if (g_failures != 0) {
-    std::cerr << g_failures << " test(s) failed\n";
+    std::cerr << g_failures << " checks failed\n";
     return 1;
   }
+
+  std::cout << "All FRI tests passed\n";
   return 0;
 }

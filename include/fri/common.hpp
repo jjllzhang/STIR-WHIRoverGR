@@ -33,57 +33,27 @@ struct FriOpeningClaim {
 };
 
 struct FriRoundProof {
-  swgr::crypto::MerkleProof oracle_proof;
+  swgr::crypto::MerkleProof parent_oracle_proof;
+  swgr::crypto::MerkleProof child_oracle_proof;
 };
 
 struct FriProof {
   std::vector<FriRoundProof> rounds;
-  swgr::poly_utils::Polynomial final_polynomial;
   std::vector<std::vector<std::uint8_t>> oracle_roots;
+  std::vector<swgr::algebra::GRElem> final_oracle;
+  std::vector<swgr::algebra::GRElem> revealed_committed_oracle;
   swgr::ProofStatistics stats;
-};
-
-struct FriRoundWitness {
-  std::vector<swgr::algebra::GRElem> oracle_evals;
-};
-
-struct FriWitness {
-  std::vector<FriRoundWitness> rounds;
-};
-
-struct FriProofWithWitness {
-  FriProof proof;
-  FriWitness witness;
-};
-
-struct FriOpeningProof {
-  swgr::crypto::MerkleProof committed_oracle_proof;
-  FriProof quotient_proof;
-  swgr::ProofStatistics stats;
-};
-
-struct FriOpeningWitness {
-  std::vector<swgr::algebra::GRElem> committed_oracle_evals;
-  FriWitness quotient_witness;
 };
 
 struct FriOpening {
   FriOpeningClaim claim;
-  FriOpeningProof proof;
-};
-
-struct FriOpeningArtifact {
-  FriOpening opening;
-  FriOpeningWitness witness;
+  FriProof proof;
 };
 
 std::uint64_t serialized_message_bytes(const FriCommitment& commitment);
 
 std::uint64_t serialized_message_bytes(
     const swgr::algebra::GRContext& ctx, const FriProof& proof);
-
-std::uint64_t serialized_message_bytes(
-    const swgr::algebra::GRContext& ctx, const FriOpeningProof& proof);
 
 // Counts only the prover reply bytes for the opening message: value plus proof.
 std::uint64_t serialized_message_bytes(
@@ -107,26 +77,10 @@ inline FriInstance quotient_instance(const FriCommitment& commitment) {
 
 bool commitment_domain_supported(const FriCommitment& commitment);
 
-// Current prototype PCS path reconstructs the round-0 virtual oracle directly
-// from sparse openings of committed `f|L`, so it only accepts `alpha in T \ L`.
-// Phase 0 of the soundness-repair plan freezes a later theorem-facing target of
-// `alpha <- T`, with `alpha in L` handled by a distinct upgraded PCS path.
+// The theorem-facing PCS path accepts verifier challenges `alpha <- T` across
+// the full Teichmuller set.
 bool opening_point_valid(const FriCommitment& commitment,
                          const swgr::algebra::GRElem& alpha);
-
-// This helper implements the current sparse-opening shortcut, not the final
-// theorem-facing `pi_FRICom` semantics for `alpha <- T`.
-std::vector<swgr::algebra::GRElem> build_virtual_oracle(
-    const Domain& domain, std::span<const swgr::algebra::GRElem> oracle_evals,
-    const swgr::algebra::GRElem& alpha,
-    const swgr::algebra::GRElem& value);
-
-inline std::vector<swgr::algebra::GRElem> adapt_virtual_oracle(
-    const Domain& domain, std::span<const swgr::algebra::GRElem> oracle_evals,
-    const swgr::algebra::GRElem& alpha,
-    const swgr::algebra::GRElem& value) {
-  return build_virtual_oracle(domain, oracle_evals, alpha, value);
-}
 
 std::vector<std::uint64_t> query_schedule(
     std::size_t folding_rounds, const std::vector<std::uint64_t>& configured);

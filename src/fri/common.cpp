@@ -65,13 +65,11 @@ void SerializeRingElement(Sink& sink, const swgr::algebra::GRContext& ctx,
 }
 
 template <typename Sink>
-void SerializePolynomial(Sink& sink, const swgr::algebra::GRContext& ctx,
-                         const swgr::poly_utils::Polynomial& polynomial) {
-  const auto& coefficients = polynomial.coefficients();
-  swgr::SerializeUint64(sink,
-                        static_cast<std::uint64_t>(coefficients.size()));
-  for (const auto& coefficient : coefficients) {
-    SerializeRingElement(sink, ctx, coefficient);
+void SerializeRingVector(Sink& sink, const swgr::algebra::GRContext& ctx,
+                         std::span<const swgr::algebra::GRElem> values) {
+  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+  for (const auto& value : values) {
+    SerializeRingElement(sink, ctx, value);
   }
 }
 
@@ -88,18 +86,12 @@ void SerializeFriProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
   swgr::SerializeUint64(sink,
                         static_cast<std::uint64_t>(proof.rounds.size()));
   for (const auto& round : proof.rounds) {
-    SerializeMerkleProof(sink, round.oracle_proof);
+    SerializeMerkleProof(sink, round.parent_oracle_proof);
+    SerializeMerkleProof(sink, round.child_oracle_proof);
   }
-  SerializePolynomial(sink, ctx, proof.final_polynomial);
   swgr::SerializeByteVector(sink, proof.oracle_roots);
-}
-
-template <typename Sink>
-void SerializeFriOpeningProofBody(
-    Sink& sink, const swgr::algebra::GRContext& ctx,
-    const FriOpeningProof& proof) {
-  SerializeMerkleProof(sink, proof.committed_oracle_proof);
-  SerializeFriProofBody(sink, ctx, proof.quotient_proof);
+  SerializeRingVector(sink, ctx, proof.final_oracle);
+  SerializeRingVector(sink, ctx, proof.revealed_committed_oracle);
 }
 
 void append_serialized_in_current_ntl_context(
@@ -184,17 +176,10 @@ std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
 }
 
 std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
-                                       const FriOpeningProof& proof) {
-  swgr::CountingSink sink;
-  SerializeFriOpeningProofBody(sink, ctx, proof);
-  return sink.size();
-}
-
-std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
                                        const FriOpening& opening) {
   swgr::CountingSink sink;
   SerializeRingElement(sink, ctx, opening.claim.value);
-  SerializeFriOpeningProofBody(sink, ctx, opening.proof);
+  SerializeFriProofBody(sink, ctx, opening.proof);
   return sink.size();
 }
 
@@ -239,54 +224,10 @@ bool opening_point_valid(const FriCommitment& commitment,
                          const swgr::algebra::GRElem& alpha) {
   const auto& ctx = commitment.domain.context();
   if (!commitment_domain_supported(commitment) ||
-      !swgr::algebra::is_teichmuller_element(ctx, alpha) ||
-      commitment.domain.contains(alpha)) {
+      !swgr::algebra::is_teichmuller_element(ctx, alpha)) {
     return false;
   }
-
-  return ctx.with_ntl_context([&] {
-    for (std::uint64_t index = 0; index < commitment.domain.size(); ++index) {
-      if (!ctx.is_unit(commitment.domain.element(index) - alpha)) {
-        return false;
-      }
-    }
-    return true;
-  });
-}
-
-std::vector<swgr::algebra::GRElem> build_virtual_oracle(
-    const Domain& domain, std::span<const swgr::algebra::GRElem> oracle_evals,
-    const swgr::algebra::GRElem& alpha,
-    const swgr::algebra::GRElem& value) {
-  if (oracle_evals.size() != static_cast<std::size_t>(domain.size())) {
-    throw std::invalid_argument(
-        "build_virtual_oracle requires one evaluation per domain point");
-  }
-
-  const auto& ctx = domain.context();
-  if (!domain.is_teichmuller_subset()) {
-    throw std::invalid_argument(
-        "build_virtual_oracle requires a Teichmuller evaluation domain");
-  }
-  if (!swgr::algebra::is_teichmuller_element(ctx, alpha) || domain.contains(alpha)) {
-    throw std::invalid_argument(
-        "build_virtual_oracle requires alpha in T \\\\ L");
-  }
-
-  return ctx.with_ntl_context([&] {
-    std::vector<swgr::algebra::GRElem> denominators;
-    denominators.reserve(oracle_evals.size());
-    for (std::uint64_t index = 0; index < domain.size(); ++index) {
-      denominators.push_back(domain.element(index) - alpha);
-    }
-    const auto inverses = ctx.batch_inv(denominators);
-
-    std::vector<swgr::algebra::GRElem> adapted(oracle_evals.size());
-    for (std::size_t index = 0; index < oracle_evals.size(); ++index) {
-      adapted[index] = (oracle_evals[index] - value) * inverses[index];
-    }
-    return adapted;
-  });
+  return true;
 }
 
 std::vector<std::uint64_t> query_schedule(
