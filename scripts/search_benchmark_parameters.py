@@ -95,6 +95,12 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument("--hash-profile", default="STIR_NATIVE")
+    parser.add_argument(
+        "--fri-repetitions",
+        type=int,
+        default=None,
+        help="Explicit theorem-facing FRI repetition count m (default from preset or 1)",
+    )
     parser.add_argument("--stop-degree", type=int, default=9)
     parser.add_argument("--ood-samples", type=int, default=2)
     parser.add_argument("--threads", type=int, default=1)
@@ -259,14 +265,24 @@ def resolve_soundness_configs(
     if args.soundness:
         return [parse_soundness_item(item) for item in args.soundness]
 
-    return [
-        SoundnessConfig(
-            lambda_target=preset_default_lambda(preset),
-            pow_bits=preset_default_pow(preset),
-            sec_mode=args.default_sec_mode,
-            queries=preset_default_queries(preset, args.default_queries),
-        )
-    ]
+        return [
+            SoundnessConfig(
+                lambda_target=preset_default_lambda(preset),
+                pow_bits=preset_default_pow(preset),
+                sec_mode=args.default_sec_mode,
+                queries=preset_default_queries(preset, args.default_queries),
+            )
+        ]
+
+
+def resolve_fri_repetitions(args: argparse.Namespace, preset: Dict[str, object]) -> int:
+    if args.fri_repetitions is not None:
+        value = int(args.fri_repetitions)
+    else:
+        value = int(preset.get("fri_repetitions", 1))
+    if value <= 0:
+        raise SearchError("fri_repetitions must be > 0")
+    return value
 
 
 def resolve_sweep_points(args: argparse.Namespace, preset: Dict[str, object]) -> List[SweepPoint]:
@@ -354,6 +370,7 @@ def build_time_command(
     protocols: Sequence[str],
     point: SweepPoint,
     soundness: SoundnessConfig,
+    fri_repetitions: int,
     args: argparse.Namespace,
 ) -> List[str]:
     cmd = [
@@ -370,6 +387,8 @@ def build_time_command(
         str(point.n),
         "--d",
         str(point.d),
+        "--fri-repetitions",
+        str(fri_repetitions),
         "--lambda",
         str(soundness.lambda_target),
         "--pow-bits",
@@ -411,6 +430,8 @@ def write_csv(path: Path, rows: List[Dict[str, str]]) -> None:
         "n",
         "d",
         "rho",
+        "soundness_mode",
+        "fri_repetitions",
         "lambda_target",
         "pow_bits",
         "sec_mode",
@@ -523,6 +544,8 @@ def write_summary(
         "n",
         "d",
         "rho",
+        "soundness_mode",
+        "fri_repetitions",
         "lambda_target",
         "pow_bits",
         "sec_mode",
@@ -548,6 +571,8 @@ def write_summary(
             "n",
             "d",
             "rho",
+            "soundness_mode",
+            "fri_repetitions",
             "lambda_target",
             "pow_bits",
             "sec_mode",
@@ -579,6 +604,8 @@ def write_summary(
                     "n",
                     "d",
                     "rho",
+                    "soundness_mode",
+                    "fri_repetitions",
                     "lambda_target",
                     "pow_bits",
                     "sec_mode",
@@ -605,6 +632,8 @@ def write_summary(
                         "n",
                         "d",
                         "rho",
+                        "soundness_mode",
+                        "fri_repetitions",
                         "lambda_target",
                         "pow_bits",
                         "sec_mode",
@@ -632,6 +661,7 @@ def main() -> int:
 
     protocols = resolve_protocols(args, preset)
     soundness_list = resolve_soundness_configs(args, preset)
+    fri_repetitions = resolve_fri_repetitions(args, preset)
     sweep_points = resolve_sweep_points(args, preset)
 
     build_dir = Path(args.build_dir)
@@ -651,13 +681,16 @@ def main() -> int:
                 (
                     f"[search] candidate {candidate_id}/{total}: "
                     f"n={point.n}, d={point.d}, rho={point.rho}, "
+                    f"fri_m={fri_repetitions}, "
                     f"lambda={soundness.lambda_target}, pow={soundness.pow_bits}, "
                     f"sec={soundness.sec_mode}, queries={soundness.queries}"
                 ),
                 file=sys.stderr,
             )
 
-            time_cmd = build_time_command(time_bin, ring, protocols, point, soundness, args)
+            time_cmd = build_time_command(
+                time_bin, ring, protocols, point, soundness, fri_repetitions, args
+            )
             time_rows = run_csv_command(time_cmd)
 
             for row in time_rows:
@@ -687,6 +720,7 @@ def main() -> int:
             "build_dir": str(build_dir),
             "time_bin": str(time_bin),
             "include_time": str(args.include_time).lower(),
+            "fri_repetitions": str(fri_repetitions),
         },
     )
 

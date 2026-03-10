@@ -61,22 +61,14 @@ Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
 
 swgr::fri::FriParameters MakeParams(
     std::uint64_t fold_factor,
-    std::vector<std::uint64_t> query_repetitions = {2, 1},
+    std::uint64_t repetition_count = 2,
     std::uint64_t stop_degree = 1) {
   swgr::fri::FriParameters params;
   params.fold_factor = fold_factor;
   params.stop_degree = stop_degree;
-  params.query_repetitions = std::move(query_repetitions);
-  params.lambda_target = 64;
-  params.pow_bits = 0;
-  params.sec_mode = swgr::SecurityMode::ConjectureCapacity;
+  params.repetition_count = repetition_count;
   params.hash_profile = swgr::HashProfile::STIR_NATIVE;
   return params;
-}
-
-swgr::fri::FriParameters MakeAutoParams(std::uint64_t fold_factor,
-                                        std::uint64_t stop_degree = 1) {
-  return MakeParams(fold_factor, {}, stop_degree);
 }
 
 swgr::fri::FriInstance MakeInstance(const GRContext& ctx,
@@ -428,6 +420,52 @@ void TestFriPcsRejectsMismatchedCommitment() {
                          opening));
 }
 
+void TestFriRepetitionCountMapsToQueryChains() {
+  testutil::PrintInfo(
+      "fri repetition count m maps to repeated query chains across rounds");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 8);
+  const auto params = MakeParams(3, 2);
+
+  const auto metadata = swgr::fri::resolve_query_rounds_metadata(params, instance);
+  CHECK_EQ(metadata.size(), std::size_t{2});
+  CHECK_EQ(metadata[0].query_chain_count, std::uint64_t{2});
+  CHECK_EQ(metadata[0].fresh_query_count, std::uint64_t{2});
+  CHECK_EQ(metadata[0].bundle_count, std::uint64_t{3});
+  CHECK(!metadata[0].carries_previous_queries);
+  CHECK_EQ(metadata[1].query_chain_count, std::uint64_t{2});
+  CHECK_EQ(metadata[1].fresh_query_count, std::uint64_t{0});
+  CHECK_EQ(metadata[1].bundle_count, std::uint64_t{1});
+  CHECK(metadata[1].carries_previous_queries);
+  CHECK_EQ(swgr::fri::terminal_query_chain_count(params), std::uint64_t{2});
+}
+
+void TestFriZeroFoldTerminalQueriesFollowRepetitionCount() {
+  testutil::PrintInfo(
+      "zero-fold fri keeps terminal theorem queries driven by repetition count");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const auto instance = MakeInstance(ctx, 9, 1);
+  const auto params = MakeParams(3, 3, 1);
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 2);
+
+  const swgr::fri::FriProver prover(params);
+  const swgr::fri::FriVerifier verifier(params);
+  const auto commitment = prover.commit(instance, polynomial);
+  const auto opening = prover.open(commitment, polynomial, ctx.zero());
+  const auto proof = prover.prove(instance, polynomial);
+
+  CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
+                        opening));
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(opening.proof.quotient_proof.rounds.size(), std::size_t{1});
+  CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{0});
+  CHECK_EQ(proof.rounds.size(), std::size_t{1});
+  CHECK(proof.rounds[0].oracle_proof.queried_indices.size() >= std::size_t{1});
+  CHECK(proof.rounds[0].oracle_proof.queried_indices.size() <= std::size_t{3});
+}
+
 void TestFri3HonestRoundtripAndRoundShape() {
   testutil::PrintInfo(
       "fri-3 honest prover/verifier passes with sparse openings and final polynomial");
@@ -512,7 +550,7 @@ void TestFri9HonestRoundtripAndRoundShape() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx, 27, 8);
-  const auto params = MakeParams(9, {2});
+  const auto params = MakeParams(9, 2);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
   const swgr::fri::FriProver prover(params);
@@ -537,7 +575,7 @@ void TestFri9RejectsTamperedOpening() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx, 27, 8);
-  const auto params = MakeParams(9, {2});
+  const auto params = MakeParams(9, 2);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
   const swgr::fri::FriProver prover(params);
@@ -547,76 +585,6 @@ void TestFri9RejectsTamperedOpening() {
   TamperMerklePayload(&proof.rounds[0].oracle_proof);
 
   CHECK(!verifier.verify(instance, proof));
-}
-
-void TestFriAutoScheduleMatchesConjectureCapacityDefault() {
-  testutil::PrintInfo(
-      "fri auto query schedule still drives the sparse proof round shape");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const auto auto_params = MakeAutoParams(3);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(auto_params);
-  const swgr::fri::FriVerifier verifier(auto_params);
-  const auto proof = prover.prove(instance, polynomial);
-
-  CHECK(verifier.verify(instance, proof));
-  CHECK_EQ(proof.rounds.size(), std::size_t{3});
-  CHECK_EQ(proof.rounds[0].oracle_proof.queried_indices.size(), std::size_t{2});
-  CHECK_EQ(proof.rounds[1].oracle_proof.queried_indices.size(), std::size_t{1});
-  CHECK_EQ(proof.rounds[2].oracle_proof.queried_indices.size(), std::size_t{1});
-}
-
-void TestFriManualQueriesOverrideAutoSchedule() {
-  testutil::PrintInfo(
-      "fri manual query schedule overrides conjecture-capacity auto scheduling");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const auto instance = MakeInstance(ctx, 9, 8);
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const auto auto_params = MakeAutoParams(3);
-  const auto manual_params = MakeParams(3, {1, 1});
-
-  const swgr::fri::FriProver auto_prover(auto_params);
-  const swgr::fri::FriVerifier auto_verifier(auto_params);
-  const auto auto_proof = auto_prover.prove(instance, polynomial);
-
-  const swgr::fri::FriProver manual_prover(manual_params);
-  const swgr::fri::FriVerifier manual_verifier(manual_params);
-  const auto manual_proof = manual_prover.prove(instance, polynomial);
-
-  CHECK(auto_verifier.verify(instance, auto_proof));
-  CHECK(manual_verifier.verify(instance, manual_proof));
-  CHECK_EQ(auto_proof.rounds[0].oracle_proof.queried_indices.size(), std::size_t{2});
-  CHECK_EQ(auto_proof.rounds[1].oracle_proof.queried_indices.size(), std::size_t{1});
-  CHECK_EQ(manual_proof.rounds[0].oracle_proof.queried_indices.size(),
-           std::size_t{1});
-  CHECK_EQ(manual_proof.rounds[1].oracle_proof.queried_indices.size(),
-           std::size_t{1});
-}
-
-void TestFriQueriesAreCappedToBundleCount() {
-  testutil::PrintInfo(
-      "fri manual over-budget queries are capped to the bundle count");
-
-  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const auto instance = MakeInstance(ctx, 27, 8);
-  const auto params = MakeParams(9, {10});
-  const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
-
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
-  const auto proof = prover.prove(instance, polynomial);
-  CHECK(verifier.verify(instance, proof));
-
-  CHECK_EQ(proof.rounds.size(), std::size_t{2});
-  const auto round0_queries = proof.rounds[0].oracle_proof.queried_indices.size();
-  CHECK(round0_queries >= std::size_t{1});
-  CHECK(round0_queries <= std::size_t{3});
-  CHECK_EQ(proof.rounds[1].oracle_proof.queried_indices.size(), round0_queries);
 }
 
 void TestBuildOracleLeavesMatchesBundleSerialization() {
@@ -661,11 +629,12 @@ void TestBuildOracleLeavesMatchesBundleSerialization() {
 }
 
 void TestFriValidationRejectsBadInputs() {
-  testutil::PrintInfo("fri parameter validation rejects zero queries and bad degree");
+  testutil::PrintInfo(
+      "fri parameter validation rejects zero repetition counts and bad degree");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   auto params = MakeParams(3);
-  params.query_repetitions = {2, 0};
+  params.repetition_count = 0;
   CHECK(!swgr::fri::validate(params));
 
   const auto instance = MakeInstance(ctx, 9, 8);
@@ -678,8 +647,8 @@ void TestFriValidationRejectsBadInputs() {
   CHECK(!swgr::fri::validate(MakeParams(3), bad_instance));
 
   const GRContext fri9_ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  CHECK(swgr::fri::validate(MakeParams(9, {2}), MakeInstance(fri9_ctx, 27, 8)));
-  CHECK(!swgr::fri::validate(MakeParams(9, {2}), MakeInstance(fri9_ctx, 27, 26)));
+  CHECK(swgr::fri::validate(MakeParams(9, 2), MakeInstance(fri9_ctx, 27, 8)));
+  CHECK(!swgr::fri::validate(MakeParams(9, 2), MakeInstance(fri9_ctx, 27, 26)));
 }
 
 }  // namespace
@@ -699,15 +668,14 @@ int main() {
     RUN_TEST(TestFriPcsRejectsTamperedQuotientFinalPolynomial);
     RUN_TEST(TestFriPcsRejectsMismatchedAlpha);
     RUN_TEST(TestFriPcsRejectsMismatchedCommitment);
+    RUN_TEST(TestFriRepetitionCountMapsToQueryChains);
+    RUN_TEST(TestFriZeroFoldTerminalQueriesFollowRepetitionCount);
     RUN_TEST(TestFri3HonestRoundtripAndRoundShape);
     RUN_TEST(TestFri3RejectsTamperedRoundOpening);
     RUN_TEST(TestFri3RejectsTamperedFinalPolynomial);
     RUN_TEST(TestFri3RejectsTamperedTerminalOpening);
     RUN_TEST(TestFri9HonestRoundtripAndRoundShape);
     RUN_TEST(TestFri9RejectsTamperedOpening);
-    RUN_TEST(TestFriAutoScheduleMatchesConjectureCapacityDefault);
-    RUN_TEST(TestFriManualQueriesOverrideAutoSchedule);
-    RUN_TEST(TestFriQueriesAreCappedToBundleCount);
     RUN_TEST(TestBuildOracleLeavesMatchesBundleSerialization);
     RUN_TEST(TestFriValidationRejectsBadInputs);
   } catch (const std::exception& ex) {

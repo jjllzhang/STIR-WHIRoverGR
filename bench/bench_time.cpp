@@ -33,6 +33,7 @@ struct TimeBenchOptions {
   std::uint64_t r = 162;
   std::uint64_t n = 243;
   std::uint64_t d = 81;
+  std::uint64_t fri_repetitions = 1;
   std::uint64_t lambda_target = 128;
   std::uint64_t pow_bits = 0;
   swgr::SecurityMode sec_mode = swgr::SecurityMode::ConjectureCapacity;
@@ -52,6 +53,8 @@ struct TimeBenchRow {
   std::uint64_t n = 0;
   std::uint64_t d = 0;
   std::string rho;
+  std::string soundness_mode;
+  std::uint64_t fri_repetitions = 0;
   std::uint64_t lambda_target = 0;
   std::uint64_t pow_bits = 0;
   std::string sec_mode;
@@ -143,13 +146,34 @@ void ApplyThreadControl(std::uint64_t requested_threads) {
 #endif
 }
 
-void FillSoundnessMetadata(TimeBenchRow& row, swgr::SecurityMode sec_mode,
-                           std::uint64_t lambda_target,
-                           std::uint64_t pow_bits,
-                           const std::vector<std::uint64_t>& query_repetitions,
-                           double rho) {
+void FillFriSoundnessMetadata(TimeBenchRow& row,
+                              std::uint64_t repetition_count) {
+  row.soundness_mode = "theorem_fri";
+  row.fri_repetitions = repetition_count;
+  row.lambda_target = 0;
+  row.pow_bits = 0;
+  row.sec_mode.clear();
+  row.soundness_model = "paper_repetition_count_m";
+  row.soundness_scope = "paper_parameterization_m_only";
+  row.query_policy = "repeat_steps_3_4_5";
+  row.pow_policy = "not_applicable";
+  row.effective_security_bits = 0;
+  row.soundness_notes =
+      "FRI rows report the theorem-facing repetition count m directly; "
+      "benchmark output does not derive security bits from m here.";
+}
+
+void FillEngineeringSoundnessMetadata(
+    TimeBenchRow& row, swgr::SecurityMode sec_mode,
+    std::uint64_t lambda_target, std::uint64_t pow_bits,
+    const std::vector<std::uint64_t>& query_repetitions, double rho) {
   const auto heuristic = swgr::soundness::engineering_heuristic_result(
       sec_mode, lambda_target, pow_bits, !query_repetitions.empty(), rho);
+  row.soundness_mode = "engineering_stir";
+  row.fri_repetitions = 0;
+  row.lambda_target = lambda_target;
+  row.pow_bits = pow_bits;
+  row.sec_mode = swgr::to_string(sec_mode);
   row.soundness_model = heuristic.model;
   row.soundness_scope = heuristic.scope;
   row.query_policy = heuristic.query_policy;
@@ -194,13 +218,16 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --protocol fri3|fri9|stir9to3|all\n"
          "  --p <uint> --k-exp <uint> --r <uint>\n"
          "  --n <uint> --d <uint>\n"
+         "  --fri-repetitions <uint>\n"
          "  --lambda <uint> --pow-bits <uint>\n"
          "  --sec-mode ConjectureCapacity|Conservative\n"
          "  --hash-profile STIR_NATIVE|WHIR_NATIVE\n"
          "  --stop-degree <uint> --ood-samples <uint>\n"
          "  --queries auto|q0[,q1,...] --threads <uint>\n"
-         "    note: --queries is the current engineering / benchmark query-schedule\n"
-         "    surface, not the theorem-facing FRI repetition parameter m\n"
+         "    note: fri3/fri9 use --fri-repetitions as the theorem-facing FRI\n"
+         "    repetition parameter m\n"
+         "    note: --lambda/--pow-bits/--sec-mode/--queries remain the current\n"
+         "    STIR engineering / benchmark knobs\n"
          "  --warmup <uint> --reps <uint>\n"
          "  --format text|csv|json\n";
 }
@@ -239,6 +266,8 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
       options.n = swgr::bench::ParseUint64(key, value);
     } else if (key == "--d") {
       options.d = swgr::bench::ParseUint64(key, value);
+    } else if (key == "--fri-repetitions") {
+      options.fri_repetitions = swgr::bench::ParseUint64(key, value);
     } else if (key == "--lambda") {
       options.lambda_target = swgr::bench::ParseUint64(key, value);
     } else if (key == "--pow-bits") {
@@ -268,6 +297,9 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
 
   if (options.n == 0 || options.d >= options.n) {
     throw std::invalid_argument("time bench requires 0 < d < n");
+  }
+  if (options.fri_repetitions == 0) {
+    throw std::invalid_argument("--fri-repetitions must be > 0");
   }
   if (options.threads == 0) {
     throw std::invalid_argument("--threads must be > 0");
@@ -338,6 +370,8 @@ void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
     std::cout << "n=" << row.n << "\n";
     std::cout << "d=" << row.d << "\n";
     std::cout << "rho=" << row.rho << "\n";
+    std::cout << "soundness_mode=" << row.soundness_mode << "\n";
+    std::cout << "fri_repetitions=" << row.fri_repetitions << "\n";
     std::cout << "lambda_target=" << row.lambda_target << "\n";
     std::cout << "pow_bits=" << row.pow_bits << "\n";
     std::cout << "sec_mode=" << row.sec_mode << "\n";
@@ -461,8 +495,9 @@ void PrintRowsText(const std::vector<TimeBenchRow>& rows) {
 
 void PrintRowsCsv(const std::vector<TimeBenchRow>& rows) {
   std::cout
-      << "protocol,ring,n,d,rho,lambda_target,pow_bits,sec_mode,hash_profile,"
-         "soundness_model,soundness_scope,query_policy,pow_policy,effective_security_bits,"
+      << "protocol,ring,n,d,rho,soundness_mode,fri_repetitions,lambda_target,"
+         "pow_bits,sec_mode,hash_profile,soundness_model,soundness_scope,"
+         "query_policy,pow_policy,effective_security_bits,"
          "soundness_notes,fold,shift_power,stop_degree,ood_samples,threads,"
          "warmup,reps,commit_ms,prove_query_phase_ms,prover_total_ms,"
          "verify_ms,serialized_bytes_actual,serialized_kib_actual,"
@@ -495,7 +530,9 @@ void PrintRowsCsv(const std::vector<TimeBenchRow>& rows) {
     std::cout << swgr::bench::CsvEscape(row.protocol) << ","
               << swgr::bench::CsvEscape(row.ring) << "," << row.n << ","
               << row.d << "," << swgr::bench::CsvEscape(row.rho) << ","
-              << row.lambda_target << "," << row.pow_bits << ","
+              << swgr::bench::CsvEscape(row.soundness_mode) << ","
+              << row.fri_repetitions << "," << row.lambda_target << ","
+              << row.pow_bits << ","
               << swgr::bench::CsvEscape(row.sec_mode) << ","
               << swgr::bench::CsvEscape(row.hash_profile) << ","
               << swgr::bench::CsvEscape(row.soundness_model) << ","
@@ -576,6 +613,9 @@ void PrintRowsJson(const std::vector<TimeBenchRow>& rows) {
     std::cout << "    \"d\": " << row.d << ",\n";
     std::cout << "    \"rho\": \"" << swgr::bench::JsonEscape(row.rho)
               << "\",\n";
+    std::cout << "    \"soundness_mode\": \""
+              << swgr::bench::JsonEscape(row.soundness_mode) << "\",\n";
+    std::cout << "    \"fri_repetitions\": " << row.fri_repetitions << ",\n";
     std::cout << "    \"lambda_target\": " << row.lambda_target << ",\n";
     std::cout << "    \"pow_bits\": " << row.pow_bits << ",\n";
     std::cout << "    \"sec_mode\": \"" << swgr::bench::JsonEscape(row.sec_mode)
@@ -732,21 +772,6 @@ void PrintRows(const std::vector<TimeBenchRow>& rows,
 
 void PrintQueryWarnings(
     std::string_view protocol,
-    const std::vector<swgr::fri::QueryRoundMetadata>& metadata) {
-  for (std::size_t round_index = 0; round_index < metadata.size(); ++round_index) {
-    const auto& round = metadata[round_index];
-    if (!round.cap_applied) {
-      continue;
-    }
-    std::cerr << "warning: " << protocol << " round " << round_index
-              << " requested " << round.requested_query_count
-              << " queries, capped to " << round.effective_query_count
-              << " (bundle_count=" << round.bundle_count << ")\n";
-  }
-}
-
-void PrintQueryWarnings(
-    std::string_view protocol,
     const std::vector<swgr::stir::RoundQueryScheduleMetadata>& metadata) {
   for (std::size_t round_index = 0; round_index < metadata.size(); ++round_index) {
     const auto& round = metadata[round_index];
@@ -771,14 +796,7 @@ TimeBenchRow RunBenchLoop(const TimeBenchOptions& options, std::string protocol,
   row.n = options.n;
   row.d = options.d;
   row.rho = swgr::bench::ReducedRatioString(options.d, options.n);
-  row.lambda_target = options.lambda_target;
-  row.pow_bits = options.pow_bits;
-  row.sec_mode = swgr::to_string(options.sec_mode);
   row.hash_profile = swgr::to_string(options.hash_profile);
-  FillSoundnessMetadata(row, options.sec_mode, options.lambda_target,
-                        options.pow_bits, options.queries,
-                        static_cast<double>(options.d + 1U) /
-                            static_cast<double>(options.n));
   row.fold = fold;
   row.shift_power = shift_power;
   row.stop_degree = options.stop_degree;
@@ -803,23 +821,13 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
   swgr::fri::FriParameters params;
   params.fold_factor = fold_factor;
   params.stop_degree = options.stop_degree;
-  params.query_repetitions = options.queries;
-  params.lambda_target = options.lambda_target;
-  params.pow_bits = options.pow_bits;
-  params.sec_mode = options.sec_mode;
+  params.repetition_count = options.fri_repetitions;
   params.hash_profile = options.hash_profile;
 
   const swgr::fri::FriInstance instance{
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
-  const swgr::fri::FriCommitment commitment_shape{
-      .domain = instance.domain,
-      .degree_bound = options.d,
-  };
-  PrintQueryWarnings(fold_factor == 3 ? "fri3" : "fri9",
-                     swgr::fri::resolve_query_rounds_metadata(
-                         params, swgr::fri::opening_instance(commitment_shape)));
   const auto polynomial =
       SamplePolynomial(*ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
   const swgr::fri::FriProver prover(params);
@@ -835,7 +843,6 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
                             prover.open(commitment, polynomial, ctx->zero());
                         const double prover_total_ms = ElapsedMilliseconds(
                             prover_start, std::chrono::steady_clock::now());
-                        const auto& proof = opening.proof.quotient_proof;
                         swgr::ProofStatistics verify_stats;
                         if (!verifier.verify(commitment, opening.claim.alpha,
                                              opening.claim.value, opening,
@@ -851,10 +858,7 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
                               opening.proof.stats.verifier_hashes;
                         }
                       });
-  FillSoundnessMetadata(row, options.sec_mode, options.lambda_target,
-                        options.pow_bits, options.queries,
-                        static_cast<double>(options.d) /
-                            static_cast<double>(options.n));
+  FillFriSoundnessMetadata(row, options.fri_repetitions);
   return row;
 }
 
@@ -882,18 +886,25 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
   const swgr::stir::StirProver prover(params);
   const swgr::stir::StirVerifier verifier(params);
 
-  return RunBenchLoop(options, "stir9to3", 9, 3, options.ood_samples,
-                      [&](TimeBenchRow* row) {
-                        const auto proof = prover.prove(instance, polynomial);
-                        swgr::ProofStatistics verify_stats;
-                        if (!verifier.verify(instance, proof, &verify_stats)) {
-                          throw std::runtime_error("stir verifier rejected honest proof");
-                        }
-                        if (row != nullptr) {
-                          AddRunStats(*row, proof.stats, verify_stats);
-                          row->verifier_hashes_actual = proof.stats.verifier_hashes;
-                        }
-                      });
+  auto row = RunBenchLoop(options, "stir9to3", 9, 3, options.ood_samples,
+                          [&](TimeBenchRow* row) {
+                            const auto proof = prover.prove(instance, polynomial);
+                            swgr::ProofStatistics verify_stats;
+                            if (!verifier.verify(instance, proof, &verify_stats)) {
+                              throw std::runtime_error(
+                                  "stir verifier rejected honest proof");
+                            }
+                            if (row != nullptr) {
+                              AddRunStats(*row, proof.stats, verify_stats);
+                              row->verifier_hashes_actual =
+                                  proof.stats.verifier_hashes;
+                            }
+                          });
+  FillEngineeringSoundnessMetadata(
+      row, options.sec_mode, options.lambda_target, options.pow_bits,
+      options.queries,
+      static_cast<double>(options.d + 1U) / static_cast<double>(options.n));
+  return row;
 }
 
 }  // namespace

@@ -4,7 +4,7 @@ Date: 2026-03-10
 
 Owner: Codex + user follow-up execution
 
-Status: Drafted for execution tracking
+Status: Phase 2 landed; Phase 3 pending
 
 ## Goal
 
@@ -96,13 +96,13 @@ Current FRI uses `Transcript::challenge_ring(...)`, which deserializes arbitrary
 
 ### Implementation Tasks
 
-- [ ] Add an explicit transcript/helper API for sampling from the exceptional set `T`.
-- [ ] Choose one concrete representation rule and document it:
+- [x] Add an explicit transcript/helper API for sampling from the exceptional set `T`.
+- [x] Choose one concrete representation rule and document it:
   - sample an index in `[0, |T|-1]` with rejection sampling and map it deterministically to the corresponding Teichmuller representative, or
   - introduce a direct `challenge_teichmuller(...)` helper backed by the same rule.
-- [ ] Keep the current generic `challenge_ring(...)` API for non-paper paths; do not silently reuse it for theorem-facing FRI folding.
-- [ ] Change theorem-facing FRI folding to use the new `T`-sampling helper for every `beta_i`.
-- [ ] Re-check STIR separately before changing its fold challenge semantics; do not couple the STIR change to the FRI repair unless the paper target is confirmed.
+- [x] Keep the current generic `challenge_ring(...)` API for non-paper paths; do not silently reuse it for theorem-facing FRI folding.
+- [x] Change theorem-facing FRI folding to use the new `T`-sampling helper for every `beta_i`.
+- [x] Re-check STIR separately before changing its fold challenge semantics; do not couple the STIR change to the FRI repair unless the paper target is confirmed.
 
 ### Suggested Code Touchpoints
 
@@ -118,10 +118,10 @@ Current FRI uses `Transcript::challenge_ring(...)`, which deserializes arbitrary
 
 ### Required Tests
 
-- [ ] Add a unit test that theorem-facing FRI folding challenges are always in `T`.
-- [ ] Add a deterministic replay test showing prover and verifier derive identical `beta_i`.
-- [ ] Add a negative test that the old unrestricted challenge path is no longer used by theorem-facing FRI.
-- [ ] Run:
+- [x] Add a unit test that theorem-facing FRI folding challenges are always in `T`.
+- [x] Add a deterministic replay test showing prover and verifier derive identical `beta_i`.
+- [x] Add a negative test that the old unrestricted challenge path is no longer used by theorem-facing FRI.
+- [x] Run:
 
 ```bash
 ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri'
@@ -129,15 +129,16 @@ ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri'
 
 ### Exit Criteria
 
-- [ ] Every theorem-facing FRI `beta_i` is sampled from `T`.
-- [ ] The sampling rule is documented and test-covered.
-- [ ] No benchmark or verifier path still depends on generic ring sampling for paper-facing FRI folding.
+- [x] Every theorem-facing FRI `beta_i` is sampled from `T`.
+- [x] The sampling rule is documented and test-covered.
+- [x] No benchmark or verifier path still depends on generic ring sampling for paper-facing FRI folding.
 
 ## Phase 2: Repair Soundness Parameterization
 
 ### Objective
 
-Separate theorem-facing FRI soundness parameters from repo-local engineering heuristics.
+Expose theorem-facing FRI soundness through the paper's repetition parameter `m`
+and stop routing public FRI behavior through repo-local engineering heuristics.
 
 ### Problem Statement
 
@@ -148,22 +149,23 @@ The paper's soundness statement uses a repetition parameter `m` that repeats Ste
 - benchmark metadata such as `effective_security_bits` that is intentionally non-theorem.
 
 These are valid engineering tools, but they are not the paper's soundness parameterization.
+For this phase, `bench_time` only upgrades FRI to the paper-facing parameterization.
+STIR keeps its current engineering schedule path and will be handled separately.
 
 ### Implementation Tasks
 
-- [ ] Introduce an explicit theorem-facing FRI parameter for repetition count, named so its purpose is obvious, e.g. `repetition_count` or `fri_repetitions`.
-- [ ] Define the exact mapping from that repetition count to query behavior:
+- [x] Introduce an explicit theorem-facing FRI parameter for repetition count, named so its purpose is obvious, e.g. `repetition_count` or `fri_repetitions`.
+- [x] Define the exact mapping from that repetition count to query behavior:
   - each repetition is one independent query chain across all FRI rounds,
   - repeated chains share no transcript labels,
   - repeated chains are carried consistently through terminal checks.
-- [ ] Keep the current engineering schedule path, but move it behind an explicit mode boundary such as:
-  - theorem-facing mode, and
-  - engineering/benchmark mode.
-- [ ] Stop using `lambda_target - pow_bits` to drive theorem-facing FRI query counts.
-- [ ] Update benchmark rows so they clearly report which mode was used.
-- [ ] Add an explicit field for theorem-facing repetition count when that mode is active.
-- [ ] Preserve `soundness_scope=engineering_metadata_non_paper` only for the engineering path.
-- [ ] Decide whether `FriProver::prove(...)` remains an experimental low-level entry point while `commit/open/verify` becomes the main theorem-facing surface.
+- [x] Remove theorem-facing FRI dependence on the current engineering schedule path instead of keeping a mixed public FRI mode boundary.
+- [x] Keep STIR's current engineering schedule path unchanged for now and document that it remains separate from theorem-facing FRI.
+- [x] Stop using `lambda_target - pow_bits` to drive theorem-facing FRI query counts.
+- [x] Update benchmark rows so they clearly report which soundness path was used.
+- [x] Add an explicit field for theorem-facing repetition count when that mode is active.
+- [x] Preserve `soundness_scope=engineering_metadata_non_paper` only for the STIR engineering path.
+- [x] Decide whether `FriProver::prove(...)` remains an experimental low-level entry point while `commit/open/verify` becomes the main theorem-facing surface.
 
 ### Suggested Code Touchpoints
 
@@ -178,21 +180,21 @@ These are valid engineering tools, but they are not the paper's soundness parame
 
 ### Required Tests
 
-- [ ] Add tests for theorem-facing repetition count to query-shape mapping.
-- [ ] Add tests showing engineering mode and theorem-facing mode produce different metadata and are never conflated.
-- [ ] Update or replace the current tests that hard-code the heuristic round shape as if it were the default FRI soundness contract.
-- [ ] Run:
+- [x] Add tests for theorem-facing repetition count to query-shape mapping.
+- [x] Add tests showing theorem-facing FRI query-chain behavior is explicit and no longer tied to the old engineering FRI schedule assumptions.
+- [x] Update or replace the current tests that hard-code the heuristic round shape as if it were the default FRI soundness contract.
+- [x] Run:
 
 ```bash
 ctest --test-dir build --output-on-failure -R 'test_fri|test_soundness_configurator'
-./build/bench_time --protocol fri3 --n 9 --d 8 --queries auto --format text
+./build/bench_time --protocol fri3 --n 9 --d 8 --fri-repetitions 2 --format text
 ```
 
 ### Exit Criteria
 
-- [ ] Theorem-facing FRI uses an explicit repetition parameter instead of heuristic scheduling.
-- [ ] Engineering heuristics remain available, but are visibly marked as non-paper.
-- [ ] README and benchmark output can no longer be misread as theorem-level security claims.
+- [x] Theorem-facing FRI uses an explicit repetition parameter instead of heuristic scheduling.
+- [x] STIR engineering heuristics remain available, but are visibly marked as non-paper.
+- [x] README and benchmark output can no longer blur FRI's paper parameter `m` with STIR's engineering metadata.
 
 ## Phase 3: Upgrade to Full `pi_FRICom` Semantics
 
@@ -308,8 +310,8 @@ Stop and re-review before coding if any of these happens:
 ## Tracking Checklist
 
 - [x] Phase 0 completed
-- [ ] Phase 1 completed
-- [ ] Phase 2 completed
+- [x] Phase 1 completed
+- [x] Phase 2 completed
 - [ ] Phase 3 completed
 - [ ] Phase 4 completed
 
@@ -350,6 +352,60 @@ Use this section during follow-up implementation to record:
     stay labeled as non-theorem-facing.
 - Residual deltas after Phase 0 remain intentional and tracked:
   - current code still rejects `alpha in L`;
-  - current public benchmark CLI still speaks in engineering scheduling knobs;
+  - current public benchmark CLI still keeps STIR engineering knobs, but FRI now
+    has to move onto explicit theorem-facing repetition counts in Phase 2;
   - current public sparse-opening proof object remains a prototype path until the
     later theorem-facing upgrade lands.
+
+### Phase 1 Challenge Sampling Repair (2026-03-10)
+
+- Landed in commit `bb2272c` (`fri: sample folding challenges from teichmuller set`).
+- The transcript now exposes a dedicated theorem-facing helper
+  `challenge_teichmuller(...)`. Its concrete rule is:
+  - rejection-sample an integer index in `[0, |T|-1]`;
+  - map that index deterministically to the maximal exceptional set
+    `T = {0, 1, zeta, ..., zeta^(|T|-2)}` where `zeta` is the repo's
+    deterministic Teichmuller generator.
+- Theorem-facing FRI folding now routes through
+  `derive_fri_folding_challenge(...)` instead of generic
+  `Transcript::challenge_ring(...)`.
+- The generic ring challenge API remains available for non-paper paths.
+- Current STIR code was checked separately and intentionally left unchanged in
+  this phase. It still uses the older generic challenge helper until STIR's own
+  challenge semantics are reviewed.
+- Validation completed for this phase:
+  - `cmake --build build -j4`
+  - `ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri'`
+
+### Phase 2 Soundness Parameterization Repair (2026-03-10)
+
+- Theorem-facing FRI now exposes explicit repetition-count semantics through
+  `FriParameters::repetition_count`, with `bench_time` and wrapper scripts
+  surfacing the same idea as `--fri-repetitions`.
+- The repo now implements the paper's "repeat Steps 3/4/5" interpretation of
+  `m`:
+  - round 0 starts `m` independent query chains,
+  - later fold rounds carry those chains forward instead of fresh-sampling a new
+    per-round budget,
+  - terminal checks preserve chain multiplicity even when sparse openings dedupe
+    physical query indices.
+- The old theorem-facing FRI heuristic fields (`query_repetitions`,
+  `lambda_target`, `pow_bits`, `sec_mode`) were removed from `FriParameters` and
+  no longer affect FRI prover/verifier behavior.
+- `bench_time` now reports:
+  - FRI rows with `soundness_mode=theorem_fri`,
+    `soundness_model=paper_repetition_count_m`, and explicit
+    `fri_repetitions`;
+  - STIR rows with `soundness_mode=engineering_stir` and the existing
+    `engineering_metadata_non_paper` scope.
+- Preset wrappers and the parameter-search entrypoint now pass an explicit
+  `fri_repetitions` value through to `bench_time` so mixed-protocol benchmark
+  runs still execute cleanly while STIR remains on its old engineering knobs.
+- `FriProver::prove(...)` / `FriVerifier::verify(instance, proof)` remain
+  available as lower-level FRI proof paths, but they now use the same
+  theorem-facing `m` semantics as the public sparse-opening PCS surface.
+- Validation completed for this phase:
+  - `cmake --build build -j4`
+  - `ctest --test-dir build --output-on-failure -R 'test_fri|test_soundness_configurator'`
+  - `./build/bench_time --protocol fri3 --n 9 --d 8 --fri-repetitions 2 --format text`
+  - `./scripts/run_timing_benchmark_from_preset.sh --preset bench/presets/all_protocols_smoke_gr216_r54.json --build-dir build --warmup 0 --reps 1 --output /tmp/swgr_phase2_time.csv`

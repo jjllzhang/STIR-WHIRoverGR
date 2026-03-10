@@ -1,73 +1,40 @@
 #include "fri/parameters.hpp"
 
-#include <algorithm>
-
-#include "soundness/configurator.hpp"
 #include "utils.hpp"
 
 namespace swgr::fri {
 
 bool validate(const FriParameters& params) {
   if ((params.fold_factor != 3 && params.fold_factor != 9) ||
-      params.stop_degree == 0) {
+      params.stop_degree == 0 || params.repetition_count == 0) {
     return false;
   }
-
-  return swgr::soundness::validate_manual_queries(params.query_repetitions);
-}
-
-QueryRoundMetadata resolve_query_round_metadata(std::uint64_t requested_count,
-                                                std::uint64_t bundle_count) {
-  QueryRoundMetadata metadata;
-  metadata.requested_query_count = requested_count;
-  metadata.bundle_count = bundle_count;
-  metadata.effective_query_count = std::min(requested_count, bundle_count);
-  metadata.cap_applied = requested_count > bundle_count;
-  return metadata;
+  return true;
 }
 
 std::vector<QueryRoundMetadata> resolve_query_rounds_metadata(
     const FriParameters& params, const FriInstance& instance) {
   const std::size_t rounds =
       folding_round_count(instance, params.fold_factor, params.stop_degree);
-  const auto requested_schedule =
-      params.query_repetitions.empty()
-          ? std::vector<std::uint64_t>()
-          : query_schedule(rounds, params.query_repetitions);
   std::vector<QueryRoundMetadata> metadata;
   metadata.reserve(rounds);
 
   std::uint64_t current_domain_size = instance.domain.size();
-  std::uint64_t current_degree_bound = instance.claimed_degree;
   for (std::size_t round_index = 0; round_index < rounds; ++round_index) {
-    std::uint64_t requested_count = 0;
-    if (!requested_schedule.empty()) {
-      requested_count = requested_schedule[round_index];
-    } else {
-      const double rho = static_cast<double>(current_degree_bound + 1U) /
-                         static_cast<double>(current_domain_size);
-      requested_count = swgr::soundness::auto_query_count_for_round(
-          params.sec_mode, params.lambda_target, params.pow_bits, rho,
-          round_index);
-    }
     const std::uint64_t bundle_count = current_domain_size / params.fold_factor;
-    metadata.push_back(
-        resolve_query_round_metadata(requested_count, bundle_count));
+    metadata.push_back(QueryRoundMetadata{
+        .query_chain_count = params.repetition_count,
+        .fresh_query_count = round_index == 0 ? params.repetition_count : 0U,
+        .bundle_count = bundle_count,
+        .carries_previous_queries = round_index != 0,
+    });
     current_domain_size /= params.fold_factor;
-    current_degree_bound /= params.fold_factor;
   }
   return metadata;
 }
 
-std::vector<std::uint64_t> resolve_query_repetitions(
-    const FriParameters& params, const FriInstance& instance) {
-  const auto metadata = resolve_query_rounds_metadata(params, instance);
-  std::vector<std::uint64_t> schedule;
-  schedule.reserve(metadata.size());
-  for (const auto& round : metadata) {
-    schedule.push_back(round.effective_query_count);
-  }
-  return schedule;
+std::uint64_t terminal_query_chain_count(const FriParameters& params) {
+  return params.repetition_count;
 }
 
 bool validate(const FriParameters& params, const FriInstance& instance) {
@@ -87,8 +54,7 @@ bool validate(const FriParameters& params, const FriInstance& instance) {
   std::uint64_t current_domain_size = instance.domain.size();
   std::uint64_t current_degree_bound = instance.claimed_degree;
   try {
-    const auto schedule = resolve_query_repetitions(params, instance);
-    if (schedule.size() !=
+    if (resolve_query_rounds_metadata(params, instance).size() !=
         folding_round_count(instance, params.fold_factor, params.stop_degree)) {
       return false;
     }

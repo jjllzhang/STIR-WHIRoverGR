@@ -13,7 +13,6 @@
 #include "poly_utils/folding.hpp"
 #include "poly_utils/interpolation.hpp"
 #include "poly_utils/quotient.hpp"
-#include "soundness/configurator.hpp"
 
 namespace swgr::fri {
 namespace {
@@ -37,17 +36,7 @@ std::vector<std::uint64_t> UniqueSorted(
   return unique;
 }
 
-std::vector<std::uint64_t> UnionQueries(
-    const std::vector<std::uint64_t>& carried,
-    const std::vector<std::uint64_t>& fresh) {
-  std::vector<std::uint64_t> merged;
-  merged.reserve(carried.size() + fresh.size());
-  merged.insert(merged.end(), carried.begin(), carried.end());
-  merged.insert(merged.end(), fresh.begin(), fresh.end());
-  return UniqueSorted(merged);
-}
-
-std::vector<std::uint64_t> CarryToBundleQueries(
+std::vector<std::uint64_t> CarryToBundleQueryChains(
     const std::vector<std::uint64_t>& carried_positions,
     std::uint64_t bundle_count) {
   if (bundle_count == 0) {
@@ -58,33 +47,37 @@ std::vector<std::uint64_t> CarryToBundleQueries(
   for (const auto position : carried_positions) {
     queries.push_back(position % bundle_count);
   }
-  return UniqueSorted(queries);
+  return queries;
 }
 
-std::uint64_t AutoTerminalQueryCount(const FriParameters& params,
-                                     const FriInstance& instance,
-                                     std::size_t round_index) {
-  const double rho = static_cast<double>(instance.claimed_degree + 1U) /
-                     static_cast<double>(instance.domain.size());
-  return swgr::soundness::auto_query_count_for_round(
-      params.sec_mode, params.lambda_target, params.pow_bits, rho, round_index);
+std::vector<std::uint64_t> OpenedRoundQueries(
+    const std::vector<std::uint64_t>& carried_positions,
+    std::uint64_t bundle_count,
+    const std::vector<std::uint64_t>& fresh_query_chains) {
+  std::vector<std::uint64_t> opened =
+      CarryToBundleQueryChains(carried_positions, bundle_count);
+  opened.insert(opened.end(), fresh_query_chains.begin(),
+                fresh_query_chains.end());
+  return UniqueSorted(opened);
 }
 
-std::vector<std::uint64_t> DeriveTerminalQueries(
+std::vector<std::uint64_t> NextCarriedQueryChains(
+    const std::vector<std::uint64_t>& carried_positions,
+    std::uint64_t bundle_count,
+    const std::vector<std::uint64_t>& fresh_query_chains) {
+  std::vector<std::uint64_t> next_positions =
+      CarryToBundleQueryChains(carried_positions, bundle_count);
+  next_positions.insert(next_positions.end(), fresh_query_chains.begin(),
+                        fresh_query_chains.end());
+  return next_positions;
+}
+
+std::vector<std::uint64_t> DeriveTerminalQueryChains(
     swgr::crypto::Transcript& transcript, const FriParameters& params,
     const FriInstance& instance, std::size_t round_index) {
-  std::uint64_t requested = 1;
-  if (!params.query_repetitions.empty()) {
-    requested = params.query_repetitions[std::min(
-        round_index, params.query_repetitions.size() - 1U)];
-  } else {
-    requested = AutoTerminalQueryCount(params, instance, round_index);
-  }
-  const std::uint64_t effective =
-      std::min(requested, instance.domain.size());
-  return UniqueSorted(derive_query_positions(
+  return derive_query_positions(
       transcript, RoundLabel("fri.final_query", round_index),
-      instance.domain.size(), effective));
+      instance.domain.size(), terminal_query_chain_count(params));
 }
 
 std::vector<std::uint64_t> ExpandBundleIndices(
@@ -146,13 +139,11 @@ SparseProofBuildResult BuildSparseProof(
         RoundLabel("fri.fold_alpha", round_offset + round_index));
     const std::uint64_t next_domain_size =
         current_domain.size() / params.fold_factor;
-    const auto carried_bundle_queries =
-        CarryToBundleQueries(carried_positions, next_domain_size);
-    const auto fresh_queries = derive_query_positions(
+    const auto fresh_query_chains = derive_query_positions(
         transcript, RoundLabel("fri.query", round_offset + round_index),
-        next_domain_size, query_rounds[round_index].effective_query_count);
-    const auto round_queries =
-        UnionQueries(carried_bundle_queries, fresh_queries);
+        next_domain_size, query_rounds[round_index].fresh_query_count);
+    const auto round_queries = OpenedRoundQueries(
+        carried_positions, next_domain_size, fresh_query_chains);
     *transcript_ms +=
         ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
 
@@ -170,7 +161,8 @@ SparseProofBuildResult BuildSparseProof(
     *fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
     current_domain = current_domain.pow_map(params.fold_factor);
     current_degree /= params.fold_factor;
-    carried_positions = proof.rounds.back().oracle_proof.queried_indices;
+    carried_positions = NextCarriedQueryChains(
+        carried_positions, next_domain_size, fresh_query_chains);
   }
 
   if (collect_witness) {
@@ -186,11 +178,11 @@ SparseProofBuildResult BuildSparseProof(
       ElapsedMilliseconds(final_merkle_start, std::chrono::steady_clock::now());
   proof.oracle_roots.push_back(final_root);
 
-  auto final_queries = carried_positions;
-  if (final_queries.empty()) {
+  auto final_query_chains = carried_positions;
+  if (final_query_chains.empty()) {
     const auto transcript_start = std::chrono::steady_clock::now();
     transcript.absorb_bytes(final_root);
-    final_queries = DeriveTerminalQueries(
+    final_query_chains = DeriveTerminalQueryChains(
         transcript, params,
         FriInstance{
             .domain = current_domain,
@@ -200,6 +192,7 @@ SparseProofBuildResult BuildSparseProof(
     *transcript_ms +=
         ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
   }
+  const auto final_queries = UniqueSorted(final_query_chains);
 
   const auto final_query_start = std::chrono::steady_clock::now();
   proof.rounds.push_back(
@@ -347,22 +340,27 @@ FriOpening FriProver::open(const FriCommitment& commitment,
   if (total_rounds == 0) {
     const auto transcript_start = std::chrono::steady_clock::now();
     transcript.absorb_bytes(commitment.oracle_root);
-    const auto terminal_queries =
-        DeriveTerminalQueries(transcript, params_, reduced_instance, 0);
+    const auto terminal_query_chains =
+        DeriveTerminalQueryChains(transcript, params_, reduced_instance, 0);
     transcript_ms +=
         ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
 
     const auto query_start = std::chrono::steady_clock::now();
-    opening.proof.committed_oracle_proof = commitment_tree.open(terminal_queries);
+    opening.proof.committed_oracle_proof =
+        commitment_tree.open(UniqueSorted(terminal_query_chains));
     const double open_elapsed =
         ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
     query_open_ms += open_elapsed;
     query_phase_ms += open_elapsed;
 
+    const auto virtual_oracle =
+        build_virtual_oracle(commitment.domain, committed_oracle, alpha, value);
+    auto quotient_result = BuildSparseProof(
+        params_, reduced_instance, virtual_oracle, transcript, 0,
+        terminal_query_chains, false, &merkle_ms, &transcript_ms, &fold_ms,
+        &interpolate_ms, &query_open_ms, &query_phase_ms);
+    opening.proof.quotient_proof = std::move(quotient_result.proof);
     opening.proof.quotient_proof.final_polynomial = quotient_polynomial;
-    opening.proof.quotient_proof.stats.prover_rounds = 0;
-    opening.proof.quotient_proof.stats.serialized_bytes =
-        serialized_message_bytes(ctx, opening.proof.quotient_proof);
   } else {
     const auto query_rounds = resolve_query_rounds_metadata(params_, reduced_instance);
 
@@ -372,14 +370,15 @@ FriOpening FriProver::open(const FriCommitment& commitment,
         transcript, ctx, RoundLabel("fri.fold_alpha", 0));
     const std::uint64_t next_domain_size =
         reduced_instance.domain.size() / params_.fold_factor;
-    const auto first_queries = UniqueSorted(derive_query_positions(
+    const auto first_query_chains = derive_query_positions(
         transcript, RoundLabel("fri.query", 0), next_domain_size,
-        query_rounds.front().effective_query_count));
+        query_rounds.front().fresh_query_count);
     transcript_ms +=
         ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
 
     const auto input_indices =
-        ExpandBundleIndices(first_queries, next_domain_size, params_.fold_factor);
+        ExpandBundleIndices(first_query_chains, next_domain_size,
+                            params_.fold_factor);
     const auto query_start = std::chrono::steady_clock::now();
     opening.proof.committed_oracle_proof = commitment_tree.open(input_indices);
     const double open_elapsed =
@@ -401,7 +400,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
     };
     auto suffix_result = BuildSparseProof(
         params_, suffix_instance, first_folded_oracle, transcript, 1,
-        first_queries, false, &merkle_ms, &transcript_ms, &fold_ms,
+        first_query_chains, false, &merkle_ms, &transcript_ms, &fold_ms,
         &interpolate_ms, &query_open_ms, &query_phase_ms);
     opening.proof.quotient_proof = std::move(suffix_result.proof);
   }
@@ -449,9 +448,9 @@ FriOpeningArtifact FriProver::open_with_witness(
   const std::uint64_t next_domain_size =
       reduced_instance.domain.size() / params_.fold_factor;
   const auto query_rounds = resolve_query_rounds_metadata(params_, reduced_instance);
-  const auto first_queries = UniqueSorted(derive_query_positions(
+  const auto first_query_chains = derive_query_positions(
       transcript, RoundLabel("fri.query", 0), next_domain_size,
-      query_rounds.front().effective_query_count));
+      query_rounds.front().fresh_query_count);
   const auto virtual_oracle = build_virtual_oracle(
       commitment.domain, artifact.witness.committed_oracle_evals, alpha,
       artifact.opening.claim.value);
@@ -469,7 +468,8 @@ FriOpeningArtifact FriProver::open_with_witness(
   double query_open_ms = 0.0;
   double query_phase_ms = 0.0;
   auto suffix_result = BuildSparseProof(
-      params_, suffix_instance, first_folded_oracle, transcript, 1, first_queries,
+      params_, suffix_instance, first_folded_oracle, transcript, 1,
+      first_query_chains,
       true, &merkle_ms, &transcript_ms, &fold_ms, &interpolate_ms,
       &query_open_ms, &query_phase_ms);
   artifact.witness.quotient_witness = std::move(suffix_result.witness);

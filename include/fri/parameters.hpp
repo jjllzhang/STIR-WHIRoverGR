@@ -10,36 +10,27 @@
 
 namespace swgr::fri {
 
-// Current FriParameters still describe the prototype / engineering scheduling
-// surface. Theorem-facing FRI soundness repair is expected to introduce an
-// explicit repetition-count parameter `m` (or similarly named field) on a
-// separate paper-facing path instead of overloading these heuristic knobs.
+// Current public FRI parameters intentionally expose the paper-facing
+// repetition-count semantics rather than the older engineering query schedule.
 struct FriParameters {
   std::uint64_t fold_factor = 3;
   std::uint64_t stop_degree = 3;
-  std::uint64_t ood_samples = 2;
-  std::vector<std::uint64_t> query_repetitions;
-  std::uint64_t lambda_target = 128;
-  std::uint64_t pow_bits = 0;
-  swgr::SecurityMode sec_mode = swgr::SecurityMode::ConjectureCapacity;
+  std::uint64_t repetition_count = 1;
   swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
 };
 
 struct QueryRoundMetadata {
-  std::uint64_t requested_query_count = 0;
-  std::uint64_t effective_query_count = 0;
+  std::uint64_t query_chain_count = 0;
+  std::uint64_t fresh_query_count = 0;
   std::uint64_t bundle_count = 0;
-  bool cap_applied = false;
+  bool carries_previous_queries = false;
 };
 
 bool validate(const FriParameters& params);
 bool validate(const FriParameters& params, const FriInstance& instance);
 bool validate(const FriParameters& params, const FriCommitment& commitment);
 bool validate(const FriCommitment& commitment, const FriOpeningClaim& claim);
-std::vector<std::uint64_t> resolve_query_repetitions(
-    const FriParameters& params, const FriInstance& instance);
-QueryRoundMetadata resolve_query_round_metadata(std::uint64_t requested_count,
-                                                std::uint64_t bundle_count);
+std::uint64_t terminal_query_chain_count(const FriParameters& params);
 std::vector<QueryRoundMetadata> resolve_query_rounds_metadata(
     const FriParameters& params, const FriInstance& instance);
 

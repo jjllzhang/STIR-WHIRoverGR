@@ -27,7 +27,7 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - Current FRI openings terminate with `final_polynomial` plus terminal sparse checks; proof-byte reporting now comes from a deterministic length-prefixed serializer over the actual external opening/proof messages
 - `STIR(9->3)` now exposes a proof-only public surface built around `initial_root`, per-round `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`, and `queries_to_final + final_polynomial`; it remains a prototype, fixed-parameter, Galois-ring adaptation rather than a theorem-level complete implementation of the paper
 - `poly_utils::bs08` is still a placeholder interface
-- Soundness-related outputs are currently for engineering experiments and parameter comparison, not for replacing formal security analysis
+- Current FRI benchmark rows now expose the paper-facing repetition parameter `m`; STIR benchmark rows still use engineering scheduling metadata during the transition
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
 
 ## Paper Alignment Boundaries
@@ -37,7 +37,7 @@ Current FRI support should be read as a paper-aligned subset of the Section 4.1 
 Phase-0 target freeze for the soundness-repair plan:
 
 - the eventual theorem-facing PCS path is intended to support verifier challenges `alpha <- T` across the full Teichmuller set, not only the current prototype subset `T \ L`
-- the eventual theorem-facing FRI API is intended to expose the paper's repetition parameter `m` explicitly instead of reusing the current engineering query-schedule knobs
+- the theorem-facing FRI API now exposes the paper's repetition parameter `m` explicitly instead of reusing engineering query-schedule knobs
 - the current sparse-opening `commit / open / verify` surface remains a prototype / benchmark-oriented path during the transition and should not be mistaken for the final theorem-facing PCS contract
 
 Supported now:
@@ -145,6 +145,7 @@ Run parameter search:
   --build-dir build-release \
   --n-values 81,243 \
   --rho-values 1/3,1/9 \
+  --fri-repetitions 2 \
   --soundness 128:22:ConjectureCapacity:auto
 ```
 
@@ -156,7 +157,9 @@ Benchmark notes:
 - `serialized_bytes_actual` is computed from the deterministic serializer of the actual external message shape rather than from hand-written compact payload formulas
 - Current FRI rows count the prover reply opening message (`value + opening proof`) rather than `commitment + opening` combined bytes; `alpha` remains verifier-chosen context and is not charged to the prover reply
 - Current STIR rows count the exact serialized bytes of the public `StirProof`; the optional `prove_with_witness()` compatibility carrier is not charged
-- `soundness_model`, `soundness_scope`, `effective_security_bits`, and the `ConjectureCapacity` / `Conservative` labels are engineering calibration metadata for benchmark scheduling; they are not theorem-backed security claims or paper-complete parameter instantiations
+- Current `fri3` / `fri9` rows report the explicit theorem-facing repetition count `m` in `fri_repetitions`; they do not derive `effective_security_bits` from that value inside `bench_time`
+- Current `stir9to3` rows still use `soundness_model`, `soundness_scope`, `effective_security_bits`, and the `ConjectureCapacity` / `Conservative` labels as engineering calibration metadata; they are not theorem-backed security claims or paper-complete parameter instantiations
+- Current parameter-search tooling remains STIR-engineering-oriented for `lambda/pow/sec-mode/queries`; when FRI rows are present, they use the fixed `fri_repetitions` value passed to `bench_time`
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 
 ## Preset Workloads
