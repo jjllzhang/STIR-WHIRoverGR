@@ -212,6 +212,72 @@ bool VerifyVirtualFirstRoundFiber(
   }
 }
 
+bool VerifyZeroFoldVirtualQuotient(
+    const FriCommitment& commitment,
+    const std::vector<swgr::algebra::GRElem>& committed_oracle,
+    const swgr::algebra::GRElem& alpha, const swgr::algebra::GRElem& value,
+    std::uint64_t reduced_degree_bound) {
+  const auto& domain = commitment.domain;
+  const auto& ctx = domain.context();
+  try {
+    return ctx.with_ntl_context([&]() -> bool {
+      std::vector<swgr::algebra::GRElem> quotient_points;
+      std::vector<swgr::algebra::GRElem> quotient_values;
+      quotient_points.reserve(domain.size());
+      quotient_values.reserve(domain.size());
+
+      bool saw_alpha = false;
+      for (std::uint64_t index = 0; index < domain.size(); ++index) {
+        const auto point = domain.element(index);
+        const auto& f_value = committed_oracle[static_cast<std::size_t>(index)];
+        if (point == alpha) {
+          if (f_value != value) {
+            return false;
+          }
+          saw_alpha = true;
+          continue;
+        }
+
+        const auto denominator = point - alpha;
+        if (!ctx.is_unit(denominator)) {
+          return false;
+        }
+        const auto denominator_inverse = Inv(
+            denominator, static_cast<long>(ctx.config().r));
+        if (denominator_inverse == 0) {
+          return false;
+        }
+        quotient_points.push_back(point);
+        quotient_values.push_back((f_value - value) * denominator_inverse);
+      }
+
+      if (quotient_points.empty()) {
+        return reduced_degree_bound == 0;
+      }
+
+      const auto quotient_polynomial = swgr::poly_utils::interpolate_for_gr_wrapper(
+          ctx, quotient_points, quotient_values);
+      if (quotient_polynomial.degree() > reduced_degree_bound) {
+        return false;
+      }
+
+      if (!saw_alpha) {
+        return true;
+      }
+
+      for (std::size_t i = 0; i < quotient_points.size(); ++i) {
+        if (quotient_polynomial.evaluate(ctx, quotient_points[i]) !=
+            quotient_values[i]) {
+          return false;
+        }
+      }
+      return true;
+    });
+  } catch (...) {
+    return false;
+  }
+}
+
 }  // namespace
 
 FriVerifier::FriVerifier(FriParameters params) : params_(std::move(params)) {}
@@ -239,8 +305,7 @@ bool FriVerifier::verify(const FriCommitment& commitment,
       if (!opening.proof.oracle_roots.empty() || !opening.proof.rounds.empty() ||
           opening.proof.revealed_committed_oracle.size() !=
               static_cast<std::size_t>(commitment.domain.size()) ||
-          opening.proof.final_oracle.size() !=
-              static_cast<std::size_t>(reduced_instance.domain.size())) {
+          !opening.proof.final_oracle.empty()) {
         return false;
       }
 
@@ -255,31 +320,9 @@ bool FriVerifier::verify(const FriCommitment& commitment,
           ElapsedMilliseconds(merkle_start, std::chrono::steady_clock::now());
 
       const auto algebra_start = std::chrono::steady_clock::now();
-      const bool algebra_ok = ctx.with_ntl_context([&]() -> bool {
-        const auto final_polynomial = swgr::poly_utils::rs_interpolate(
-            reduced_instance.domain, opening.proof.final_oracle);
-        if (final_polynomial.degree() > reduced_instance.claimed_degree) {
-          return false;
-        }
-        for (std::uint64_t index = 0; index < reduced_instance.domain.size();
-             ++index) {
-          const auto point = reduced_instance.domain.element(index);
-          const auto& f_value = opening.proof.revealed_committed_oracle
-              [static_cast<std::size_t>(index)];
-          const auto& g_value =
-              opening.proof.final_oracle[static_cast<std::size_t>(index)];
-          if (point == alpha) {
-            if (f_value != value) {
-              return false;
-            }
-            continue;
-          }
-          if (g_value * (point - alpha) + value != f_value) {
-            return false;
-          }
-        }
-        return true;
-      });
+      const bool algebra_ok = VerifyZeroFoldVirtualQuotient(
+          commitment, opening.proof.revealed_committed_oracle, alpha, value,
+          reduced_instance.claimed_degree);
       if (!algebra_ok) {
         return false;
       }

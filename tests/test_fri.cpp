@@ -306,7 +306,7 @@ void TestFriPcsCommitOpenVerifyRoundtripAlphaInsideDomain() {
 
 void TestFriZeroFoldRoundtrip() {
   testutil::PrintInfo(
-      "zero-fold theorem-facing fri reveals the full committed and final tables");
+      "zero-fold theorem-facing fri reveals only the committed table and keeps g0 virtual");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto instance = MakeInstance(ctx, 9, 1);
@@ -324,7 +324,7 @@ void TestFriZeroFoldRoundtrip() {
   CHECK(opening.proof.oracle_roots.empty());
   CHECK(opening.proof.rounds.empty());
   CHECK_EQ(opening.proof.revealed_committed_oracle.size(), std::size_t{9});
-  CHECK_EQ(opening.proof.final_oracle.size(), std::size_t{9});
+  CHECK(opening.proof.final_oracle.empty());
 }
 
 void TestFriPcsRejectsWrongPolynomialForCommitment() {

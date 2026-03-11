@@ -179,7 +179,6 @@ FriOpening FriProver::open(const FriCommitment& commitment,
   AbsorbEvaluationClaim(transcript, ctx, alpha, value);
 
   if (total_rounds == 0) {
-    opening.proof.final_oracle = quotient_oracle;
     opening.proof.revealed_committed_oracle = committed_oracle;
   } else {
     const auto query_rounds = resolve_query_rounds_metadata(params_, reduced_instance);

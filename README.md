@@ -49,12 +49,14 @@ Supported now:
 - Merkle commitments for `f` and for each explicit folded oracle `g_i`, `i >= 1`
 - Fiat-Shamir-replayed folding challenges and theorem-facing repetition parameter `m`
 - a virtual `g_0` relation checked against committed `f|L`, including the `alpha in L` first-round exception path
+- zero-fold openings that reveal the full committed oracle table so the verifier can reconstruct the virtual terminal `g_0` locally, without an extra explicit quotient-table message
 - terminal verifier-side interpolation and degree checking from the revealed final oracle table
 
-Residual deltas still worth keeping explicit:
+Soundness interpretation:
 
-- the zero-fold PCS opening path reveals the full committed oracle and full quotient oracle table together, because there are no explicit folded-oracle rounds to mediate the virtual-oracle relation
-- a formal soundness proof for this fixed-parameter Galois-ring adaptation
+- For the standalone FRI PCS path, this repository should be read as a reference implementation of the paper's BCS-style protocol surface over the repo's fixed parameter choices.
+- Because the implemented protocol flow matches that paper-facing BCS version, the implementation should be understood as inheriting the paper's soundness bound under the same assumptions, rather than as requiring a separate repo-specific soundness theorem for deployment claims.
+- This repository still does not target production deployment or audited cryptographic assurance; its role is protocol reference, experimentation, and measurement.
 
 Current STIR support should be read similarly: the public proof shape now aligns with Construction 5.2-style rounds and final-polynomial consistency checks, but the repository still implements a fixed-parameter Galois-ring adaptation rather than a full theorem-level reproduction of the field-model paper.
 
