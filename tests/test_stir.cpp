@@ -1,5 +1,6 @@
 #include <NTL/ZZ_pE.h>
 
+#include <algorithm>
 #include <exception>
 #include <iostream>
 #include <string>
@@ -7,6 +8,8 @@
 #include <vector>
 
 #include "algebra/gr_context.hpp"
+#include "algebra/teichmuller.hpp"
+#include "crypto/fs/transcript.hpp"
 #include "domain.hpp"
 #include "poly_utils/polynomial.hpp"
 #include "stir/prover.hpp"
@@ -353,6 +356,110 @@ void TestStirExceptionalSetsStayUnitDifferenceSafe() {
   CHECK(!swgr::stir::points_have_unit_differences(shift_domain, bad_points));
 }
 
+void TestStirTheoremChallengesLieInTeichmullerSet() {
+  testutil::PrintInfo(
+      "stir theorem folding and comb challenges are sampled from T");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  swgr::crypto::Transcript transcript(swgr::HashProfile::STIR_NATIVE);
+
+  for (std::size_t round_index = 0; round_index < 16; ++round_index) {
+    const std::vector<std::uint8_t> root_bytes{
+        static_cast<std::uint8_t>(0x40U + round_index)};
+    transcript.absorb_bytes(root_bytes);
+    const auto folding = swgr::stir::derive_stir_folding_challenge(
+        transcript, ctx, "stir.fold_alpha:" + std::to_string(round_index));
+    const auto comb = swgr::stir::derive_stir_comb_challenge(
+        transcript, ctx, "stir.comb:" + std::to_string(round_index));
+    CHECK(swgr::algebra::is_teichmuller_element(ctx, folding));
+    CHECK(swgr::algebra::is_teichmuller_element(ctx, comb));
+  }
+}
+
+void TestStirTeichmullerUnitSubsetHelper() {
+  testutil::PrintInfo(
+      "stir teichmuller-unit helper rejects non-teich cosets and excludes zero");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const Domain subgroup = Domain::teichmuller_subgroup(ctx, 9);
+  const Domain teich_coset =
+      Domain::teichmuller_coset(ctx, ctx.teich_generator(), 9);
+  const auto non_teich_unit = ctx.with_ntl_context([&] {
+    auto three = ctx.one();
+    three += ctx.one();
+    three += ctx.one();
+    return three;
+  });
+  const Domain non_teich_coset =
+      Domain::teichmuller_coset(ctx, non_teich_unit, 9);
+
+  CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(subgroup));
+  CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(teich_coset));
+  CHECK(!swgr::stir::domain_is_subset_of_teichmuller_units(non_teich_coset));
+}
+
+void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
+  testutil::PrintInfo(
+      "stir theorem OOD and shake samplers draw from an explicit T* safe complement");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx, 27, 26);
+  const auto folded_domain = instance.domain.pow_map(9);
+  const auto shift_domain = instance.domain.scale_offset(3);
+  swgr::crypto::Transcript ood_transcript(swgr::HashProfile::STIR_NATIVE);
+  swgr::crypto::Transcript shake_transcript(swgr::HashProfile::STIR_NATIVE);
+
+  const auto ood_points = swgr::stir::derive_theorem_ood_points(
+      instance.domain, shift_domain, folded_domain, ood_transcript,
+      "stir.theorem.ood", 2);
+  CHECK_EQ(ood_points.size(), std::size_t{2});
+  for (const auto& point : ood_points) {
+    CHECK(swgr::algebra::is_teichmuller_element(ctx, point));
+    CHECK(ctx.is_unit(point));
+    CHECK(!instance.domain.contains(point));
+    CHECK(!shift_domain.contains(point));
+    CHECK(!folded_domain.contains(point));
+  }
+
+  std::vector<GRElem> quotient_points = ood_points;
+  quotient_points.push_back(folded_domain.element(0));
+  quotient_points.push_back(folded_domain.element(1));
+  const auto shake_point = swgr::stir::derive_theorem_shake_point(
+      instance.domain, shift_domain, folded_domain, quotient_points,
+      shake_transcript, "stir.theorem.shake");
+  CHECK(swgr::algebra::is_teichmuller_element(ctx, shake_point));
+  CHECK(ctx.is_unit(shake_point));
+  CHECK(!instance.domain.contains(shake_point));
+  CHECK(!shift_domain.contains(shake_point));
+  CHECK(!folded_domain.contains(shake_point));
+  CHECK(std::find(quotient_points.begin(), quotient_points.end(), shake_point) ==
+        quotient_points.end());
+
+  const auto theorem_params = MakeTheoremParams();
+  swgr::crypto::Transcript wrapped_ood_transcript(swgr::HashProfile::STIR_NATIVE);
+  swgr::crypto::Transcript direct_ood_transcript(swgr::HashProfile::STIR_NATIVE);
+  const auto wrapped_ood_points = swgr::stir::derive_ood_points(
+      theorem_params, instance.domain, shift_domain, folded_domain,
+      wrapped_ood_transcript, "stir.theorem.ood.dispatch", 2);
+  const auto direct_ood_points = swgr::stir::derive_theorem_ood_points(
+      instance.domain, shift_domain, folded_domain, direct_ood_transcript,
+      "stir.theorem.ood.dispatch", 2);
+  CHECK_EQ(wrapped_ood_points.size(), direct_ood_points.size());
+  for (std::size_t i = 0; i < wrapped_ood_points.size(); ++i) {
+    CHECK_EQ(wrapped_ood_points[i], direct_ood_points[i]);
+  }
+
+  swgr::crypto::Transcript wrapped_shake_transcript(swgr::HashProfile::STIR_NATIVE);
+  swgr::crypto::Transcript direct_shake_transcript(swgr::HashProfile::STIR_NATIVE);
+  const auto wrapped_shake_point = swgr::stir::derive_shake_point(
+      theorem_params, instance.domain, shift_domain, folded_domain,
+      quotient_points, wrapped_shake_transcript, "stir.theorem.shake.dispatch");
+  const auto direct_shake_dispatch = swgr::stir::derive_theorem_shake_point(
+      instance.domain, shift_domain, folded_domain, quotient_points,
+      direct_shake_transcript, "stir.theorem.shake.dispatch");
+  CHECK_EQ(wrapped_shake_point, direct_shake_dispatch);
+}
+
 void TestStirRejectsTamperedPrevQueryOpening() {
   testutil::PrintInfo("stir verifier rejects a tampered previous-oracle opening");
 
@@ -617,6 +724,9 @@ int main() {
     RUN_TEST(TestStirManualQueriesOverrideAutoSchedule);
     RUN_TEST(TestStirCapsOversubscribedQueriesWithDegreeBudget);
     RUN_TEST(TestStirExceptionalSetsStayUnitDifferenceSafe);
+    RUN_TEST(TestStirTheoremChallengesLieInTeichmullerSet);
+    RUN_TEST(TestStirTeichmullerUnitSubsetHelper);
+    RUN_TEST(TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits);
     RUN_TEST(TestStirRejectsTamperedPrevQueryOpening);
     RUN_TEST(TestStirRejectsTamperedInitialRoot);
     RUN_TEST(TestStirRejectsTamperedGRoot);

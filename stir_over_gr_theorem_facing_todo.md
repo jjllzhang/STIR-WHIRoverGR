@@ -109,29 +109,29 @@ Files:
 
 Functions to add:
 
-- [ ] `swgr::algebra::GRElem derive_stir_folding_challenge(swgr::crypto::Transcript&, const swgr::algebra::GRContext&, std::string_view label);`
-- [ ] `swgr::algebra::GRElem derive_stir_comb_challenge(swgr::crypto::Transcript&, const swgr::algebra::GRContext&, std::string_view label);`
-- [ ] `bool domain_is_subset_of_teichmuller_units(const Domain& domain);`
-- [ ] `std::vector<swgr::algebra::GRElem> derive_theorem_ood_points(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, swgr::crypto::Transcript& transcript, std::string_view label_prefix, std::uint64_t sample_count);`
-- [ ] `swgr::algebra::GRElem derive_theorem_shake_point(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, const std::vector<swgr::algebra::GRElem>& quotient_points, swgr::crypto::Transcript& transcript, std::string_view label_prefix);`
+- [x] `swgr::algebra::GRElem derive_stir_folding_challenge(swgr::crypto::Transcript&, const swgr::algebra::GRContext&, std::string_view label);`
+- [x] `swgr::algebra::GRElem derive_stir_comb_challenge(swgr::crypto::Transcript&, const swgr::algebra::GRContext&, std::string_view label);`
+- [x] `bool domain_is_subset_of_teichmuller_units(const Domain& domain);`
+- [x] `std::vector<swgr::algebra::GRElem> derive_theorem_ood_points(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, swgr::crypto::Transcript& transcript, std::string_view label_prefix, std::uint64_t sample_count);`
+- [x] `swgr::algebra::GRElem derive_theorem_shake_point(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, const std::vector<swgr::algebra::GRElem>& quotient_points, swgr::crypto::Transcript& transcript, std::string_view label_prefix);`
 
 Existing functions to refactor behind mode switches:
 
-- [ ] `derive_ood_points(...)`
-- [ ] `derive_shake_point(...)`
+- [x] `derive_ood_points(...)`
+- [x] `derive_shake_point(...)`
 
 Implementation notes:
 
-- [ ] `derive_stir_folding_challenge(...)` must route to `Transcript::challenge_teichmuller(...)`.
-- [ ] `derive_stir_comb_challenge(...)` must route to `Transcript::challenge_teichmuller(...)`.
-- [ ] The theorem OOD helper must sample from an explicit safe complement, not from `input_domain.scale_offset(1)` as an implicit engineering candidate domain.
-- [ ] The theorem shake helper must sample from an explicit safe complement of the current quotient set.
-- [ ] Keep the current prototype helpers as separate code paths to avoid breaking current benchmarks during migration.
+- [x] `derive_stir_folding_challenge(...)` must route to `Transcript::challenge_teichmuller(...)`.
+- [x] `derive_stir_comb_challenge(...)` must route to `Transcript::challenge_teichmuller(...)`.
+- [x] The theorem OOD helper must sample from an explicit safe complement, not from `input_domain.scale_offset(1)` as an implicit engineering candidate domain.
+- [x] The theorem shake helper must sample from an explicit safe complement of the current quotient set.
+- [x] Keep the current prototype helpers as separate code paths to avoid breaking current benchmarks during migration.
 
 Acceptance:
 
-- [ ] New helpers compile without changing current prover/verifier outputs in prototype mode.
-- [ ] Unit tests can directly assert that theorem fold/comb challenges lie in `T`.
+- [x] New helpers compile without changing current prover/verifier outputs in prototype mode.
+- [x] Unit tests can directly assert that theorem fold/comb challenges lie in `T`.
 
 Suggested commit:
 

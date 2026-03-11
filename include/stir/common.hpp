@@ -75,6 +75,16 @@ bool points_have_unit_differences(
 
 bool domains_have_unit_differences(const Domain& lhs, const Domain& rhs);
 
+swgr::algebra::GRElem derive_stir_folding_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label);
+
+swgr::algebra::GRElem derive_stir_comb_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label);
+
+bool domain_is_subset_of_teichmuller_units(const Domain& domain);
+
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
                                   std::uint64_t fold_factor);
 
@@ -96,11 +106,34 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
     std::uint64_t sample_count);
 
 std::vector<swgr::algebra::GRElem> derive_ood_points(
+    const StirParameters& params, const Domain& input_domain,
+    const Domain& shift_domain, const Domain& folded_domain,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t sample_count);
+
+std::vector<swgr::algebra::GRElem> derive_ood_points(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    std::string_view label_prefix, std::uint64_t sample_count);
+
+std::vector<swgr::algebra::GRElem> derive_theorem_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain, swgr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count);
 
 swgr::algebra::GRElem derive_shake_point(
+    const StirParameters& params, const Domain& input_domain,
+    const Domain& shift_domain, const Domain& folded_domain,
+    const std::vector<swgr::algebra::GRElem>& quotient_points,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix);
+
+swgr::algebra::GRElem derive_shake_point(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    const std::vector<swgr::algebra::GRElem>& quotient_points,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix);
+
+swgr::algebra::GRElem derive_theorem_shake_point(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
     const std::vector<swgr::algebra::GRElem>& quotient_points,

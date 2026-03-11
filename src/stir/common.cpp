@@ -6,10 +6,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <stdexcept>
 #include <span>
 #include <vector>
 
+#include "algebra/teichmuller.hpp"
 #include "fri/common.hpp"
 
 using NTL::clear;
@@ -70,7 +72,7 @@ void SerializeStirProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
   SerializeMerkleProof(sink, proof.queries_to_final);
 }
 
-bool Contains(const std::vector<algebra::GRElem>& values,
+bool Contains(std::span<const algebra::GRElem> values,
               const algebra::GRElem& candidate) {
   for (const auto& value : values) {
     if (value == candidate) {
@@ -82,7 +84,7 @@ bool Contains(const std::vector<algebra::GRElem>& values,
 
 bool ExceptionalAgainst(const algebra::GRContext& ctx,
                         const algebra::GRElem& candidate,
-                        const std::vector<algebra::GRElem>& others) {
+                        std::span<const algebra::GRElem> others) {
   return ctx.with_ntl_context([&] {
     for (const auto& other : others) {
       if (candidate == other) {
@@ -151,6 +153,73 @@ std::vector<swgr::algebra::GRElem> EnumerateDomainPoints(const Domain& domain) {
   return points;
 }
 
+constexpr std::uint64_t kTheoremSamplerAttemptFactor = 64U;
+
+bool TheoremSafeComplementCandidate(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    std::span<const swgr::algebra::GRElem> excluded_points,
+    std::span<const swgr::algebra::GRElem> chosen_points,
+    const swgr::algebra::GRElem& candidate) {
+  const auto& ctx = input_domain.context();
+  const auto input_points = input_domain.elements();
+  const auto shift_points = shift_domain.elements();
+  const auto folded_points = folded_domain.elements();
+
+  if (candidate == ctx.zero() || Contains(input_points, candidate) ||
+      Contains(shift_points, candidate) || Contains(folded_points, candidate) ||
+      Contains(excluded_points, candidate) || Contains(chosen_points, candidate)) {
+    return false;
+  }
+
+  return ExceptionalAgainst(ctx, candidate, input_points) &&
+         ExceptionalAgainst(ctx, candidate, shift_points) &&
+         ExceptionalAgainst(ctx, candidate, folded_points) &&
+         ExceptionalAgainst(ctx, candidate, excluded_points) &&
+         ExceptionalAgainst(ctx, candidate, chosen_points);
+}
+
+std::vector<swgr::algebra::GRElem> SampleTheoremSafeComplement(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    std::span<const swgr::algebra::GRElem> excluded_points,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t sample_count) {
+  if (sample_count == 0) {
+    return {};
+  }
+
+  std::vector<swgr::algebra::GRElem> result;
+  result.reserve(static_cast<std::size_t>(sample_count));
+  const auto teich_size = swgr::algebra::teichmuller_set_size(input_domain.context());
+  if (teich_size <= 1) {
+    throw std::runtime_error("theorem sampler requires a non-empty T*");
+  }
+
+  const std::uint64_t max_attempts =
+      std::max<std::uint64_t>(sample_count * kTheoremSamplerAttemptFactor,
+                              kTheoremSamplerAttemptFactor);
+  for (std::uint64_t attempt = 0;
+       result.size() < static_cast<std::size_t>(sample_count) &&
+       attempt < max_attempts;
+       ++attempt) {
+    const auto candidate = transcript.challenge_teichmuller(
+        input_domain.context(),
+        std::string(label_prefix) + ":" + std::to_string(attempt));
+    if (!TheoremSafeComplementCandidate(input_domain, shift_domain,
+                                        folded_domain, excluded_points, result,
+                                        candidate)) {
+      continue;
+    }
+    result.push_back(candidate);
+  }
+
+  if (result.size() != static_cast<std::size_t>(sample_count)) {
+    throw std::runtime_error("theorem sampler failed to find enough samples");
+  }
+  return result;
+}
+
 }  // namespace
 
 std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
@@ -187,6 +256,33 @@ bool domains_have_unit_differences(const Domain& lhs, const Domain& rhs) {
 
   const auto rhs_points = rhs.elements();
   return points_have_unit_differences(lhs, rhs_points);
+}
+
+swgr::algebra::GRElem derive_stir_folding_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label) {
+  return transcript.challenge_teichmuller(ctx, label);
+}
+
+swgr::algebra::GRElem derive_stir_comb_challenge(
+    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+    std::string_view label) {
+  return transcript.challenge_teichmuller(ctx, label);
+}
+
+bool domain_is_subset_of_teichmuller_units(const Domain& domain) {
+  const auto& ctx = domain.context();
+  if (!domain.is_teichmuller_subset()) {
+    return false;
+  }
+  return ctx.with_ntl_context([&] {
+    for (const auto& point : domain.elements()) {
+      if (point == ctx.zero() || !ctx.is_unit(point)) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
@@ -297,6 +393,19 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
 }
 
 std::vector<swgr::algebra::GRElem> derive_ood_points(
+    const StirParameters& params, const Domain& input_domain,
+    const Domain& shift_domain, const Domain& folded_domain,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t sample_count) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+    return derive_theorem_ood_points(input_domain, shift_domain, folded_domain,
+                                     transcript, label_prefix, sample_count);
+  }
+  return derive_ood_points(input_domain, shift_domain, folded_domain, transcript,
+                           label_prefix, sample_count);
+}
+
+std::vector<swgr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain, swgr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count) {
@@ -337,6 +446,30 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
   return result;
 }
 
+std::vector<swgr::algebra::GRElem> derive_theorem_ood_points(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    std::string_view label_prefix, std::uint64_t sample_count) {
+  return SampleTheoremSafeComplement(
+      input_domain, shift_domain, folded_domain,
+      std::span<const swgr::algebra::GRElem>(), transcript, label_prefix,
+      sample_count);
+}
+
+swgr::algebra::GRElem derive_shake_point(
+    const StirParameters& params, const Domain& input_domain,
+    const Domain& shift_domain, const Domain& folded_domain,
+    const std::vector<swgr::algebra::GRElem>& quotient_points,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+    return derive_theorem_shake_point(input_domain, shift_domain, folded_domain,
+                                      quotient_points, transcript,
+                                      label_prefix);
+  }
+  return derive_shake_point(input_domain, shift_domain, folded_domain,
+                            quotient_points, transcript, label_prefix);
+}
+
 swgr::algebra::GRElem derive_shake_point(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
@@ -364,6 +497,17 @@ swgr::algebra::GRElem derive_shake_point(
   }
 
   throw std::runtime_error("derive_shake_point failed to find a valid sample");
+}
+
+swgr::algebra::GRElem derive_theorem_shake_point(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    const std::vector<swgr::algebra::GRElem>& quotient_points,
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix) {
+  return SampleTheoremSafeComplement(input_domain, shift_domain, folded_domain,
+                                     quotient_points, transcript, label_prefix,
+                                     1)
+      .front();
 }
 
 bool try_reuse_next_round_input_oracle(
