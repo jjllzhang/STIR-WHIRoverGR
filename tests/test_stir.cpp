@@ -4,6 +4,7 @@
 #include <exception>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "domain.hpp"
 #include "poly_utils/polynomial.hpp"
 #include "stir/prover.hpp"
+#include "stir/soundness.hpp"
 #include "stir/verifier.hpp"
 #include "tests/test_common.hpp"
 
@@ -170,6 +172,13 @@ void TamperFinalQueryPayload(swgr::stir::StirProof* proof) {
 void TamperCompatWitness(const GRContext& ctx,
                          swgr::stir::StirProofWithWitness* artifact) {
   NudgePolynomial(ctx, &artifact->witness.rounds[0].input_polynomial);
+}
+
+bool ContainsSubstring(const std::vector<std::string>& values,
+                       std::string_view needle) {
+  return std::any_of(values.begin(), values.end(), [&](const std::string& value) {
+    return value.find(needle) != std::string::npos;
+  });
 }
 
 void TestStir9to3HonestRoundtripAndRoundShape() {
@@ -567,6 +576,64 @@ void TestStirTheoremModeMultiRoundUsesPublicRootChain() {
            swgr::stir::serialized_message_bytes(ctx, proof));
 }
 
+void TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance() {
+  testutil::PrintInfo(
+      "theorem stir soundness analysis computes a conservative supported bound");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 54});
+  const swgr::stir::StirInstance instance{
+      .domain = Domain::teichmuller_subgroup(ctx, 81),
+      .claimed_degree = 26,
+  };
+  auto params = MakeTheoremParams({2, 4}, 3);
+  params.ood_samples = 1;
+
+  CHECK(swgr::stir::validate(params, instance));
+
+  const auto analysis = swgr::stir::analyze_theorem_soundness(params, instance);
+  CHECK(analysis.feasible);
+  CHECK_EQ(
+      analysis.flavor,
+      swgr::stir::StirTheoremSoundnessFlavor::GrConservativeUniqueOod);
+  CHECK_EQ(analysis.proximity_gap_model,
+           std::string("z2ksnark_gr_unique_gap_envelope_s_times_ell_sq_over_T"));
+  CHECK_EQ(analysis.ood_model,
+           std::string("unique_decoding_exceptional_complement"));
+  CHECK_EQ(analysis.rounds.size(), std::size_t{1});
+  CHECK(analysis.rounds.empty() || analysis.rounds[0].epsilon_out == 0.0L);
+  CHECK(analysis.epsilon_fold > 0.0);
+  CHECK(analysis.epsilon_fin > 0.0);
+  CHECK_EQ(analysis.effective_security_bits, std::uint64_t{0});
+  CHECK(ContainsSubstring(analysis.assumptions, "conservative") ||
+        ContainsSubstring(analysis.assumptions, "Z2KSNARK"));
+}
+
+void TestStirTheoremSoundnessAnalysisRejectsUnsupportedRegimes() {
+  testutil::PrintInfo(
+      "theorem stir soundness analysis marks oversized or trivial regimes unsupported");
+
+  const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
+  const auto instance = MakeInstance(ctx, 243, 161);
+  auto params = MakeTheoremParams({1, 1}, 3);
+  params.ood_samples = 1;
+
+  CHECK(swgr::stir::validate(params, instance));
+
+  const auto analysis = swgr::stir::analyze_theorem_soundness(params, instance);
+  CHECK(!analysis.feasible);
+  CHECK_EQ(
+      analysis.flavor,
+      swgr::stir::StirTheoremSoundnessFlavor::GrConservativeUniqueOod);
+  CHECK(analysis.rounds.size() <= std::size_t{2});
+  CHECK(analysis.rounds.empty() || analysis.rounds[0].epsilon_out == 0.0L);
+  CHECK(analysis.epsilon_fold >= 0.0L);
+  CHECK(analysis.effective_security_bits == std::uint64_t{0});
+  CHECK(ContainsSubstring(analysis.assumptions, "Unsupported") ||
+        ContainsSubstring(analysis.assumptions, "trivial") ||
+        (!analysis.rounds.empty() && ContainsSubstring(analysis.rounds[0].notes, "Unsupported")) ||
+        (!analysis.rounds.empty() && ContainsSubstring(analysis.rounds[0].notes, "trivial")));
+}
+
 void TestStirRejectsTamperedPrevQueryOpening() {
   testutil::PrintInfo("stir verifier rejects a tampered previous-oracle opening");
 
@@ -837,6 +904,8 @@ int main() {
     RUN_TEST(TestStirTheoremValidationRejectsBadDomainsAndExhaustedPools);
     RUN_TEST(TestStirTheoremModeHonestRoundtripAndRoundShape);
     RUN_TEST(TestStirTheoremModeMultiRoundUsesPublicRootChain);
+    RUN_TEST(TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance);
+    RUN_TEST(TestStirTheoremSoundnessAnalysisRejectsUnsupportedRegimes);
     RUN_TEST(TestStirRejectsTamperedPrevQueryOpening);
     RUN_TEST(TestStirRejectsTamperedInitialRoot);
     RUN_TEST(TestStirRejectsTamperedGRoot);

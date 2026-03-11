@@ -226,58 +226,58 @@ Files to add:
 
 Build-system changes:
 
-- [ ] Add `src/stir/soundness.cpp` to `STIR_OVER_GR_SOURCES` in `CMakeLists.txt`.
+- [x] Add `src/stir/soundness.cpp` to `STIR_OVER_GR_SOURCES` in `CMakeLists.txt`.
 
 Types to add:
 
-- [ ] `enum class StirTheoremSoundnessFlavor { GrConservativeUniqueOod };`
-- [ ] `struct StirRoundTheoremSoundnessTerm`
-- [ ] `struct StirTheoremSoundnessAnalysis`
+- [x] `enum class StirTheoremSoundnessFlavor { GrConservativeUniqueOod };`
+- [x] `struct StirRoundTheoremSoundnessTerm`
+- [x] `struct StirTheoremSoundnessAnalysis`
 
 Suggested fields for `StirRoundTheoremSoundnessTerm`:
 
-- [ ] `round_index`
-- [ ] `epsilon_out`
-- [ ] `epsilon_shift`
-- [ ] `degree_bound`
-- [ ] `domain_size`
-- [ ] `effective_query_count`
-- [ ] `notes`
+- [x] `round_index`
+- [x] `epsilon_out`
+- [x] `epsilon_shift`
+- [x] `degree_bound`
+- [x] `domain_size`
+- [x] `effective_query_count`
+- [x] `notes`
 
 Suggested fields for `StirTheoremSoundnessAnalysis`:
 
-- [ ] `flavor`
-- [ ] `feasible`
-- [ ] `epsilon_fold`
-- [ ] `epsilon_fin`
-- [ ] `rounds`
-- [ ] `effective_security_bits`
-- [ ] `proximity_gap_model`
-- [ ] `ood_model`
-- [ ] `assumptions`
+- [x] `flavor`
+- [x] `feasible`
+- [x] `epsilon_fold`
+- [x] `epsilon_fin`
+- [x] `rounds`
+- [x] `effective_security_bits`
+- [x] `proximity_gap_model`
+- [x] `ood_model`
+- [x] `assumptions`
 
 Functions to add:
 
-- [ ] `StirTheoremSoundnessAnalysis analyze_theorem_soundness(const StirParameters&, const StirInstance&);`
-- [ ] Internal helper for fold term analysis.
-- [ ] Internal helper for OOD term analysis.
-- [ ] Internal helper for shift term analysis.
-- [ ] Internal helper for final-query term analysis.
+- [x] `StirTheoremSoundnessAnalysis analyze_theorem_soundness(const StirParameters&, const StirInstance&);`
+- [x] Internal helper for fold term analysis.
+- [x] Internal helper for OOD term analysis.
+- [x] Internal helper for shift term analysis.
+- [x] Internal helper for final-query term analysis.
 
 First-landing theorem assumptions to encode:
 
-- [ ] `epsilon_out = 0` in theorem mode because OOD runs in a unique-decoding regime.
-- [ ] `epsilon_fold` uses a conservative GR folding-soundness bound derived from existing Z2KSNARK proximity results.
-- [ ] `epsilon_shift` is decomposed into:
+- [x] `epsilon_out = 0` in theorem mode because OOD runs in a unique-decoding regime.
+- [x] `epsilon_fold` uses a conservative GR folding-soundness bound derived from existing Z2KSNARK proximity results.
+- [x] `epsilon_shift` is decomposed into:
   - `(1 - delta) ^ t` shift-hit term,
   - conservative GR degree-correction term,
   - conservative GR folding term.
-- [ ] Any missing closed-form constants must be surfaced in `assumptions` and `notes`; do not silently invent paper-equivalent constants.
+- [x] Any missing closed-form constants must be surfaced in `assumptions` and `notes`; do not silently invent paper-equivalent constants.
 
 Acceptance:
 
-- [ ] The analysis object can be computed from the live `StirParameters` and `StirInstance`.
-- [ ] Theorem mode can report `feasible=false` for unsupported parameter sets instead of producing misleading metadata.
+- [x] The analysis object can be computed from the live `StirParameters` and `StirInstance`.
+- [x] Theorem mode can report `feasible=false` for unsupported parameter sets instead of producing misleading metadata.
 
 Suggested commit:
 

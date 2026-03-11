@@ -54,6 +54,7 @@ set(STIR_OVER_GR_SOURCES
     src/fri/verifier.cpp
     src/stir/common.cpp
     src/stir/parameters.cpp
+    src/stir/soundness.cpp
     src/stir/prover.cpp
     src/stir/verifier.cpp
     src/whir/common.cpp
