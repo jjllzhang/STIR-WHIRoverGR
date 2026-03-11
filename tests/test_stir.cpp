@@ -460,6 +460,61 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
   CHECK_EQ(wrapped_shake_point, direct_shake_dispatch);
 }
 
+void TestStirTheoremModeHonestRoundtripAndRoundShape() {
+  testutil::PrintInfo(
+      "theorem-mode stir honest prover/verifier passes without changing proof shape");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const auto instance = MakeInstance(ctx);
+  const auto params = MakeTheoremParams();
+  const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  const auto proof = prover.prove(instance, polynomial);
+  const auto artifact = prover.prove_with_witness(instance, polynomial);
+
+  CHECK(verifier.verify(instance, proof));
+  CHECK(verifier.verify(instance, artifact));
+  CHECK_EQ(proof.initial_root, artifact.proof.initial_root);
+  CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{1});
+  CHECK_EQ(proof.rounds.size(), std::size_t{1});
+  CHECK(!proof.initial_root.empty());
+  CHECK(!proof.rounds[0].g_root.empty());
+  CHECK_EQ(proof.rounds[0].betas.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[0].queries_to_prev.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
+  CHECK(proof.final_polynomial.degree() <= std::size_t{0});
+  CHECK_EQ(proof.stats.serialized_bytes,
+           swgr::stir::serialized_message_bytes(ctx, proof));
+  CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
+}
+
+void TestStirTheoremModeMultiRoundUsesPublicRootChain() {
+  testutil::PrintInfo(
+      "theorem-mode multi-round stir keeps the existing public proof shape");
+
+  const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
+  const auto instance = MakeInstance(ctx, 243, 161);
+  auto params = MakeTheoremParams({1, 1}, 3);
+  params.ood_samples = 1;
+  const auto polynomial = SamplePolynomial(
+      ctx, instance.domain, static_cast<std::size_t>(instance.claimed_degree + 1));
+
+  const swgr::stir::StirProver prover(params);
+  const swgr::stir::StirVerifier verifier(params);
+  const auto proof = prover.prove(instance, polynomial);
+
+  CHECK(verifier.verify(instance, proof));
+  CHECK_EQ(proof.stats.prover_rounds, std::uint64_t{2});
+  CHECK_EQ(proof.rounds.size(), std::size_t{2});
+  CHECK_EQ(proof.rounds[0].queries_to_prev.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.rounds[1].queries_to_prev.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
+  CHECK_EQ(proof.stats.serialized_bytes,
+           swgr::stir::serialized_message_bytes(ctx, proof));
+}
+
 void TestStirRejectsTamperedPrevQueryOpening() {
   testutil::PrintInfo("stir verifier rejects a tampered previous-oracle opening");
 
@@ -727,6 +782,8 @@ int main() {
     RUN_TEST(TestStirTheoremChallengesLieInTeichmullerSet);
     RUN_TEST(TestStirTeichmullerUnitSubsetHelper);
     RUN_TEST(TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits);
+    RUN_TEST(TestStirTheoremModeHonestRoundtripAndRoundShape);
+    RUN_TEST(TestStirTheoremModeMultiRoundUsesPublicRootChain);
     RUN_TEST(TestStirRejectsTamperedPrevQueryOpening);
     RUN_TEST(TestStirRejectsTamperedInitialRoot);
     RUN_TEST(TestStirRejectsTamperedGRoot);

@@ -34,6 +34,24 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
   return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
+swgr::algebra::GRElem DeriveFoldingChallenge(
+    const StirParameters& params, swgr::crypto::Transcript& transcript,
+    const swgr::algebra::GRContext& ctx, std::string_view label) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+    return derive_stir_folding_challenge(transcript, ctx, label);
+  }
+  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+}
+
+swgr::algebra::GRElem DeriveCombChallenge(
+    const StirParameters& params, swgr::crypto::Transcript& transcript,
+    const swgr::algebra::GRContext& ctx, std::string_view label) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+    return derive_stir_comb_challenge(transcript, ctx, label);
+  }
+  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+}
+
 std::vector<std::uint64_t> SortedPositions(
     const std::vector<std::uint64_t>& positions) {
   auto sorted = positions;
@@ -196,8 +214,8 @@ StirProofWithWitness StirProver::prove_with_witness(
 
   const auto initial_transcript_start = std::chrono::steady_clock::now();
   transcript.absorb_bytes(proof.initial_root);
-  auto current_folding_alpha = swgr::fri::derive_round_challenge(
-      transcript, ctx, RoundLabel("stir.fold_alpha", 0));
+  auto current_folding_alpha = DeriveFoldingChallenge(
+      params_, transcript, ctx, RoundLabel("stir.fold_alpha", 0));
   transcript_ms += ElapsedMilliseconds(initial_transcript_start,
                                        std::chrono::steady_clock::now());
 
@@ -250,9 +268,9 @@ StirProofWithWitness StirProver::prove_with_witness(
 
     const auto transcript_start = std::chrono::steady_clock::now();
     transcript.absorb_bytes(round.g_root);
-    round.betas = derive_ood_points(current_domain, shift_domain, folded_domain,
-                                    transcript, RoundLabel("stir.ood", round_index),
-                                    params_.ood_samples);
+    round.betas = derive_ood_points(
+        params_, current_domain, shift_domain, folded_domain, transcript,
+        RoundLabel("stir.ood", round_index), params_.ood_samples);
     std::vector<swgr::algebra::GRElem> ood_points = round.betas;
     round.betas.clear();
     round.betas.reserve(ood_points.size());
@@ -262,10 +280,10 @@ StirProofWithWitness StirProver::prove_with_witness(
       transcript.absorb_ring(ctx, round.betas.back());
     }
     ood_ms += ElapsedMilliseconds(ood_start, std::chrono::steady_clock::now());
-    const auto comb_randomness = swgr::fri::derive_round_challenge(
-        transcript, ctx, RoundLabel("stir.comb", round_index));
-    const auto next_folding_alpha = swgr::fri::derive_round_challenge(
-        transcript, ctx, RoundLabel("stir.fold_alpha", round_index + 1U));
+    const auto comb_randomness = DeriveCombChallenge(
+        params_, transcript, ctx, RoundLabel("stir.comb", round_index));
+    const auto next_folding_alpha = DeriveFoldingChallenge(
+        params_, transcript, ctx, RoundLabel("stir.fold_alpha", round_index + 1U));
     const auto query_positions = SortedPositions(derive_unique_positions(
         transcript, RoundLabel("stir.query", round_index), folded_domain.size(),
         effective_query_count));
@@ -280,8 +298,8 @@ StirProofWithWitness StirProver::prove_with_witness(
           folded_table[static_cast<std::size_t>(position)]);
     }
     const auto shake_point = derive_shake_point(
-        current_domain, shift_domain, folded_domain, quotient_points, transcript,
-        RoundLabel("stir.shake", round_index));
+        params_, current_domain, shift_domain, folded_domain, quotient_points,
+        transcript, RoundLabel("stir.shake", round_index));
     (void)shake_point;
     transcript_ms +=
         ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());

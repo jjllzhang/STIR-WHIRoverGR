@@ -146,32 +146,32 @@ Files:
 
 Functions to update:
 
-- [ ] `StirProver::prove(...)`
-- [ ] `StirVerifier::verify(...)`
+- [x] `StirProver::prove(...)`
+- [x] `StirVerifier::verify(...)`
 
 Exact call sites to replace with mode-aware routing:
 
-- [ ] Initial `current_folding_alpha` derivation in `StirProver::prove(...)`
-- [ ] Per-round `comb_randomness` derivation in `StirProver::prove(...)`
-- [ ] Per-round `next_folding_alpha` derivation in `StirProver::prove(...)`
-- [ ] Per-round OOD derivation in `StirProver::prove(...)`
-- [ ] Per-round shake derivation in `StirProver::prove(...)`
-- [ ] Initial `state.folding_alpha` derivation in `StirVerifier::verify(...)`
-- [ ] Per-round `comb_randomness` derivation in `StirVerifier::verify(...)`
-- [ ] Per-round `next_folding_alpha` derivation in `StirVerifier::verify(...)`
-- [ ] Per-round OOD derivation in `StirVerifier::verify(...)`
-- [ ] Per-round shake derivation in `StirVerifier::verify(...)`
+- [x] Initial `current_folding_alpha` derivation in `StirProver::prove(...)`
+- [x] Per-round `comb_randomness` derivation in `StirProver::prove(...)`
+- [x] Per-round `next_folding_alpha` derivation in `StirProver::prove(...)`
+- [x] Per-round OOD derivation in `StirProver::prove(...)`
+- [x] Per-round shake derivation in `StirProver::prove(...)`
+- [x] Initial `state.folding_alpha` derivation in `StirVerifier::verify(...)`
+- [x] Per-round `comb_randomness` derivation in `StirVerifier::verify(...)`
+- [x] Per-round `next_folding_alpha` derivation in `StirVerifier::verify(...)`
+- [x] Per-round OOD derivation in `StirVerifier::verify(...)`
+- [x] Per-round shake derivation in `StirVerifier::verify(...)`
 
 Implementation notes:
 
-- [ ] Do not change `RoundLabel(...)` strings in the first landing.
-- [ ] Do not change `StirProof` serialization in the first landing.
-- [ ] Keep proof shape identical; only change verifier randomness semantics when `protocol_mode == TheoremGrConservative`.
+- [x] Do not change `RoundLabel(...)` strings in the first landing.
+- [x] Do not change `StirProof` serialization in the first landing.
+- [x] Keep proof shape identical; only change verifier randomness semantics when `protocol_mode == TheoremGrConservative`.
 
 Acceptance:
 
-- [ ] Honest theorem-mode prover/verifier round-trips succeed.
-- [ ] Prototype mode still reproduces the pre-migration behavior.
+- [x] Honest theorem-mode prover/verifier round-trips succeed.
+- [x] Prototype mode still reproduces the pre-migration behavior.
 
 Suggested commit:
 

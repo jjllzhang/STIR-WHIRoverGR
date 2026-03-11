@@ -34,6 +34,24 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
   return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
+swgr::algebra::GRElem DeriveFoldingChallenge(
+    const StirParameters& params, swgr::crypto::Transcript& transcript,
+    const swgr::algebra::GRContext& ctx, std::string_view label) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+    return derive_stir_folding_challenge(transcript, ctx, label);
+  }
+  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+}
+
+swgr::algebra::GRElem DeriveCombChallenge(
+    const StirParameters& params, swgr::crypto::Transcript& transcript,
+    const swgr::algebra::GRContext& ctx, std::string_view label) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+    return derive_stir_comb_challenge(transcript, ctx, label);
+  }
+  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+}
+
 std::vector<std::uint64_t> SortedPositions(
     const std::vector<std::uint64_t>& values) {
   auto sorted = values;
@@ -260,8 +278,8 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
     VerificationState state{
         .domain = instance.domain,
         .degree_bound = instance.claimed_degree,
-        .folding_alpha = swgr::fri::derive_round_challenge(
-            transcript, ctx, RoundLabel("stir.fold_alpha", 0)),
+        .folding_alpha = DeriveFoldingChallenge(
+            params_, transcript, ctx, RoundLabel("stir.fold_alpha", 0)),
         .initial = true,
         .virtual_function = {},
     };
@@ -292,7 +310,7 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
       const auto round_transcript_start = std::chrono::steady_clock::now();
       transcript.absorb_bytes(round.g_root);
       const auto ood_points = derive_ood_points(
-          state.domain, shift_domain, folded_domain, transcript,
+          params_, state.domain, shift_domain, folded_domain, transcript,
           RoundLabel("stir.ood", round_index), params_.ood_samples);
       if (round.betas.size() != ood_points.size()) {
         return false;
@@ -300,10 +318,10 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
       for (const auto& beta : round.betas) {
         transcript.absorb_ring(ctx, beta);
       }
-      const auto comb_randomness = swgr::fri::derive_round_challenge(
-          transcript, ctx, RoundLabel("stir.comb", round_index));
-      const auto next_folding_alpha = swgr::fri::derive_round_challenge(
-          transcript, ctx, RoundLabel("stir.fold_alpha", round_index + 1U));
+      const auto comb_randomness = DeriveCombChallenge(
+          params_, transcript, ctx, RoundLabel("stir.comb", round_index));
+      const auto next_folding_alpha = DeriveFoldingChallenge(
+          params_, transcript, ctx, RoundLabel("stir.fold_alpha", round_index + 1U));
       const auto query_positions = SortedPositions(derive_unique_positions(
           transcript, RoundLabel("stir.query", round_index), folded_domain.size(),
           effective_query_count));
@@ -330,8 +348,8 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
 
       const auto shake_transcript_start = std::chrono::steady_clock::now();
       const auto shake_point = derive_shake_point(
-          state.domain, shift_domain, folded_domain, quotient_points, transcript,
-          RoundLabel("stir.shake", round_index));
+          params_, state.domain, shift_domain, folded_domain, quotient_points,
+          transcript, RoundLabel("stir.shake", round_index));
       local_stats.verifier_transcript_ms += ElapsedMilliseconds(
           shake_transcript_start, std::chrono::steady_clock::now());
 
