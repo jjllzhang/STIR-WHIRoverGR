@@ -18,6 +18,21 @@ struct RoundQueryScheduleMetadata {
   bool cap_applied = false;
 };
 
+enum class StirProtocolMode {
+  PrototypeEngineering,
+  TheoremGrConservative,
+};
+
+enum class StirChallengeSampling {
+  AmbientRing,
+  TeichmullerT,
+};
+
+enum class StirOodSamplingMode {
+  PrototypeShiftedCoset,
+  TheoremExceptionalComplementUnique,
+};
+
 struct StirParameters {
   std::uint64_t virtual_fold_factor = 9;
   std::uint64_t shift_power = 3;
@@ -28,6 +43,10 @@ struct StirParameters {
   std::uint64_t pow_bits = 0;
   swgr::SecurityMode sec_mode = swgr::SecurityMode::ConjectureCapacity;
   swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
+  StirProtocolMode protocol_mode = StirProtocolMode::PrototypeEngineering;
+  StirChallengeSampling challenge_sampling = StirChallengeSampling::AmbientRing;
+  StirOodSamplingMode ood_sampling =
+      StirOodSamplingMode::PrototypeShiftedCoset;
 };
 
 bool validate(const StirParameters& params);

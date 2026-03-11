@@ -8,9 +8,33 @@
 
 namespace swgr::stir {
 
+namespace {
+
+StirParameters TheoremGrConservativeDefaults() {
+  StirParameters params;
+  params.protocol_mode = StirProtocolMode::TheoremGrConservative;
+  params.challenge_sampling = StirChallengeSampling::TeichmullerT;
+  params.ood_sampling =
+      StirOodSamplingMode::TheoremExceptionalComplementUnique;
+  return params;
+}
+
+bool matches_theorem_sampling(const StirParameters& params) {
+  const auto theorem_defaults = TheoremGrConservativeDefaults();
+  return params.challenge_sampling == theorem_defaults.challenge_sampling &&
+         params.ood_sampling == theorem_defaults.ood_sampling;
+}
+
+}  // namespace
+
 bool validate(const StirParameters& params) {
   if (params.virtual_fold_factor != 9 || params.shift_power != 3 ||
       params.stop_degree == 0 || params.ood_samples == 0) {
+    return false;
+  }
+
+  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative &&
+      !matches_theorem_sampling(params)) {
     return false;
   }
 

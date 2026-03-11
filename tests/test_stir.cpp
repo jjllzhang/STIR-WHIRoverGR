@@ -88,6 +88,17 @@ swgr::stir::StirParameters MakeAutoParams(std::uint64_t stop_degree = 3) {
   return MakeParams({}, stop_degree);
 }
 
+swgr::stir::StirParameters MakeTheoremParams(
+    std::vector<std::uint64_t> query_repetitions = {1},
+    std::uint64_t stop_degree = 3) {
+  auto params = MakeParams(std::move(query_repetitions), stop_degree);
+  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGrConservative;
+  params.challenge_sampling = swgr::stir::StirChallengeSampling::TeichmullerT;
+  params.ood_sampling =
+      swgr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
+  return params;
+}
+
 swgr::stir::StirInstance MakeInstance(const GRContext& ctx,
                                       std::uint64_t domain_size = 27,
                                       std::uint64_t claimed_degree = 26) {
@@ -515,6 +526,26 @@ void TestStirValidationRejectsBadInputs() {
   auto bad_queries = MakeParams();
   bad_queries.query_repetitions = {1, 0};
   CHECK(!swgr::stir::validate(bad_queries));
+
+  const swgr::stir::StirParameters default_params;
+  CHECK_EQ(default_params.protocol_mode,
+           swgr::stir::StirProtocolMode::PrototypeEngineering);
+  CHECK_EQ(default_params.challenge_sampling,
+           swgr::stir::StirChallengeSampling::AmbientRing);
+  CHECK_EQ(default_params.ood_sampling,
+           swgr::stir::StirOodSamplingMode::PrototypeShiftedCoset);
+
+  auto theorem_with_ambient_challenge = MakeTheoremParams();
+  theorem_with_ambient_challenge.challenge_sampling =
+      swgr::stir::StirChallengeSampling::AmbientRing;
+  CHECK(!swgr::stir::validate(theorem_with_ambient_challenge));
+
+  auto theorem_with_prototype_ood = MakeTheoremParams();
+  theorem_with_prototype_ood.ood_sampling =
+      swgr::stir::StirOodSamplingMode::PrototypeShiftedCoset;
+  CHECK(!swgr::stir::validate(theorem_with_prototype_ood));
+
+  CHECK(swgr::stir::validate(MakeTheoremParams(), instance));
 
   const swgr::stir::StirInstance bad_degree{
       .domain = instance.domain,
