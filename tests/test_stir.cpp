@@ -413,6 +413,8 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
       instance.domain, shift_domain, folded_domain, ood_transcript,
       "stir.theorem.ood", 2);
   CHECK_EQ(ood_points.size(), std::size_t{2});
+  CHECK(swgr::stir::theorem_ood_pool_has_capacity(
+      instance.domain, shift_domain, folded_domain, 2));
   for (const auto& point : ood_points) {
     CHECK(swgr::algebra::is_teichmuller_element(ctx, point));
     CHECK(ctx.is_unit(point));
@@ -427,6 +429,8 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
   const auto shake_point = swgr::stir::derive_theorem_shake_point(
       instance.domain, shift_domain, folded_domain, quotient_points,
       shake_transcript, "stir.theorem.shake");
+  CHECK(swgr::stir::theorem_shake_pool_has_capacity(
+      instance.domain, shift_domain, folded_domain, quotient_points));
   CHECK(swgr::algebra::is_teichmuller_element(ctx, shake_point));
   CHECK(ctx.is_unit(shake_point));
   CHECK(!instance.domain.contains(shake_point));
@@ -458,6 +462,54 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
       instance.domain, shift_domain, folded_domain, quotient_points,
       direct_shake_transcript, "stir.theorem.shake.dispatch");
   CHECK_EQ(wrapped_shake_point, direct_shake_dispatch);
+}
+
+void TestStirTheoremValidationRejectsBadDomainsAndExhaustedPools() {
+  testutil::PrintInfo(
+      "stir theorem validation rejects non-T* domains and exhausted safe complements");
+
+  {
+    const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+    const auto non_teich_unit = ctx.with_ntl_context([&] {
+      auto three = ctx.one();
+      three += ctx.one();
+      three += ctx.one();
+      return three;
+    });
+    const swgr::stir::StirInstance bad_instance{
+        .domain = Domain::teichmuller_coset(ctx, non_teich_unit, 9),
+        .claimed_degree = 8,
+    };
+
+    CHECK(!swgr::stir::domain_is_subset_of_teichmuller_units(
+        bad_instance.domain));
+    CHECK(!swgr::stir::validate(MakeTheoremParams({1}, 3), bad_instance));
+  }
+
+  {
+    const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
+    const swgr::stir::StirInstance saturated_instance{
+        .domain = Domain::teichmuller_subgroup(ctx, 486),
+        .claimed_degree = 485,
+    };
+    const auto shift_domain = saturated_instance.domain.scale_offset(3);
+    const auto folded_domain = saturated_instance.domain.pow_map(9);
+    std::vector<GRElem> quotient_points{folded_domain.element(0)};
+
+    CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(
+        saturated_instance.domain));
+    CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(shift_domain));
+    CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(folded_domain));
+    CHECK(!swgr::stir::theorem_ood_pool_has_capacity(
+        saturated_instance.domain, shift_domain, folded_domain, 1));
+    CHECK(!swgr::stir::theorem_shake_pool_has_capacity(
+        saturated_instance.domain, shift_domain, folded_domain,
+        quotient_points));
+
+    auto theorem_params = MakeTheoremParams({1}, 3);
+    theorem_params.ood_samples = 1;
+    CHECK(!swgr::stir::validate(theorem_params, saturated_instance));
+  }
 }
 
 void TestStirTheoremModeHonestRoundtripAndRoundShape() {
@@ -782,6 +834,7 @@ int main() {
     RUN_TEST(TestStirTheoremChallengesLieInTeichmullerSet);
     RUN_TEST(TestStirTeichmullerUnitSubsetHelper);
     RUN_TEST(TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits);
+    RUN_TEST(TestStirTheoremValidationRejectsBadDomainsAndExhaustedPools);
     RUN_TEST(TestStirTheoremModeHonestRoundtripAndRoundShape);
     RUN_TEST(TestStirTheoremModeMultiRoundUsesPublicRootChain);
     RUN_TEST(TestStirRejectsTamperedPrevQueryOpening);

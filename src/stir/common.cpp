@@ -1,10 +1,12 @@
 #include "stir/common.hpp"
 
 #include <NTL/ZZ_pE.h>
+#include <NTL/ZZ.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <stdexcept>
@@ -283,6 +285,115 @@ bool domain_is_subset_of_teichmuller_units(const Domain& domain) {
     }
     return true;
   });
+}
+
+long CheckedLong(std::uint64_t value, const char* label) {
+  if (value >
+      static_cast<std::uint64_t>(std::numeric_limits<long>::max())) {
+    throw std::invalid_argument(std::string(label) + " exceeds long");
+  }
+  return static_cast<long>(value);
+}
+
+NTL::ZZ ToZZ(std::uint64_t value, const char* label) {
+  return NTL::ZZ(CheckedLong(value, label));
+}
+
+bool theorem_ood_pool_has_capacity(const Domain& input_domain,
+                                   const Domain& shift_domain,
+                                   const Domain& folded_domain,
+                                   std::uint64_t required_points) {
+  if (!domain_is_subset_of_teichmuller_units(input_domain) ||
+      !domain_is_subset_of_teichmuller_units(shift_domain) ||
+      !domain_is_subset_of_teichmuller_units(folded_domain)) {
+    return false;
+  }
+  if (required_points == 0) {
+    return true;
+  }
+
+  const auto teich_size = swgr::algebra::teichmuller_set_size(input_domain.context());
+  if (teich_size <= 1) {
+    return false;
+  }
+
+  const auto input_points = input_domain.elements();
+  const auto shift_points = shift_domain.elements();
+  const auto folded_points = folded_domain.elements();
+  std::vector<swgr::algebra::GRElem> excluded_points;
+  excluded_points.reserve(input_points.size() + shift_points.size() +
+                          folded_points.size());
+  for (const auto& point : input_points) {
+    if (!Contains(excluded_points, point)) {
+      excluded_points.push_back(point);
+    }
+  }
+  for (const auto& point : shift_points) {
+    if (!Contains(excluded_points, point)) {
+      excluded_points.push_back(point);
+    }
+  }
+  for (const auto& point : folded_points) {
+    if (!Contains(excluded_points, point)) {
+      excluded_points.push_back(point);
+    }
+  }
+
+  const auto available = teich_size - NTL::ZZ(1) -
+                         ToZZ(static_cast<std::uint64_t>(excluded_points.size()),
+                              "excluded theorem points");
+  return available >= ToZZ(required_points, "required theorem points");
+}
+
+bool theorem_shake_pool_has_capacity(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    std::span<const swgr::algebra::GRElem> quotient_points) {
+  const auto& ctx = input_domain.context();
+  if (!domain_is_subset_of_teichmuller_units(input_domain) ||
+      !domain_is_subset_of_teichmuller_units(shift_domain) ||
+      !domain_is_subset_of_teichmuller_units(folded_domain)) {
+    return false;
+  }
+  for (const auto& point : quotient_points) {
+    if (!swgr::algebra::is_teichmuller_element(ctx, point) ||
+        !ctx.is_unit(point)) {
+      return false;
+    }
+  }
+
+  const auto input_points = input_domain.elements();
+  const auto shift_points = shift_domain.elements();
+  const auto folded_points = folded_domain.elements();
+  std::vector<swgr::algebra::GRElem> excluded_points;
+  excluded_points.reserve(input_points.size() + shift_points.size() +
+                          folded_points.size() + quotient_points.size());
+  for (const auto& point : input_points) {
+    if (!Contains(excluded_points, point)) {
+      excluded_points.push_back(point);
+    }
+  }
+  for (const auto& point : shift_points) {
+    if (!Contains(excluded_points, point)) {
+      excluded_points.push_back(point);
+    }
+  }
+  for (const auto& point : folded_points) {
+    if (!Contains(excluded_points, point)) {
+      excluded_points.push_back(point);
+    }
+  }
+  for (const auto& point : quotient_points) {
+    if (!Contains(excluded_points, point)) {
+      excluded_points.push_back(point);
+    }
+  }
+
+  const auto teich_size = swgr::algebra::teichmuller_set_size(ctx);
+  const auto available = teich_size - NTL::ZZ(1) -
+                         ToZZ(static_cast<std::uint64_t>(excluded_points.size()),
+                              "excluded theorem points");
+  return available >= NTL::ZZ(1);
 }
 
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,

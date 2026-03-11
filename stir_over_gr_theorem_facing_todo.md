@@ -187,31 +187,31 @@ Files:
 
 Helpers to add:
 
-- [ ] `bool theorem_ood_pool_has_capacity(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, std::uint64_t required_points);`
-- [ ] `bool theorem_shake_pool_has_capacity(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, std::span<const swgr::algebra::GRElem> quotient_points);`
+- [x] `bool theorem_ood_pool_has_capacity(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, std::uint64_t required_points);`
+- [x] `bool theorem_shake_pool_has_capacity(const Domain& input_domain, const Domain& shift_domain, const Domain& folded_domain, std::span<const swgr::algebra::GRElem> quotient_points);`
 
 Functions to update:
 
-- [ ] `validate(const StirParameters& params, const StirInstance& instance)`
+- [x] `validate(const StirParameters& params, const StirInstance& instance)`
 
 Theorem-mode checks to enforce:
 
-- [ ] `instance.domain` is a subset of `T*`.
-- [ ] Every derived `folded_domain` is a subset of `T*`.
-- [ ] Every derived `shift_domain` is a subset of `T*`.
-- [ ] `shift_domain` and `folded_domain` satisfy unit-difference requirements.
-- [ ] The theorem OOD candidate pool is large enough for `ood_samples`.
-- [ ] The theorem shake candidate pool is non-empty after excluding the quotient set.
-- [ ] `ood_samples + effective_query_count <= next_degree_bound + 1`.
+- [x] `instance.domain` is a subset of `T*`.
+- [x] Every derived `folded_domain` is a subset of `T*`.
+- [x] Every derived `shift_domain` is a subset of `T*`.
+- [x] `shift_domain` and `folded_domain` satisfy unit-difference requirements.
+- [x] The theorem OOD candidate pool is large enough for `ood_samples`.
+- [x] The theorem shake candidate pool is non-empty after excluding the quotient set.
+- [x] `ood_samples + effective_query_count <= next_degree_bound + 1`.
 
 Stop rule:
 
-- [ ] If theorem-mode validation fails, reject the instance; do not silently fall back to prototype semantics.
+- [x] If theorem-mode validation fails, reject the instance; do not silently fall back to prototype semantics.
 
 Acceptance:
 
-- [ ] Invalid theorem-mode instances fail early in `validate(...)`.
-- [ ] Existing prototype validation remains unchanged.
+- [x] Invalid theorem-mode instances fail early in `validate(...)`.
+- [x] Existing prototype validation remains unchanged.
 
 Suggested commit:
 

@@ -85,6 +85,16 @@ swgr::algebra::GRElem derive_stir_comb_challenge(
 
 bool domain_is_subset_of_teichmuller_units(const Domain& domain);
 
+bool theorem_ood_pool_has_capacity(const Domain& input_domain,
+                                   const Domain& shift_domain,
+                                   const Domain& folded_domain,
+                                   std::uint64_t required_points);
+
+bool theorem_shake_pool_has_capacity(
+    const Domain& input_domain, const Domain& shift_domain,
+    const Domain& folded_domain,
+    std::span<const swgr::algebra::GRElem> quotient_points);
+
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
                                   std::uint64_t fold_factor);
 

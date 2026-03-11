@@ -1,6 +1,7 @@
 #include "stir/parameters.hpp"
 
 #include <algorithm>
+#include <limits>
 
 #include "fri/common.hpp"
 #include "soundness/configurator.hpp"
@@ -109,6 +110,10 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
   try {
     Domain current_domain = instance.domain;
     std::uint64_t current_degree_bound = instance.claimed_degree;
+    if (params.protocol_mode == StirProtocolMode::TheoremGrConservative &&
+        !domain_is_subset_of_teichmuller_units(current_domain)) {
+      return false;
+    }
     const std::size_t rounds = folding_round_count(instance, params);
     const auto schedule_metadata =
         resolve_query_schedule_metadata(params, instance);
@@ -120,6 +125,13 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
       const Domain folded_domain =
           current_domain.pow_map(params.virtual_fold_factor);
       const Domain shift_domain = current_domain.scale_offset(params.shift_power);
+      if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+        if (!domain_is_subset_of_teichmuller_units(current_domain) ||
+            !domain_is_subset_of_teichmuller_units(folded_domain) ||
+            !domain_is_subset_of_teichmuller_units(shift_domain)) {
+          return false;
+        }
+      }
       if (!domains_have_unit_differences(shift_domain, folded_domain)) {
         return false;
       }
@@ -134,6 +146,25 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
       if (params.ood_samples + round.effective_query_count >
           next_degree_bound + 1) {
         return false;
+      }
+      if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+        if (params.ood_samples ==
+            std::numeric_limits<std::uint64_t>::max()) {
+          return false;
+        }
+        if (!theorem_ood_pool_has_capacity(current_domain, shift_domain,
+                                           folded_domain,
+                                           params.ood_samples)) {
+          return false;
+        }
+        // Queried folded points are already part of `folded_domain`, so the
+        // worst case for shake capacity is reserving one additional distinct
+        // theorem OOD point from the same T* safe complement.
+        if (!theorem_ood_pool_has_capacity(current_domain, shift_domain,
+                                           folded_domain,
+                                           params.ood_samples + 1U)) {
+          return false;
+        }
       }
 
       current_domain = shift_domain;
