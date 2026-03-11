@@ -42,6 +42,15 @@ class SearchError(RuntimeError):
     pass
 
 
+def normalize_fri_soundness_mode(raw: str) -> str:
+    value = raw.strip()
+    if value not in {"theorem_auto", "manual_repetition"}:
+        raise SearchError(
+            "fri soundness mode must be theorem_auto or manual_repetition"
+        )
+    return value
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -96,10 +105,23 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--hash-profile", default="STIR_NATIVE")
     parser.add_argument(
+        "--fri-soundness-mode",
+        default="",
+        help=(
+            "FRI soundness mode: theorem_auto or manual_repetition "
+            "(default: preset value, else theorem_auto; preset fri_repetitions "
+            "without an explicit mode fall back to manual_repetition)"
+        ),
+    )
+    parser.add_argument(
         "--fri-repetitions",
         type=int,
         default=None,
-        help="Explicit theorem-facing FRI repetition count m (default from preset or 1)",
+        help=(
+            "Explicit FRI repetition count m. In theorem_auto this is an optional "
+            "override that must be >= the required minimum; in "
+            "manual_repetition it is the actual fixed m."
+        ),
     )
     parser.add_argument("--stop-degree", type=int, default=9)
     parser.add_argument("--ood-samples", type=int, default=2)
@@ -265,21 +287,42 @@ def resolve_soundness_configs(
     if args.soundness:
         return [parse_soundness_item(item) for item in args.soundness]
 
-        return [
-            SoundnessConfig(
-                lambda_target=preset_default_lambda(preset),
-                pow_bits=preset_default_pow(preset),
-                sec_mode=args.default_sec_mode,
-                queries=preset_default_queries(preset, args.default_queries),
-            )
-        ]
+    return [
+        SoundnessConfig(
+            lambda_target=preset_default_lambda(preset),
+            pow_bits=preset_default_pow(preset),
+            sec_mode=args.default_sec_mode,
+            queries=preset_default_queries(preset, args.default_queries),
+        )
+    ]
 
 
-def resolve_fri_repetitions(args: argparse.Namespace, preset: Dict[str, object]) -> int:
+def resolve_fri_soundness_mode(
+    args: argparse.Namespace, preset: Dict[str, object]
+) -> str:
+    if args.fri_soundness_mode:
+        return normalize_fri_soundness_mode(args.fri_soundness_mode)
+    preset_mode = preset.get("fri_soundness_mode")
+    if preset_mode is not None:
+        return normalize_fri_soundness_mode(str(preset_mode))
+    if "fri_repetitions" in preset:
+        return "manual_repetition"
+    return "theorem_auto"
+
+
+def resolve_fri_repetitions(
+    args: argparse.Namespace, preset: Dict[str, object], fri_soundness_mode: str
+) -> Optional[int]:
     if args.fri_repetitions is not None:
         value = int(args.fri_repetitions)
+    elif fri_soundness_mode == "manual_repetition" and "fri_repetitions" in preset:
+        value = int(preset["fri_repetitions"])
+    elif fri_soundness_mode == "manual_repetition":
+        raise SearchError(
+            "manual_repetition requires --fri-repetitions or preset fri_repetitions"
+        )
     else:
-        value = int(preset.get("fri_repetitions", 1))
+        return None
     if value <= 0:
         raise SearchError("fri_repetitions must be > 0")
     return value
@@ -370,7 +413,8 @@ def build_time_command(
     protocols: Sequence[str],
     point: SweepPoint,
     soundness: SoundnessConfig,
-    fri_repetitions: int,
+    fri_soundness_mode: str,
+    fri_repetitions: Optional[int],
     args: argparse.Namespace,
 ) -> List[str]:
     cmd = [
@@ -387,8 +431,8 @@ def build_time_command(
         str(point.n),
         "--d",
         str(point.d),
-        "--fri-repetitions",
-        str(fri_repetitions),
+        "--fri-soundness-mode",
+        fri_soundness_mode,
         "--lambda",
         str(soundness.lambda_target),
         "--pow-bits",
@@ -410,6 +454,8 @@ def build_time_command(
         "--format",
         "csv",
     ]
+    if fri_repetitions is not None:
+        cmd += ["--fri-repetitions", str(fri_repetitions)]
     if soundness.queries:
         cmd += ["--queries", soundness.queries]
     return cmd
@@ -661,7 +707,8 @@ def main() -> int:
 
     protocols = resolve_protocols(args, preset)
     soundness_list = resolve_soundness_configs(args, preset)
-    fri_repetitions = resolve_fri_repetitions(args, preset)
+    fri_soundness_mode = resolve_fri_soundness_mode(args, preset)
+    fri_repetitions = resolve_fri_repetitions(args, preset, fri_soundness_mode)
     sweep_points = resolve_sweep_points(args, preset)
 
     build_dir = Path(args.build_dir)
@@ -681,7 +728,8 @@ def main() -> int:
                 (
                     f"[search] candidate {candidate_id}/{total}: "
                     f"n={point.n}, d={point.d}, rho={point.rho}, "
-                    f"fri_m={fri_repetitions}, "
+                    f"fri_mode={fri_soundness_mode}, "
+                    f"fri_m={'auto' if fri_repetitions is None else fri_repetitions}, "
                     f"lambda={soundness.lambda_target}, pow={soundness.pow_bits}, "
                     f"sec={soundness.sec_mode}, queries={soundness.queries}"
                 ),
@@ -689,7 +737,14 @@ def main() -> int:
             )
 
             time_cmd = build_time_command(
-                time_bin, ring, protocols, point, soundness, fri_repetitions, args
+                time_bin,
+                ring,
+                protocols,
+                point,
+                soundness,
+                fri_soundness_mode,
+                fri_repetitions,
+                args,
             )
             time_rows = run_csv_command(time_cmd)
 
@@ -720,7 +775,8 @@ def main() -> int:
             "build_dir": str(build_dir),
             "time_bin": str(time_bin),
             "include_time": str(args.include_time).lower(),
-            "fri_repetitions": str(fri_repetitions),
+            "fri_soundness_mode": fri_soundness_mode,
+            "fri_repetitions": "auto" if fri_repetitions is None else str(fri_repetitions),
         },
     )
 

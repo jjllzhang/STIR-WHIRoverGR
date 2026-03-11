@@ -6,6 +6,8 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -17,6 +19,7 @@
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
 #include "fri/prover.hpp"
+#include "fri/soundness.hpp"
 #include "fri/verifier.hpp"
 #include "ldt.hpp"
 #include "poly_utils/polynomial.hpp"
@@ -26,6 +29,11 @@
 
 namespace {
 
+enum class FriSoundnessMode {
+  TheoremAuto,
+  ManualRepetition,
+};
+
 struct TimeBenchOptions {
   std::vector<std::string> protocols = {"fri3", "fri9", "stir9to3"};
   std::uint64_t p = 2;
@@ -33,7 +41,8 @@ struct TimeBenchOptions {
   std::uint64_t r = 162;
   std::uint64_t n = 243;
   std::uint64_t d = 81;
-  std::uint64_t fri_repetitions = 1;
+  FriSoundnessMode fri_soundness_mode = FriSoundnessMode::TheoremAuto;
+  std::optional<std::uint64_t> fri_repetitions;
   std::uint64_t lambda_target = 128;
   std::uint64_t pow_bits = 0;
   swgr::SecurityMode sec_mode = swgr::SecurityMode::ConjectureCapacity;
@@ -97,6 +106,14 @@ struct TimeBenchRow {
   double profile_verify_algebra_total_ms = 0.0;
 };
 
+struct ResolvedFriSoundness {
+  FriSoundnessMode mode = FriSoundnessMode::TheoremAuto;
+  std::uint64_t repetition_count = 0;
+  std::uint64_t lambda_target = 0;
+  bool explicit_repetition_override = false;
+  std::optional<swgr::fri::StandaloneFriSoundnessAnalysis> theorem_analysis;
+};
+
 double SafeMean(double total, std::uint64_t reps) {
   return reps == 0 ? 0.0 : total / static_cast<double>(reps);
 }
@@ -123,6 +140,74 @@ std::string JoinNotes(const std::vector<std::string>& notes) {
   return joined;
 }
 
+FriSoundnessMode ParseFriSoundnessMode(const std::string& value) {
+  if (value == "theorem_auto") {
+    return FriSoundnessMode::TheoremAuto;
+  }
+  if (value == "manual_repetition") {
+    return FriSoundnessMode::ManualRepetition;
+  }
+  throw std::invalid_argument(
+      "unsupported --fri-soundness-mode: " + value +
+      " (expected theorem_auto or manual_repetition)");
+}
+
+std::string DeltaRatioString(
+    const swgr::fri::StandaloneFriSoundnessAnalysis& analysis) {
+  return std::to_string(analysis.delta_numerator) + "/" +
+         std::to_string(analysis.delta_denominator);
+}
+
+ResolvedFriSoundness ResolveFriSoundness(const TimeBenchOptions& options,
+                                         std::uint64_t fold_factor) {
+  ResolvedFriSoundness resolved;
+  resolved.mode = options.fri_soundness_mode;
+  resolved.explicit_repetition_override = options.fri_repetitions.has_value();
+
+  if (options.fri_soundness_mode == FriSoundnessMode::ManualRepetition) {
+    if (!options.fri_repetitions.has_value()) {
+      throw std::invalid_argument(
+          "--fri-repetitions must be provided when "
+          "--fri-soundness-mode=manual_repetition");
+    }
+    resolved.repetition_count = *options.fri_repetitions;
+    return resolved;
+  }
+
+  const auto analysis = swgr::fri::analyze_standalone_soundness(
+      swgr::fri::StandaloneFriSoundnessInputs{
+          .base_prime = options.p,
+          .ring_extension_degree = options.r,
+          .domain_size = options.n,
+          .fold_factor = fold_factor,
+          // The quotient oracle bound is d - 1, so the corresponding code
+          // dimension for the standalone FRI PCS soundness bound is d.
+          .quotient_code_dimension = options.d,
+          .lambda_target = options.lambda_target,
+      });
+  if (!analysis.span_term_within_target) {
+    throw std::invalid_argument(
+        "standalone FRI PCS theorem_auto is impossible for this parameter set: "
+        "s*ell/2^r already exceeds 2^-lambda_target");
+  }
+
+  resolved.lambda_target = options.lambda_target;
+  resolved.repetition_count = analysis.minimum_repetition_count;
+  resolved.theorem_analysis = analysis;
+  if (options.fri_repetitions.has_value()) {
+    if (*options.fri_repetitions < resolved.repetition_count) {
+      std::ostringstream message;
+      message << "explicit --fri-repetitions=" << *options.fri_repetitions
+              << " is smaller than the theorem-required minimum m="
+              << resolved.repetition_count
+              << " for standalone FRI PCS theorem_auto";
+      throw std::invalid_argument(message.str());
+    }
+    resolved.repetition_count = *options.fri_repetitions;
+  }
+  return resolved;
+}
+
 void ApplyThreadControl(std::uint64_t requested_threads) {
 #if defined(SWGR_HAS_OPENMP)
   int requested = std::numeric_limits<int>::max();
@@ -147,20 +232,48 @@ void ApplyThreadControl(std::uint64_t requested_threads) {
 }
 
 void FillFriSoundnessMetadata(TimeBenchRow& row,
-                              std::uint64_t repetition_count) {
-  row.soundness_mode = "theorem_fri";
-  row.fri_repetitions = repetition_count;
-  row.lambda_target = 0;
+                              const ResolvedFriSoundness& resolved) {
+  row.fri_repetitions = resolved.repetition_count;
   row.pow_bits = 0;
   row.sec_mode.clear();
-  row.soundness_model = "paper_repetition_count_m";
-  row.soundness_scope = "paper_parameterization_m_only";
   row.query_policy = "repeat_steps_3_4_5";
   row.pow_policy = "not_applicable";
-  row.effective_security_bits = 0;
-  row.soundness_notes =
-      "FRI rows report the theorem-facing repetition count m directly; "
-      "benchmark output does not derive security bits from m here.";
+
+  if (resolved.mode == FriSoundnessMode::ManualRepetition) {
+    row.soundness_mode = "manual_standalone_fri";
+    row.lambda_target = 0;
+    row.soundness_model = "manual_repetition_count_m";
+    row.soundness_scope = "non_theorem_manual_repetition";
+    row.effective_security_bits = 0;
+    row.soundness_notes =
+        "standalone FRI PCS uses caller-provided repetition count m without "
+        "theorem-level lambda solving; use theorem_auto for paper-aligned "
+        "parameterization.";
+    return;
+  }
+
+  if (!resolved.theorem_analysis.has_value()) {
+    throw std::invalid_argument(
+        "theorem_fri metadata requires theorem analysis");
+  }
+
+  row.soundness_mode = "theorem_fri";
+  row.lambda_target = resolved.lambda_target;
+  row.soundness_model = "epsilon_rbr_fri_max_span_and_repetition";
+  row.soundness_scope = "paper_parameterization_lambda_target";
+  row.effective_security_bits = resolved.lambda_target;
+  std::ostringstream notes;
+  notes << "standalone FRI PCS solved m from max(s*ell/2^r,(1-delta)^m)"
+        << "<=2^-lambda with delta="
+        << DeltaRatioString(*resolved.theorem_analysis)
+        << ", required_m=" << resolved.theorem_analysis->minimum_repetition_count;
+  if (resolved.explicit_repetition_override &&
+      resolved.repetition_count !=
+          resolved.theorem_analysis->minimum_repetition_count) {
+    notes << ", using explicit m=" << resolved.repetition_count
+          << " because it still meets the theorem target";
+  }
+  row.soundness_notes = notes.str();
 }
 
 void FillEngineeringSoundnessMetadata(
@@ -218,20 +331,28 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --protocol fri3|fri9|stir9to3|all\n"
          "  --p <uint> --k-exp <uint> --r <uint>\n"
          "  --n <uint> --d <uint>\n"
+         "  --fri-soundness-mode theorem_auto|manual_repetition\n"
          "  --fri-repetitions <uint>\n"
          "  --lambda <uint> --pow-bits <uint>\n"
          "  --sec-mode ConjectureCapacity|Conservative\n"
          "  --hash-profile STIR_NATIVE|WHIR_NATIVE\n"
          "  --stop-degree <uint> --ood-samples <uint>\n"
          "  --queries auto|q0[,q1,...] --threads <uint>\n"
-         "    note: fri3/fri9 use --fri-repetitions as the theorem-facing FRI\n"
-         "    repetition parameter m\n"
+         "    note: fri3/fri9 default to theorem_auto, which solves the\n"
+         "    theorem-facing standalone FRI PCS repetition count m from\n"
+         "    lambda_target; an explicit --fri-repetitions must then be >=\n"
+         "    the required minimum m\n"
+         "    note: theorem_auto currently follows the Z2K-style p=2 bound and\n"
+         "    also requires delta > 0, so very high-rate toy domains may need\n"
+         "    manual_repetition instead\n"
+         "    note: manual_repetition keeps a caller-provided m for FRI rows,\n"
+         "    but those rows are intentionally non-theorem metadata\n"
          "    note: --lambda/--pow-bits/--sec-mode/--queries remain the current\n"
          "    STIR engineering / benchmark knobs\n"
          "    note: text/csv/json output currently keeps one shared row schema\n"
-         "    across FRI and STIR; on theorem_fri rows the engineering fields\n"
-         "    lambda_target/pow_bits/sec_mode/effective_security_bits are\n"
-         "    placeholders and should be read as not_applicable\n"
+         "    across FRI and STIR; theorem_fri rows now use lambda_target and\n"
+         "    effective_security_bits, while manual_standalone_fri rows still\n"
+         "    leave those fields as not_applicable\n"
          "  --warmup <uint> --reps <uint>\n"
          "  --format text|csv|json\n";
 }
@@ -270,6 +391,8 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
       options.n = swgr::bench::ParseUint64(key, value);
     } else if (key == "--d") {
       options.d = swgr::bench::ParseUint64(key, value);
+    } else if (key == "--fri-soundness-mode") {
+      options.fri_soundness_mode = ParseFriSoundnessMode(value);
     } else if (key == "--fri-repetitions") {
       options.fri_repetitions = swgr::bench::ParseUint64(key, value);
     } else if (key == "--lambda") {
@@ -299,11 +422,16 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
     }
   }
 
-  if (options.n == 0 || options.d >= options.n) {
+  if (options.n == 0 || options.d == 0 || options.d >= options.n) {
     throw std::invalid_argument("time bench requires 0 < d < n");
   }
-  if (options.fri_repetitions == 0) {
+  if (options.fri_repetitions.has_value() && *options.fri_repetitions == 0) {
     throw std::invalid_argument("--fri-repetitions must be > 0");
+  }
+  if (options.fri_soundness_mode == FriSoundnessMode::TheoremAuto &&
+      options.lambda_target == 0) {
+    throw std::invalid_argument(
+        "--lambda must be > 0 when --fri-soundness-mode=theorem_auto");
   }
   if (options.threads == 0) {
     throw std::invalid_argument("--threads must be > 0");
@@ -822,10 +950,12 @@ TimeBenchRow RunBenchLoop(const TimeBenchOptions& options, std::string protocol,
 TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
                         const std::shared_ptr<const swgr::algebra::GRContext>& ctx,
                         std::uint64_t fold_factor) {
+  const auto resolved_soundness = ResolveFriSoundness(options, fold_factor);
+
   swgr::fri::FriParameters params;
   params.fold_factor = fold_factor;
   params.stop_degree = options.stop_degree;
-  params.repetition_count = options.fri_repetitions;
+  params.repetition_count = resolved_soundness.repetition_count;
   params.hash_profile = options.hash_profile;
 
   const swgr::fri::FriInstance instance{
@@ -862,7 +992,7 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
                               opening.proof.stats.verifier_hashes;
                         }
                       });
-  FillFriSoundnessMetadata(row, options.fri_repetitions);
+  FillFriSoundnessMetadata(row, resolved_soundness);
   return row;
 }
 

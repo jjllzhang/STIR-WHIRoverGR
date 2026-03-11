@@ -24,9 +24,9 @@ std::vector<QueryRoundMetadata> resolve_query_rounds_metadata(
     const std::uint64_t bundle_count = current_domain_size / params.fold_factor;
     metadata.push_back(QueryRoundMetadata{
         .query_chain_count = params.repetition_count,
-        .fresh_query_count = round_index == 0 ? params.repetition_count : 0U,
+        .fresh_query_count = params.repetition_count,
         .bundle_count = bundle_count,
-        .carries_previous_queries = round_index != 0,
+        .carries_previous_queries = false,
     });
     current_domain_size /= params.fold_factor;
   }

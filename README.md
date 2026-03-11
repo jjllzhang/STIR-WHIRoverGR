@@ -53,7 +53,6 @@ Supported now:
 
 Residual deltas still worth keeping explicit:
 
-- the repo keeps the Phase-2 carried query-chain interpretation of repetition parameter `m`, rather than resampling each `gamma_i` independently exactly as the prose of Procedure 5 states
 - the zero-fold PCS opening path reveals the full committed oracle and full quotient oracle table together, because there are no explicit folded-oracle rounds to mediate the virtual-oracle relation
 - a formal soundness proof for this fixed-parameter Galois-ring adaptation
 
@@ -149,6 +148,7 @@ Run parameter search:
   --build-dir build-release \
   --n-values 81,243 \
   --rho-values 1/3,1/9 \
+  --fri-soundness-mode manual_repetition \
   --fri-repetitions 2 \
   --soundness 128:22:ConjectureCapacity:auto
 ```
@@ -161,10 +161,13 @@ Benchmark notes:
 - `serialized_bytes_actual` is computed from the deterministic serializer of the actual external message shape rather than from hand-written compact payload formulas
 - Current FRI rows count the prover reply opening message (`value + opening proof`) rather than `commitment + opening` combined bytes; `alpha` remains verifier-chosen context and is not charged to the prover reply
 - Current STIR rows count the exact serialized bytes of the public `StirProof`; the optional `prove_with_witness()` compatibility carrier is not charged
-- Current `fri3` / `fri9` rows report the explicit theorem-facing repetition count `m` in `fri_repetitions`; they do not derive `effective_security_bits` from that value inside `bench_time`
-- `bench_time` currently keeps one shared row schema across `FRI` and `STIR`; on `theorem_fri` rows the engineering columns `lambda_target`, `pow_bits`, `sec_mode`, and `effective_security_bits` are legacy shared-schema placeholders and should be read as not applicable rather than as theorem-level security claims
+- Standalone FRI PCS now defaults to `--fri-soundness-mode theorem_auto`, which solves the minimum theorem-facing repetition count `m` from `lambda_target` using `max(s*ell/2^r, (1-delta)^m) <= 2^-lambda`
+- Explicit `--fri-repetitions` on theorem_auto rows are treated as overrides that must be at least the required minimum `m`; otherwise `bench_time` fails fast
+- `--fri-soundness-mode manual_repetition` keeps a caller-provided fixed `m`, but those rows are intentionally emitted as `soundness_mode=manual_standalone_fri` rather than as theorem-aligned metadata
+- The current theorem_auto path is conservative: it is only enabled for `p=2`, and it rejects instances where the discrete gap gives `delta = 0`
+- `bench_time` still keeps one shared row schema across `FRI` and `STIR`; theorem-aligned standalone FRI rows now use `lambda_target` and `effective_security_bits`, while manual standalone FRI rows leave those fields as not applicable
 - Current `stir9to3` rows still use `soundness_model`, `soundness_scope`, `effective_security_bits`, and the `ConjectureCapacity` / `Conservative` labels as engineering calibration metadata; they are not theorem-backed security claims or paper-complete parameter instantiations
-- Current parameter-search tooling remains STIR-engineering-oriented for `lambda/pow/sec-mode/queries`; when FRI rows are present, they use the fixed `fri_repetitions` value passed to `bench_time`
+- Current preset wrappers and parameter-search tooling preserve older fixed-`m` benchmark presets by mapping them to `manual_repetition`; omit `fri_repetitions` if you want theorem-auto standalone FRI rows
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 
 ## Preset Workloads

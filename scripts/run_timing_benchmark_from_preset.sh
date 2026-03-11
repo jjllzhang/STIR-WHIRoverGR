@@ -17,6 +17,7 @@ QUERIES=""
 THREADS=""
 WARMUP="1"
 REPS="3"
+FRI_SOUNDNESS_MODE=""
 LAMBDA_TARGET=""
 POW_BITS=""
 P_VALUE=""
@@ -43,8 +44,10 @@ Options:
   --r VALUE             Override ring extension degree r
   --n VALUE             Override domain size n
   --d VALUE             Override claimed degree d
+  --fri-soundness-mode VALUE
+                        Override FRI soundness mode: theorem_auto | manual_repetition
   --fri-repetitions VALUE
-                        Override theorem-facing FRI repetition count m
+                        Override FRI repetition count m
   --lambda VALUE        Override lambda target
   --pow-bits VALUE      Override PoW bits
   --sec-mode VALUE      Override security mode (default: ${SEC_MODE})
@@ -99,6 +102,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --d)
       D_VALUE="$2"
+      shift 2
+      ;;
+    --fri-soundness-mode)
+      FRI_SOUNDNESS_MODE="$2"
       shift 2
       ;;
     --fri-repetitions)
@@ -200,7 +207,8 @@ print(f"PRESET_K_EXP={match.group(2)}")
 print(f"PRESET_R={match.group(3)}")
 print(f"PRESET_N={data['n']}")
 print(f"PRESET_D={data['d']}")
-print(f"PRESET_FRI_REPETITIONS={data.get('fri_repetitions', 1)}")
+print(f"PRESET_FRI_SOUNDNESS_MODE={data.get('fri_soundness_mode', '')}")
+print(f"PRESET_FRI_REPETITIONS={data.get('fri_repetitions', '')}")
 print(f"PRESET_LAMBDA={data.get('lambda_target', 128)}")
 print(f"PRESET_POW={data.get('pow_bits', data.get('pow_bits_time', 0))}")
 print(f"PRESET_THREADS={data.get('threads', 1)}")
@@ -224,12 +232,35 @@ K_EXP=${K_EXP:-$PRESET_K_EXP}
 R_VALUE=${R_VALUE:-$PRESET_R}
 N_VALUE=${N_VALUE:-$PRESET_N}
 D_VALUE=${D_VALUE:-$PRESET_D}
-FRI_REPETITIONS=${FRI_REPETITIONS:-$PRESET_FRI_REPETITIONS}
 LAMBDA_TARGET=${LAMBDA_TARGET:-$PRESET_LAMBDA}
 POW_BITS=${POW_BITS:-$PRESET_POW}
 THREADS=${THREADS:-$PRESET_THREADS}
 QUERIES=${QUERIES:-$PRESET_QUERIES}
 PROTOCOLS=${PROTOCOL_OVERRIDE:-$PRESET_PROTOCOLS}
+
+if [[ -z "${FRI_SOUNDNESS_MODE}" ]]; then
+  if [[ -n "${PRESET_FRI_SOUNDNESS_MODE}" ]]; then
+    FRI_SOUNDNESS_MODE="${PRESET_FRI_SOUNDNESS_MODE}"
+  elif [[ -n "${PRESET_FRI_REPETITIONS}" ]]; then
+    FRI_SOUNDNESS_MODE="manual_repetition"
+  else
+    FRI_SOUNDNESS_MODE="theorem_auto"
+  fi
+fi
+
+if [[ "${FRI_SOUNDNESS_MODE}" != "theorem_auto" &&
+      "${FRI_SOUNDNESS_MODE}" != "manual_repetition" ]]; then
+  echo "FRI soundness mode must be theorem_auto or manual_repetition, got: ${FRI_SOUNDNESS_MODE}" >&2
+  exit 1
+fi
+
+if [[ "${FRI_SOUNDNESS_MODE}" == "manual_repetition" ]]; then
+  FRI_REPETITIONS=${FRI_REPETITIONS:-$PRESET_FRI_REPETITIONS}
+  if [[ -z "${FRI_REPETITIONS}" ]]; then
+    echo "--fri-repetitions is required when FRI soundness mode is manual_repetition" >&2
+    exit 1
+  fi
+fi
 
 if [[ "${PROTOCOLS}" == "all" ]]; then
   PROTOCOLS="fri3,fri9,stir9to3"
@@ -242,7 +273,7 @@ ARGS_COMMON=(
   --r "${R_VALUE}"
   --n "${N_VALUE}"
   --d "${D_VALUE}"
-  --fri-repetitions "${FRI_REPETITIONS}"
+  --fri-soundness-mode "${FRI_SOUNDNESS_MODE}"
   --lambda "${LAMBDA_TARGET}"
   --pow-bits "${POW_BITS}"
   --sec-mode "${SEC_MODE}"
@@ -254,6 +285,10 @@ ARGS_COMMON=(
   --reps "${REPS}"
   --format "${FORMAT}"
 )
+
+if [[ -n "${FRI_REPETITIONS}" ]]; then
+  ARGS_COMMON+=(--fri-repetitions "${FRI_REPETITIONS}")
+fi
 
 if [[ -n "${QUERIES}" ]]; then
   ARGS_COMMON+=(--queries "${QUERIES}")

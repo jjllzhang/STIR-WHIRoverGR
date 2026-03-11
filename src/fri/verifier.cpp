@@ -36,20 +36,6 @@ std::vector<std::uint64_t> UniqueSorted(
   return unique;
 }
 
-std::vector<std::uint64_t> CarryToBundleQueryChains(
-    const std::vector<std::uint64_t>& carried_positions,
-    std::uint64_t bundle_count) {
-  if (bundle_count == 0) {
-    return {};
-  }
-  std::vector<std::uint64_t> queries;
-  queries.reserve(carried_positions.size());
-  for (const auto position : carried_positions) {
-    queries.push_back(position % bundle_count);
-  }
-  return queries;
-}
-
 std::vector<std::uint64_t> ExpandFiberIndices(
     const std::vector<std::uint64_t>& child_queries,
     std::uint64_t child_domain_size, std::uint64_t fold_factor) {
@@ -361,18 +347,17 @@ bool FriVerifier::verify(const FriCommitment& commitment,
         ElapsedMilliseconds(algebra_start, std::chrono::steady_clock::now());
 
     const auto query_rounds = resolve_query_rounds_metadata(params_, reduced_instance);
-    const auto query_start = std::chrono::steady_clock::now();
-    auto current_query_chains = derive_query_positions(
-        transcript, RoundLabel("fri.query", 0), oracle_domains.front().size(),
-        query_rounds.front().fresh_query_count);
-    local_stats.verifier_transcript_ms +=
-        ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
-
     Domain parent_domain = reduced_instance.domain;
     for (std::size_t round_index = 0; round_index < total_rounds; ++round_index) {
       const Domain& child_domain = oracle_domains[round_index];
-      const auto expected_parent_indices = ExpandFiberIndices(
-          current_query_chains, child_domain.size(), params_.fold_factor);
+      const auto query_start = std::chrono::steady_clock::now();
+      const auto round_queries = derive_query_positions(
+          transcript, RoundLabel("fri.query", round_index), child_domain.size(),
+          query_rounds[round_index].fresh_query_count);
+      local_stats.verifier_transcript_ms +=
+          ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
+      const auto expected_parent_indices =
+          ExpandFiberIndices(round_queries, child_domain.size(), params_.fold_factor);
       const auto parent_root =
           round_index == 0 ? commitment.oracle_root
                            : opening.proof.oracle_roots[round_index - 1];
@@ -394,7 +379,7 @@ bool FriVerifier::verify(const FriCommitment& commitment,
 
       std::vector<std::pair<std::uint64_t, swgr::algebra::GRElem>> indexed_child;
       if (round_index + 1U < total_rounds) {
-        const auto expected_child_indices = UniqueSorted(current_query_chains);
+        const auto expected_child_indices = UniqueSorted(round_queries);
         const auto verify_child_start = std::chrono::steady_clock::now();
         if (round.child_oracle_proof.queried_indices != expected_child_indices ||
             !swgr::crypto::MerkleTree::verify(
@@ -415,7 +400,7 @@ bool FriVerifier::verify(const FriCommitment& commitment,
       }
 
       const auto round_algebra_start = std::chrono::steady_clock::now();
-      for (const auto child_index : current_query_chains) {
+      for (const auto child_index : round_queries) {
         const swgr::algebra::GRElem* child_value_ptr = nullptr;
         if (round_index + 1U < total_rounds) {
           child_value_ptr = LookupIndexedValue(indexed_child, child_index);
@@ -443,11 +428,6 @@ bool FriVerifier::verify(const FriCommitment& commitment,
       }
       local_stats.verifier_algebra_ms += ElapsedMilliseconds(
           round_algebra_start, std::chrono::steady_clock::now());
-
-      if (round_index + 1U < total_rounds) {
-        current_query_chains = CarryToBundleQueryChains(
-            current_query_chains, oracle_domains[round_index + 1].size());
-      }
       parent_domain = child_domain;
     }
 

@@ -49,6 +49,7 @@ set(STIR_OVER_GR_SOURCES
     src/poly_utils/bs08.cpp
     src/fri/common.cpp
     src/fri/parameters.cpp
+    src/fri/soundness.cpp
     src/fri/prover.cpp
     src/fri/verifier.cpp
     src/stir/common.cpp

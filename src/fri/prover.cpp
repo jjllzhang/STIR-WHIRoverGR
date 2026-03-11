@@ -36,20 +36,6 @@ std::vector<std::uint64_t> UniqueSorted(
   return unique;
 }
 
-std::vector<std::uint64_t> CarryToBundleQueryChains(
-    const std::vector<std::uint64_t>& carried_positions,
-    std::uint64_t bundle_count) {
-  if (bundle_count == 0) {
-    return {};
-  }
-  std::vector<std::uint64_t> queries;
-  queries.reserve(carried_positions.size());
-  for (const auto position : carried_positions) {
-    queries.push_back(position % bundle_count);
-  }
-  return queries;
-}
-
 std::vector<std::uint64_t> ExpandFiberIndices(
     const std::vector<std::uint64_t>& child_queries,
     std::uint64_t child_domain_size, std::uint64_t fold_factor) {
@@ -236,18 +222,17 @@ FriOpening FriProver::open(const FriCommitment& commitment,
 
     opening.proof.final_oracle = current_oracle;
 
-    const auto transcript_start = std::chrono::steady_clock::now();
-    auto current_query_chains = derive_query_positions(
-        transcript, RoundLabel("fri.query", 0), oracle_domains.front().size(),
-        query_rounds.front().fresh_query_count);
-    transcript_ms +=
-        ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
-
     for (std::size_t round_index = 0; round_index < total_rounds; ++round_index) {
       FriRoundProof round;
       const Domain& child_domain = oracle_domains[round_index];
-      const auto parent_indices = ExpandFiberIndices(
-          current_query_chains, child_domain.size(), params_.fold_factor);
+      const auto transcript_start = std::chrono::steady_clock::now();
+      const auto round_queries = derive_query_positions(
+          transcript, RoundLabel("fri.query", round_index), child_domain.size(),
+          query_rounds[round_index].fresh_query_count);
+      transcript_ms +=
+          ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
+      const auto parent_indices =
+          ExpandFiberIndices(round_queries, child_domain.size(), params_.fold_factor);
 
       const auto query_start = std::chrono::steady_clock::now();
       if (round_index == 0) {
@@ -258,18 +243,13 @@ FriOpening FriProver::open(const FriCommitment& commitment,
       }
       if (round_index + 1U < total_rounds) {
         round.child_oracle_proof =
-            oracle_trees[round_index].open(UniqueSorted(current_query_chains));
+            oracle_trees[round_index].open(UniqueSorted(round_queries));
       }
       const double open_elapsed =
           ElapsedMilliseconds(query_start, std::chrono::steady_clock::now());
       query_open_ms += open_elapsed;
       query_phase_ms += open_elapsed;
       opening.proof.rounds.push_back(std::move(round));
-
-      if (round_index + 1U < total_rounds) {
-        current_query_chains = CarryToBundleQueryChains(
-            current_query_chains, oracle_domains[round_index + 1].size());
-      }
     }
   }
 

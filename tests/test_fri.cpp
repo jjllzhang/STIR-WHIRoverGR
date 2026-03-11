@@ -12,6 +12,7 @@
 #include "fri/common.hpp"
 #include "fri/parameters.hpp"
 #include "fri/prover.hpp"
+#include "fri/soundness.hpp"
 #include "fri/verifier.hpp"
 #include "poly_utils/polynomial.hpp"
 #include "tests/test_common.hpp"
@@ -173,9 +174,9 @@ void TestFriFoldChallengesDoNotReuseGenericRingSampling() {
   CHECK(found_non_teich_generic);
 }
 
-void TestFriRepetitionCountMapsToQueryChains() {
+void TestFriRepetitionCountMapsToFreshRoundQueries() {
   testutil::PrintInfo(
-      "fri repetition count m maps to repeated query chains across rounds");
+      "fri repetition count m maps to fresh per-round query sampling");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto instance = MakeInstance(ctx, 9, 8);
@@ -188,10 +189,69 @@ void TestFriRepetitionCountMapsToQueryChains() {
   CHECK_EQ(metadata[0].bundle_count, std::uint64_t{3});
   CHECK(!metadata[0].carries_previous_queries);
   CHECK_EQ(metadata[1].query_chain_count, std::uint64_t{2});
-  CHECK_EQ(metadata[1].fresh_query_count, std::uint64_t{0});
+  CHECK_EQ(metadata[1].fresh_query_count, std::uint64_t{2});
   CHECK_EQ(metadata[1].bundle_count, std::uint64_t{1});
-  CHECK(metadata[1].carries_previous_queries);
+  CHECK(!metadata[1].carries_previous_queries);
   CHECK_EQ(swgr::fri::terminal_query_chain_count(params), std::uint64_t{2});
+}
+
+void TestStandaloneFriSoundnessSolvesMainPreset() {
+  testutil::PrintInfo(
+      "standalone FRI PCS theorem auto solver matches the main preset m");
+
+  const auto analysis = swgr::fri::analyze_standalone_soundness(
+      swgr::fri::StandaloneFriSoundnessInputs{
+          .base_prime = 2,
+          .ring_extension_degree = 162,
+          .domain_size = 243,
+          .fold_factor = 3,
+          .quotient_code_dimension = 81,
+          .lambda_target = 128,
+      });
+
+  CHECK(analysis.span_term_within_target);
+  CHECK_EQ(analysis.delta_numerator, std::uint64_t{1});
+  CHECK_EQ(analysis.delta_denominator, std::uint64_t{3});
+  CHECK_EQ(analysis.minimum_repetition_count, std::uint64_t{219});
+}
+
+void TestStandaloneFriSoundnessRejectsImpossibleSpanTerm() {
+  testutil::PrintInfo(
+      "standalone FRI PCS theorem auto solver detects impossible span terms");
+
+  const auto analysis = swgr::fri::analyze_standalone_soundness(
+      swgr::fri::StandaloneFriSoundnessInputs{
+          .base_prime = 2,
+          .ring_extension_degree = 32,
+          .domain_size = 243,
+          .fold_factor = 9,
+          .quotient_code_dimension = 81,
+          .lambda_target = 64,
+      });
+
+  CHECK(!analysis.span_term_within_target);
+  CHECK_EQ(analysis.minimum_repetition_count, std::uint64_t{110});
+}
+
+void TestStandaloneFriSoundnessRejectsZeroDelta() {
+  testutil::PrintInfo(
+      "standalone FRI PCS theorem auto solver rejects delta=0 instances");
+
+  bool threw = false;
+  try {
+    (void)swgr::fri::analyze_standalone_soundness(
+        swgr::fri::StandaloneFriSoundnessInputs{
+            .base_prime = 2,
+            .ring_extension_degree = 54,
+            .domain_size = 9,
+            .fold_factor = 3,
+            .quotient_code_dimension = 8,
+            .lambda_target = 64,
+        });
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
 }
 
 void TestFriPcsCommitOpenVerifyRoundtripAlphaOutsideDomain() {
@@ -513,7 +573,10 @@ int main() {
     TestFriFoldChallengesAlwaysLieInTeichmullerSet();
     TestFriFoldChallengeReplayMatchesAcrossTranscripts();
     TestFriFoldChallengesDoNotReuseGenericRingSampling();
-    TestFriRepetitionCountMapsToQueryChains();
+    TestFriRepetitionCountMapsToFreshRoundQueries();
+    TestStandaloneFriSoundnessSolvesMainPreset();
+    TestStandaloneFriSoundnessRejectsImpossibleSpanTerm();
+    TestStandaloneFriSoundnessRejectsZeroDelta();
     TestFriPcsCommitOpenVerifyRoundtripAlphaOutsideDomain();
     TestFriPcsCommitOpenVerifyRoundtripAlphaInsideDomain();
     TestFriZeroFoldRoundtrip();
