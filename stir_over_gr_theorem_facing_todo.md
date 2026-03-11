@@ -42,15 +42,15 @@
 
 ## Phase 0: Freeze Theorem Target And Guardrails
 
-- [ ] Add this document to tracking and keep it as the single execution checklist.
-- [ ] Create a short proof-note companion file `notes/stir_over_gr_theorem_facing_soundness.md`.
-- [ ] In that note, pin the first landing theorem statement:
+- [x] Add this document to tracking and keep it as the single execution checklist.
+- [x] Create a short proof-note companion file `notes/stir_over_gr_theorem_facing_soundness.md`.
+- [x] In that note, pin the first landing theorem statement:
   - challenge sampling from `T`,
   - OOD in unique-decoding mode,
   - conservative GR proximity window,
   - no Johnson/list-decoding claims.
-- [ ] In that note, list the exact external dependencies from `mineru-md/Z2KSNARK/hybrid_auto/Z2KSNARK.md` and `mineru-md/Z2KSNARK(Full-Version)/hybrid_auto/Z2KSNARK(Full-Version).md`.
-- [ ] In that note, state which STIR field lemmas are replaced by GR variants:
+- [x] In that note, list the exact external dependencies from `mineru-md/Z2KSNARK/hybrid_auto/Z2KSNARK.md` and `mineru-md/Z2KSNARK(Full-Version)/hybrid_auto/Z2KSNARK(Full-Version).md`.
+- [x] In that note, state which STIR field lemmas are replaced by GR variants:
   - GR folding-soundness lemma replacing field `Lemma 4.9`.
   - GR degree-correction/combine lemma replacing field `Lemma 4.13`.
   - GR quotient-by-wrong-values lemma replacing field `Lemma 4.4`.
@@ -359,22 +359,22 @@ Files:
 
 README updates:
 
-- [ ] Replace the current STIR-only wording with an explicit split:
+- [x] Replace the current STIR-only wording with an explicit split:
   - prototype fixed-parameter STIR mode
   - theorem-facing conservative GR-STIR mode
-- [ ] Add a short theorem-facing STIR contract section parallel to the FRI contract section.
-- [ ] State clearly that the first theorem-facing STIR landing is conservative and does not claim Johnson/list-decoding alignment.
+- [x] Add a short theorem-facing STIR contract section parallel to the FRI contract section.
+- [x] State clearly that the first theorem-facing STIR landing is conservative and does not claim Johnson/list-decoding alignment.
 
 Tracking updates:
 
-- [ ] Keep this file updated after each commit.
-- [ ] Mark any theorem item that remains assumption-only.
-- [ ] Add a short changelog section at the bottom once implementation starts.
+- [x] Keep this file updated after each commit.
+- [x] Mark any theorem item that remains assumption-only.
+- [x] Add a short changelog section at the bottom once implementation starts.
 
 Acceptance:
 
-- [ ] README does not overclaim paper equivalence.
-- [ ] README is consistent with benchmark metadata and live code paths.
+- [x] README does not overclaim paper equivalence.
+- [x] README is consistent with benchmark metadata and live code paths.
 
 Suggested commit:
 
@@ -400,6 +400,24 @@ Suggested future commit:
 - `bench: expose conservative theorem-facing STIR soundness metadata`
 - `test: cover theorem-facing STIR sampling, validation, and soundness metadata`
 - `docs: document conservative theorem-facing STIR-over-GR mode`
+
+## Assumption-Only Items Still Open
+
+- The current GR degree-correction term is still a conservative envelope rather than a paper-complete closed-form STIR-over-GR theorem term.
+- The current theorem-facing landing does not claim Johnson/list-decoding OOD alignment.
+- The current theorem-facing landing does not enable a stronger guarded half-gap mode.
+
+## Changelog
+
+- Phase 0 note landed by adding `notes/stir_over_gr_theorem_facing_soundness.md` and documenting the first conservative theorem claim boundary.
+- Phase 1 added explicit STIR protocol/challenge/OOD mode knobs.
+- Phase 2 added theorem-facing Teichmuller and exceptional-complement samplers.
+- Phase 3 routed theorem mode through prover/verifier without changing external proof shape.
+- Phase 4 added theorem-mode domain and sampler guardrails.
+- Phase 5 added conservative theorem-facing STIR soundness analysis.
+- Phase 6 switched live STIR benchmark rows to theorem-facing metadata.
+- Phase 7 added unit and benchmark-output regression coverage for theorem-mode STIR.
+- Phase 8 aligned README and tracking docs with the landed theorem-facing conservative mode.
 
 ## Explicit Out-Of-Scope Cleanups
 

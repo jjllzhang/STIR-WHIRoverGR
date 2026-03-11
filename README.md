@@ -25,7 +25,11 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
 - `FRI-3` and `FRI-9` now expose a theorem-facing BCS-style PCS surface over Teichmuller-supported domains, but they remain prototype / research implementations rather than production-ready or audited FRI-based PCS code
 - Current FRI openings keep `g_0` as a virtual quotient oracle, commit to `g_i` for `i >= 1`, and terminate by revealing the full final oracle table; proof-byte reporting comes from a deterministic length-prefixed serializer over that actual external opening/proof object
-- `STIR(9->3)` now exposes a proof-only public surface built around `initial_root`, per-round `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`, and `queries_to_final + final_polynomial`; it remains a prototype, fixed-parameter, Galois-ring adaptation rather than a theorem-level complete implementation of the paper
+- `STIR(9->3)` now keeps two distinct parameter surfaces over the same external proof shape:
+  - a prototype fixed-parameter STIR mode kept for compatibility and regression anchoring
+  - a theorem-facing conservative GR-STIR mode used by the live benchmark path
+- Both STIR modes keep the same proof-only public surface built around `initial_root`, per-round `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`, and `queries_to_final + final_polynomial`
+- The first theorem-facing STIR landing is conservative: it uses Teichmuller challenge sampling, unique-decoding exceptional-complement OOD sampling, and existing Z2KSNARK-backed GR proximity envelopes; it does not claim Johnson/list-decoding alignment or full field-paper-equivalent STIR soundness
 - `poly_utils::bs08` is still a placeholder interface
 - Current FRI benchmark rows expose the paper-facing repetition parameter `m`; STIR benchmark rows now execute theorem-facing parameters and emit conservative theorem-facing metadata, with unsupported conservative regimes reported as `effective_security_bits=0` plus explicit notes
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
@@ -58,7 +62,34 @@ Soundness interpretation:
 - Because the implemented protocol flow matches that paper-facing BCS version, the implementation should be understood as inheriting the paper's soundness bound under the same assumptions, rather than as requiring a separate repo-specific soundness theorem for deployment claims.
 - This repository still does not target production deployment or audited cryptographic assurance; its role is protocol reference, experimentation, and measurement.
 
-Current STIR support should be read similarly: the public proof shape now aligns with Construction 5.2-style rounds and final-polynomial consistency checks, but the repository still implements a fixed-parameter Galois-ring adaptation rather than a full theorem-level reproduction of the field-model paper.
+Current STIR support is split into two modes over the same `StirProof` shape:
+
+- Prototype fixed-parameter STIR mode:
+  - kept in `StirParameters` for backwards-compatible regression coverage
+  - preserves the older ambient-ring challenge and prototype OOD route
+  - should be read as an engineering / research prototype, not as a theorem-facing claim
+- Theorem-facing conservative GR-STIR mode:
+  - selected by `protocol_mode = theorem_gr_conservative`
+  - uses `alpha, beta <- T`-style Teichmuller challenge sampling
+  - uses exceptional-safe-complement OOD and shake sampling inside `T*` in a unique-decoding regime
+  - requires theorem validation that live round domains stay inside `T*`
+  - keeps the existing external `StirProof` message shape rather than redesigning the public proof format
+
+Current theorem-facing STIR contract:
+
+- fixed `9 -> 3` folding route only
+- theorem-mode folding and comb challenges sampled from `T`
+- theorem-mode OOD and shake points sampled from an explicit exceptional safe complement over `T*`
+- theorem-mode validation rejects non-`T*` round domains and exhausted theorem OOD pools
+- theorem-mode soundness metadata comes from `analyze_theorem_soundness(...)` and the conservative `theorem_gr_conservative_existing_z2ksnark_results` model
+- unsupported conservative regimes remain visible in benchmark output, but they report `effective_security_bits=0` rather than a fabricated theorem claim
+
+STIR soundness interpretation:
+
+- The theorem-facing STIR landing should be read as a conservative GR adaptation of the STIR round structure, not as a paper-complete reproduction of the finite-field STIR soundness appendix.
+- The implemented theorem metadata keeps `epsilon_out = 0` only in the unique-decoding OOD regime, and uses assumption-backed conservative GR folding and degree-correction envelopes derived from existing Z2KSNARK proximity results.
+- This repository therefore does not claim Johnson/list-decoding alignment or full field-paper-equivalent STIR soundness.
+- The prototype STIR mode remains available in code, but current `stir9to3` benchmark rows execute the theorem-facing conservative mode and describe only that theorem-facing metadata.
 
 ## Dependencies
 
