@@ -162,6 +162,7 @@ Benchmark notes:
 - Current FRI rows count the prover reply opening message (`value + opening proof`) rather than `commitment + opening` combined bytes; `alpha` remains verifier-chosen context and is not charged to the prover reply
 - Current STIR rows count the exact serialized bytes of the public `StirProof`; the optional `prove_with_witness()` compatibility carrier is not charged
 - Current `fri3` / `fri9` rows report the explicit theorem-facing repetition count `m` in `fri_repetitions`; they do not derive `effective_security_bits` from that value inside `bench_time`
+- `bench_time` currently keeps one shared row schema across `FRI` and `STIR`; on `theorem_fri` rows the engineering columns `lambda_target`, `pow_bits`, `sec_mode`, and `effective_security_bits` are legacy shared-schema placeholders and should be read as not applicable rather than as theorem-level security claims
 - Current `stir9to3` rows still use `soundness_model`, `soundness_scope`, `effective_security_bits`, and the `ConjectureCapacity` / `Conservative` labels as engineering calibration metadata; they are not theorem-backed security claims or paper-complete parameter instantiations
 - Current parameter-search tooling remains STIR-engineering-oriented for `lambda/pow/sec-mode/queries`; when FRI rows are present, they use the fixed `fri_repetitions` value passed to `bench_time`
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names

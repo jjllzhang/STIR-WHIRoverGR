@@ -263,15 +263,15 @@ After the protocol repair lands, make the rest of the repo stop leaking the old 
 
 ### Tasks
 
-- [ ] Update `README.md` current-scope and paper-alignment sections.
-- [ ] Update benchmark help text and emitted metadata fields.
-- [ ] Remove or rename any stale fields whose names imply theorem-level soundness when they are heuristic-only.
-- [ ] Add one narrow regression test for each bug fixed in Phases 1-3.
-- [ ] Confirm no test still encodes the old heuristic schedule as the canonical paper-facing behavior.
+- [x] Update `README.md` current-scope and paper-alignment sections.
+- [x] Update benchmark help text and emitted metadata fields.
+- [x] Remove or rename any stale fields whose names imply theorem-level soundness when they are heuristic-only.
+- [x] Add one narrow regression test for each bug fixed in Phases 1-3.
+- [x] Confirm no test still encodes the old heuristic schedule as the canonical paper-facing behavior.
 
 ### Validation
 
-- [ ] Focused tests:
+- [x] Focused tests:
 
 ```bash
 ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri|test_soundness_configurator'
@@ -286,7 +286,7 @@ OMP_NUM_THREADS=1 ./build-release/bench_time --protocol fri9 --threads 1 --forma
 
 ### Exit Criteria
 
-- [ ] Docs, code, tests, and benchmark output all describe the same FRI soundness story.
+- [x] Docs, code, tests, and benchmark output all describe the same FRI soundness story.
 
 ## Recommended Patch Batching
 
@@ -313,7 +313,7 @@ Stop and re-review before coding if any of these happens:
 - [x] Phase 1 completed
 - [x] Phase 2 completed
 - [x] Phase 3 completed
-- [ ] Phase 4 completed
+- [x] Phase 4 completed
 
 ## Execution Notes
 
@@ -444,3 +444,35 @@ Use this section during follow-up implementation to record:
   - `ctest --test-dir build --output-on-failure -R 'test_fri'`
   - `./build/bench_time --protocol fri3 --n 9 --d 8 --fri-repetitions 2 --format text`
   - `./build/bench_time --protocol fri3 --n 9 --d 8 --stop-degree 1 --fri-repetitions 2 --format text`
+
+### Phase 4 Bench, Docs, and Cleanup (2026-03-11)
+
+- README benchmark notes were updated so the current public wording matches the
+  landed FRI/STIR split more tightly:
+  - theorem-facing `FRI` rows expose `fri_repetitions = m` directly;
+  - `STIR` rows still carry engineering-only calibration metadata;
+  - the shared `bench_time` row schema keeps legacy columns such as
+    `lambda_target`, `pow_bits`, `sec_mode`, and `effective_security_bits`, but
+    on `theorem_fri` rows they are now documented explicitly as shared-schema
+    placeholders rather than theorem-level soundness claims.
+- `bench_time --help` now states the same compatibility rule so CLI users do not
+  misread the shared output fields when comparing `FRI` and `STIR` rows.
+- The Phase 4 cleanup intentionally did not rename or delete the shared schema
+  columns. The stop-rule concern about downstream benchmark consumers was real,
+  and no local evidence justified a breaking output-schema change during cleanup.
+  Instead, the repo now resolves the ambiguity by documentation and mode labels.
+- The narrow regression coverage requested by Phase 4 was already present after
+  Phases 1-3 and was retained as the current validation anchor:
+  - Phase 1: `tests/test_fri.cpp` covers `beta_i <- T`, transcript replay, and
+    rejection of the old unrestricted folding challenge path.
+  - Phase 2: `tests/test_fri.cpp` covers `m` to query-chain mapping, while
+    `tests/test_soundness_configurator.cpp` keeps the engineering heuristic path
+    scoped to STIR-oriented metadata rather than to theorem-facing FRI.
+  - Phase 3: `tests/test_fri.cpp` covers honest openings for both `alpha in T \\ L`
+    and `alpha in L`, zero-fold behavior, and tamper rejection for the theorem-
+    facing proof object.
+- No remaining test treats the old heuristic round schedule as the canonical FRI
+  paper contract. The only surviving heuristic-shape assertions live under the
+  soundness configurator tests for the STIR engineering path.
+- Validation completed for this phase:
+  - `ctest --test-dir build --output-on-failure -R 'test_crypto|test_fri|test_soundness_configurator'`

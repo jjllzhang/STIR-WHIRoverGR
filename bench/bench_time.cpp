@@ -228,6 +228,10 @@ std::string TimeBenchUsage(const char* binary_name) {
          "    repetition parameter m\n"
          "    note: --lambda/--pow-bits/--sec-mode/--queries remain the current\n"
          "    STIR engineering / benchmark knobs\n"
+         "    note: text/csv/json output currently keeps one shared row schema\n"
+         "    across FRI and STIR; on theorem_fri rows the engineering fields\n"
+         "    lambda_target/pow_bits/sec_mode/effective_security_bits are\n"
+         "    placeholders and should be read as not_applicable\n"
          "  --warmup <uint> --reps <uint>\n"
          "  --format text|csv|json\n";
 }
