@@ -27,7 +27,7 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - Current FRI openings keep `g_0` as a virtual quotient oracle, commit to `g_i` for `i >= 1`, and terminate by revealing the full final oracle table; proof-byte reporting comes from a deterministic length-prefixed serializer over that actual external opening/proof object
 - `STIR(9->3)` now exposes a proof-only public surface built around `initial_root`, per-round `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`, and `queries_to_final + final_polynomial`; it remains a prototype, fixed-parameter, Galois-ring adaptation rather than a theorem-level complete implementation of the paper
 - `poly_utils::bs08` is still a placeholder interface
-- Current FRI benchmark rows now expose the paper-facing repetition parameter `m`; STIR benchmark rows still use engineering scheduling metadata during the transition
+- Current FRI benchmark rows expose the paper-facing repetition parameter `m`; STIR benchmark rows now execute theorem-facing parameters and emit conservative theorem-facing metadata, with unsupported conservative regimes reported as `effective_security_bits=0` plus explicit notes
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
 
 ## Paper Alignment Boundaries
@@ -168,7 +168,7 @@ Benchmark notes:
 - `--fri-soundness-mode manual_repetition` keeps a caller-provided fixed `m`, but those rows are intentionally emitted as `soundness_mode=manual_standalone_fri` rather than as theorem-aligned metadata
 - The current theorem_auto path is conservative: it is only enabled for `p=2`, and it rejects instances where the discrete gap gives `delta = 0`
 - `bench_time` still keeps one shared row schema across `FRI` and `STIR`; theorem-aligned standalone FRI rows now use `lambda_target` and `effective_security_bits`, while manual standalone FRI rows leave those fields as not applicable
-- Current `stir9to3` rows still use `soundness_model`, `soundness_scope`, `effective_security_bits`, and the `ConjectureCapacity` / `Conservative` labels as engineering calibration metadata; they are not theorem-backed security claims or paper-complete parameter instantiations
+- Current `stir9to3` rows execute `theorem_gr_conservative` STIR parameters and emit conservative theorem-facing metadata backed by the existing Z2KSNARK-based GR envelope; unsupported parameter sets still print a row, but they are marked through `soundness_notes` and report `effective_security_bits=0`
 - Current preset wrappers and parameter-search tooling preserve older fixed-`m` benchmark presets by mapping them to `manual_repetition`; omit `fri_repetitions` if you want theorem-auto standalone FRI rows
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 

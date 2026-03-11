@@ -290,31 +290,27 @@ Files:
 - `bench/bench_time.cpp`
 - `CMakeLists.txt` if a dedicated STIR soundness test binary is added
 
-Types to add in `bench/bench_time.cpp`:
-
-- [ ] `enum class StirBenchSoundnessMode { Engineering, TheoremGrConservative };`
-
 Functions to add or update:
 
-- [ ] Parse a new CLI flag `--stir-soundness-mode engineering|theorem_gr_conservative`.
-- [ ] Keep existing engineering STIR metadata path as the default until theorem mode is explicitly requested.
-- [ ] Add `FillStirTheoremSoundnessMetadata(...)`.
-- [ ] Update `RunStirBench(...)` wiring to call `analyze_theorem_soundness(...)` when theorem mode is selected.
+- [x] Add `FillStirTheoremSoundnessMetadata(...)`.
+- [x] Update the STIR bench wiring to run theorem-facing STIR parameters and call `analyze_theorem_soundness(...)`.
+- [x] Keep `--lambda/--pow-bits/--sec-mode/--queries` as live STIR benchmark knobs, but do not subtract `pow_bits` from theorem security bits.
 
 Metadata requirements:
 
-- [ ] `soundness_mode = theorem_gr_conservative`
-- [ ] `soundness_model = epsilon_rbr_stir_gr_conservative_unique_ood`
-- [ ] `soundness_scope = theorem_gr_conservative_existing_z2ksnark_results`
-- [ ] `soundness_notes` must mention:
+- [x] `soundness_mode = theorem_gr_conservative`
+- [x] `soundness_model = epsilon_rbr_stir_gr_conservative_unique_ood`
+- [x] `soundness_scope = theorem_gr_conservative_existing_z2ksnark_results`
+- [x] `soundness_notes` must mention:
   - unique-decoding OOD
   - Teichmuller challenge sampling
   - conservative GR proximity assumptions
+  - unsupported conservative regimes continue to print a row with `effective_security_bits = 0`
 
 Acceptance:
 
-- [ ] `bench_time` can print both engineering and theorem-facing STIR metadata.
-- [ ] No theorem-facing metadata path uses `engineering_metadata_non_paper`.
+- [x] `bench_time` prints theorem-facing STIR metadata on the live STIR row path.
+- [x] No STIR theorem metadata path uses `engineering_metadata_non_paper`.
 
 Suggested commit:
 

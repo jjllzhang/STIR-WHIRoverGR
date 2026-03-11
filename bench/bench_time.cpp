@@ -23,8 +23,8 @@
 #include "fri/verifier.hpp"
 #include "ldt.hpp"
 #include "poly_utils/polynomial.hpp"
-#include "soundness/configurator.hpp"
 #include "stir/prover.hpp"
+#include "stir/soundness.hpp"
 #include "stir/verifier.hpp"
 
 namespace {
@@ -276,23 +276,40 @@ void FillFriSoundnessMetadata(TimeBenchRow& row,
   row.soundness_notes = notes.str();
 }
 
-void FillEngineeringSoundnessMetadata(
-    TimeBenchRow& row, swgr::SecurityMode sec_mode,
-    std::uint64_t lambda_target, std::uint64_t pow_bits,
-    const std::vector<std::uint64_t>& query_repetitions, double rho) {
-  const auto heuristic = swgr::soundness::engineering_heuristic_result(
-      sec_mode, lambda_target, pow_bits, !query_repetitions.empty(), rho);
-  row.soundness_mode = "engineering_stir";
+void FillStirTheoremSoundnessMetadata(
+    TimeBenchRow& row, const swgr::stir::StirTheoremSoundnessAnalysis& analysis,
+    swgr::SecurityMode sec_mode, std::uint64_t lambda_target,
+    std::uint64_t pow_bits, bool manual_query_schedule) {
+  row.soundness_mode = "theorem_gr_conservative";
   row.fri_repetitions = 0;
   row.lambda_target = lambda_target;
   row.pow_bits = pow_bits;
   row.sec_mode = swgr::to_string(sec_mode);
-  row.soundness_model = heuristic.model;
-  row.soundness_scope = heuristic.scope;
-  row.query_policy = heuristic.query_policy;
-  row.pow_policy = heuristic.pow_policy;
-  row.effective_security_bits = heuristic.effective_security_bits;
-  row.soundness_notes = JoinNotes(heuristic.notes);
+  row.soundness_model = "epsilon_rbr_stir_gr_conservative_unique_ood";
+  row.soundness_scope = "theorem_gr_conservative_existing_z2ksnark_results";
+  row.query_policy =
+      manual_query_schedule ? "manual_live_schedule" : "auto_live_schedule";
+  row.pow_policy = "benchmark_only_not_in_theorem_bound";
+  row.effective_security_bits =
+      analysis.feasible ? analysis.effective_security_bits : 0;
+
+  std::vector<std::string> notes{
+      "unique-decoding OOD over the explicit exceptional complement",
+      "folding and comb challenges are sampled from Teichmuller T",
+      "conservative GR proximity assumptions come from existing Z2KSNARK results",
+      "pow_bits is retained as a live benchmark/query knob and is not subtracted from theorem security bits",
+  };
+  if (manual_query_schedule) {
+    notes.push_back(
+        "manual query schedule overrides the live auto schedule before theorem analysis");
+  }
+  if (!analysis.feasible) {
+    notes.push_back(
+        "theorem analysis marked this parameter set unsupported for conservative reporting");
+  }
+  notes.insert(notes.end(), analysis.assumptions.begin(),
+               analysis.assumptions.end());
+  row.soundness_notes = JoinNotes(notes);
 }
 
 double ProverProfileAccountedTotal(const TimeBenchRow& row) {
@@ -347,12 +364,15 @@ std::string TimeBenchUsage(const char* binary_name) {
          "    manual_repetition instead\n"
          "    note: manual_repetition keeps a caller-provided m for FRI rows,\n"
          "    but those rows are intentionally non-theorem metadata\n"
-         "    note: --lambda/--pow-bits/--sec-mode/--queries remain the current\n"
-         "    STIR engineering / benchmark knobs\n"
+         "    note: --lambda/--pow-bits/--sec-mode/--queries remain the live\n"
+         "    STIR benchmark knobs; theorem metadata is reported for the\n"
+         "    resulting live parameterization, and pow_bits is not folded\n"
+         "    into theorem security bits\n"
          "    note: text/csv/json output currently keeps one shared row schema\n"
-         "    across FRI and STIR; theorem_fri rows now use lambda_target and\n"
-         "    effective_security_bits, while manual_standalone_fri rows still\n"
-         "    leave those fields as not_applicable\n"
+         "    across FRI and STIR; theorem_fri and theorem_gr_conservative\n"
+         "    rows use lambda_target/effective_security_bits, while\n"
+         "    manual_standalone_fri rows still leave theorem-only fields as\n"
+         "    not_applicable\n"
          "  --warmup <uint> --reps <uint>\n"
          "  --format text|csv|json\n";
 }
@@ -1008,6 +1028,10 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
   params.pow_bits = options.pow_bits;
   params.sec_mode = options.sec_mode;
   params.hash_profile = options.hash_profile;
+  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGrConservative;
+  params.challenge_sampling = swgr::stir::StirChallengeSampling::TeichmullerT;
+  params.ood_sampling =
+      swgr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
 
   const swgr::stir::StirInstance instance{
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
@@ -1034,10 +1058,10 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
                                   proof.stats.verifier_hashes;
                             }
                           });
-  FillEngineeringSoundnessMetadata(
-      row, options.sec_mode, options.lambda_target, options.pow_bits,
-      options.queries,
-      static_cast<double>(options.d + 1U) / static_cast<double>(options.n));
+  const auto analysis = swgr::stir::analyze_theorem_soundness(params, instance);
+  FillStirTheoremSoundnessMetadata(row, analysis, options.sec_mode,
+                                   options.lambda_target, options.pow_bits,
+                                   !options.queries.empty());
   return row;
 }
 
