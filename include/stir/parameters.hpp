@@ -20,7 +20,7 @@ struct RoundQueryScheduleMetadata {
 
 enum class StirProtocolMode {
   PrototypeEngineering,
-  TheoremGrConservative,
+  TheoremGr,
 };
 
 enum class StirChallengeSampling {

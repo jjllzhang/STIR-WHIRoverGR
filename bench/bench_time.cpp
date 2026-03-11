@@ -280,13 +280,13 @@ void FillStirTheoremSoundnessMetadata(
     TimeBenchRow& row, const swgr::stir::StirTheoremSoundnessAnalysis& analysis,
     swgr::SecurityMode sec_mode, std::uint64_t lambda_target,
     std::uint64_t pow_bits, bool manual_query_schedule) {
-  row.soundness_mode = "theorem_gr_conservative";
+  row.soundness_mode = "theorem_gr";
   row.fri_repetitions = 0;
   row.lambda_target = lambda_target;
   row.pow_bits = pow_bits;
   row.sec_mode = swgr::to_string(sec_mode);
-  row.soundness_model = "epsilon_rbr_stir_gr_conservative_unique_ood";
-  row.soundness_scope = "theorem_gr_conservative_existing_z2ksnark_results";
+  row.soundness_model = "epsilon_rbr_stir_gr_half_gap_unique_ood";
+  row.soundness_scope = "theorem_gr_existing_z2ksnark_half_gap_results";
   row.query_policy =
       manual_query_schedule ? "manual_live_schedule" : "auto_live_schedule";
   row.pow_policy = "benchmark_only_not_in_theorem_bound";
@@ -296,7 +296,7 @@ void FillStirTheoremSoundnessMetadata(
   std::vector<std::string> notes{
       "unique-decoding OOD over the explicit exceptional complement",
       "folding and comb challenges are sampled from Teichmuller T",
-      "conservative GR proximity assumptions come from existing Z2KSNARK results",
+      "half-gap GR proximity assumptions come from existing Z2KSNARK results",
       "pow_bits is retained as a live benchmark/query knob and is not subtracted from theorem security bits",
   };
   if (manual_query_schedule) {
@@ -305,7 +305,7 @@ void FillStirTheoremSoundnessMetadata(
   }
   if (!analysis.feasible) {
     notes.push_back(
-        "theorem analysis marked this parameter set unsupported for conservative reporting");
+        "theorem analysis marked this parameter set unsupported for theorem_gr half-gap reporting");
   }
   notes.insert(notes.end(), analysis.assumptions.begin(),
                analysis.assumptions.end());
@@ -369,7 +369,7 @@ std::string TimeBenchUsage(const char* binary_name) {
          "    resulting live parameterization, and pow_bits is not folded\n"
          "    into theorem security bits\n"
          "    note: text/csv/json output currently keeps one shared row schema\n"
-         "    across FRI and STIR; theorem_fri and theorem_gr_conservative\n"
+         "    across FRI and STIR; theorem_fri and theorem_gr\n"
          "    rows use lambda_target/effective_security_bits, while\n"
          "    manual_standalone_fri rows still leave theorem-only fields as\n"
          "    not_applicable\n"
@@ -1028,7 +1028,7 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
   params.pow_bits = options.pow_bits;
   params.sec_mode = options.sec_mode;
   params.hash_profile = options.hash_profile;
-  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGrConservative;
+  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGr;
   params.challenge_sampling = swgr::stir::StirChallengeSampling::TeichmullerT;
   params.ood_sampling =
       swgr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;

@@ -11,9 +11,9 @@ namespace swgr::stir {
 
 namespace {
 
-StirParameters TheoremGrConservativeDefaults() {
+StirParameters TheoremGrDefaults() {
   StirParameters params;
-  params.protocol_mode = StirProtocolMode::TheoremGrConservative;
+  params.protocol_mode = StirProtocolMode::TheoremGr;
   params.challenge_sampling = StirChallengeSampling::TeichmullerT;
   params.ood_sampling =
       StirOodSamplingMode::TheoremExceptionalComplementUnique;
@@ -21,7 +21,7 @@ StirParameters TheoremGrConservativeDefaults() {
 }
 
 bool matches_theorem_sampling(const StirParameters& params) {
-  const auto theorem_defaults = TheoremGrConservativeDefaults();
+  const auto theorem_defaults = TheoremGrDefaults();
   return params.challenge_sampling == theorem_defaults.challenge_sampling &&
          params.ood_sampling == theorem_defaults.ood_sampling;
 }
@@ -34,7 +34,7 @@ bool validate(const StirParameters& params) {
     return false;
   }
 
-  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative &&
+  if (params.protocol_mode == StirProtocolMode::TheoremGr &&
       !matches_theorem_sampling(params)) {
     return false;
   }
@@ -110,7 +110,7 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
   try {
     Domain current_domain = instance.domain;
     std::uint64_t current_degree_bound = instance.claimed_degree;
-    if (params.protocol_mode == StirProtocolMode::TheoremGrConservative &&
+    if (params.protocol_mode == StirProtocolMode::TheoremGr &&
         !domain_is_subset_of_teichmuller_units(current_domain)) {
       return false;
     }
@@ -125,7 +125,7 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
       const Domain folded_domain =
           current_domain.pow_map(params.virtual_fold_factor);
       const Domain shift_domain = current_domain.scale_offset(params.shift_power);
-      if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+      if (params.protocol_mode == StirProtocolMode::TheoremGr) {
         if (!domain_is_subset_of_teichmuller_units(current_domain) ||
             !domain_is_subset_of_teichmuller_units(folded_domain) ||
             !domain_is_subset_of_teichmuller_units(shift_domain)) {
@@ -147,7 +147,7 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
           next_degree_bound + 1) {
         return false;
       }
-      if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+      if (params.protocol_mode == StirProtocolMode::TheoremGr) {
         if (params.ood_samples ==
             std::numeric_limits<std::uint64_t>::max()) {
           return false;

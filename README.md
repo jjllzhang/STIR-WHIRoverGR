@@ -27,11 +27,11 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - Current FRI openings keep `g_0` as a virtual quotient oracle, commit to `g_i` for `i >= 1`, and terminate by revealing the full final oracle table; proof-byte reporting comes from a deterministic length-prefixed serializer over that actual external opening/proof object
 - `STIR(9->3)` now keeps two distinct parameter surfaces over the same external proof shape:
   - a prototype fixed-parameter STIR mode kept for compatibility and regression anchoring
-  - a theorem-facing conservative GR-STIR mode used by the live benchmark path
+  - a theorem-facing GR-STIR mode used by the live benchmark path
 - Both STIR modes keep the same proof-only public surface built around `initial_root`, per-round `g_root + betas + ans_polynomial + shake_polynomial + queries_to_prev`, and `queries_to_final + final_polynomial`
-- The first theorem-facing STIR landing is conservative: it uses Teichmuller challenge sampling, unique-decoding exceptional-complement OOD sampling, and existing Z2KSNARK-backed GR proximity envelopes; it does not claim Johnson/list-decoding alignment or full field-paper-equivalent STIR soundness
+- The first theorem-facing STIR landing is half-gap based: it uses Teichmuller challenge sampling, unique-decoding exceptional-complement OOD sampling, and existing Z2KSNARK-backed `(1-rho)/2` GR proximity terms; it does not claim Johnson/list-decoding alignment or full field-paper-equivalent STIR soundness
 - `poly_utils::bs08` is still a placeholder interface
-- Current FRI benchmark rows expose the paper-facing repetition parameter `m`; STIR benchmark rows now execute theorem-facing parameters and emit conservative theorem-facing metadata, with unsupported conservative regimes reported as `effective_security_bits=0` plus explicit notes
+- Current FRI benchmark rows expose the paper-facing repetition parameter `m`; STIR benchmark rows now execute theorem-facing parameters and emit theorem-facing half-gap metadata, with unsupported theorem_gr regimes reported as `effective_security_bits=0` plus explicit notes
 - The benchmark surfaces are suitable for prototype comparisons and archived experiment evidence, not for production claims
 
 ## Paper Alignment Boundaries
@@ -68,8 +68,8 @@ Current STIR support is split into two modes over the same `StirProof` shape:
   - kept in `StirParameters` for backwards-compatible regression coverage
   - preserves the older ambient-ring challenge and prototype OOD route
   - should be read as an engineering / research prototype, not as a theorem-facing claim
-- Theorem-facing conservative GR-STIR mode:
-  - selected by `protocol_mode = theorem_gr_conservative`
+- Theorem-facing GR-STIR mode:
+  - selected by `protocol_mode = theorem_gr`
   - uses `alpha, beta <- T`-style Teichmuller challenge sampling
   - uses exceptional-safe-complement OOD and shake sampling inside `T*` in a unique-decoding regime
   - requires theorem validation that live round domains stay inside `T*`
@@ -81,15 +81,15 @@ Current theorem-facing STIR contract:
 - theorem-mode folding and comb challenges sampled from `T`
 - theorem-mode OOD and shake points sampled from an explicit exceptional safe complement over `T*`
 - theorem-mode validation rejects non-`T*` round domains and exhausted theorem OOD pools
-- theorem-mode soundness metadata comes from `analyze_theorem_soundness(...)` and the conservative `theorem_gr_conservative_existing_z2ksnark_results` model
-- unsupported conservative regimes remain visible in benchmark output, but they report `effective_security_bits=0` rather than a fabricated theorem claim
+- theorem-mode soundness metadata comes from `analyze_theorem_soundness(...)` and the `theorem_gr_existing_z2ksnark_half_gap_results` model
+- unsupported theorem_gr regimes remain visible in benchmark output, but they report `effective_security_bits=0` rather than a fabricated theorem claim
 
 STIR soundness interpretation:
 
-- The theorem-facing STIR landing should be read as a conservative GR adaptation of the STIR round structure, not as a paper-complete reproduction of the finite-field STIR soundness appendix.
-- The implemented theorem metadata keeps `epsilon_out = 0` only in the unique-decoding OOD regime, and uses assumption-backed conservative GR folding and degree-correction envelopes derived from existing Z2KSNARK proximity results.
+- The theorem-facing STIR landing should be read as a half-gap GR adaptation of the STIR round structure, not as a paper-complete reproduction of the finite-field STIR soundness appendix.
+- The implemented theorem metadata keeps `epsilon_out = 0` only in the unique-decoding OOD regime, and uses half-gap GR folding and degree-correction terms derived from existing Z2KSNARK proximity results.
 - This repository therefore does not claim Johnson/list-decoding alignment or full field-paper-equivalent STIR soundness.
-- The prototype STIR mode remains available in code, but current `stir9to3` benchmark rows execute the theorem-facing conservative mode and describe only that theorem-facing metadata.
+- The prototype STIR mode remains available in code, but current `stir9to3` benchmark rows execute the theorem-facing `theorem_gr` mode and describe only that theorem-facing metadata.
 
 ## Dependencies
 
@@ -199,7 +199,7 @@ Benchmark notes:
 - `--fri-soundness-mode manual_repetition` keeps a caller-provided fixed `m`, but those rows are intentionally emitted as `soundness_mode=manual_standalone_fri` rather than as theorem-aligned metadata
 - The current theorem_auto path is conservative: it is only enabled for `p=2`, and it rejects instances where the discrete gap gives `delta = 0`
 - `bench_time` still keeps one shared row schema across `FRI` and `STIR`; theorem-aligned standalone FRI rows now use `lambda_target` and `effective_security_bits`, while manual standalone FRI rows leave those fields as not applicable
-- Current `stir9to3` rows execute `theorem_gr_conservative` STIR parameters and emit conservative theorem-facing metadata backed by the existing Z2KSNARK-based GR envelope; unsupported parameter sets still print a row, but they are marked through `soundness_notes` and report `effective_security_bits=0`
+- Current `stir9to3` rows execute `theorem_gr` STIR parameters and emit theorem-facing half-gap metadata backed by the existing Z2KSNARK-based GR results; unsupported parameter sets still print a row, but they are marked through `soundness_notes` and report `effective_security_bits=0`
 - Current preset wrappers and parameter-search tooling preserve older fixed-`m` benchmark presets by mapping them to `manual_repetition`; omit `fri_repetitions` if you want theorem-auto standalone FRI rows
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 

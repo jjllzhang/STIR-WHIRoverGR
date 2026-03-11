@@ -101,7 +101,7 @@ swgr::stir::StirParameters MakeTheoremParams(
     std::vector<std::uint64_t> query_repetitions = {1},
     std::uint64_t stop_degree = 3) {
   auto params = MakeParams(std::move(query_repetitions), stop_degree);
-  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGrConservative;
+  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGr;
   params.challenge_sampling = swgr::stir::StirChallengeSampling::TeichmullerT;
   params.ood_sampling =
       swgr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
@@ -620,7 +620,7 @@ void TestStirTheoremModeMultiRoundUsesPublicRootChain() {
 
 void TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance() {
   testutil::PrintInfo(
-      "theorem stir soundness analysis computes a conservative supported bound");
+      "theorem stir soundness analysis computes a half-gap supported bound");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 54});
   const swgr::stir::StirInstance instance{
@@ -636,9 +636,9 @@ void TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance() {
   CHECK(analysis.feasible);
   CHECK_EQ(
       analysis.flavor,
-      swgr::stir::StirTheoremSoundnessFlavor::GrConservativeUniqueOod);
+      swgr::stir::StirTheoremSoundnessFlavor::GrHalfGapUniqueOod);
   CHECK_EQ(analysis.proximity_gap_model,
-           std::string("z2ksnark_gr_unique_gap_envelope_s_times_ell_sq_over_T"));
+           std::string("z2ksnark_gr_half_gap_envelope_s_times_ell_sq_over_T"));
   CHECK_EQ(analysis.ood_model,
            std::string("unique_decoding_exceptional_complement"));
   CHECK_EQ(analysis.rounds.size(), std::size_t{1});
@@ -646,13 +646,13 @@ void TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance() {
   CHECK(analysis.epsilon_fold > 0.0);
   CHECK(analysis.epsilon_fin > 0.0);
   CHECK_EQ(analysis.effective_security_bits, std::uint64_t{0});
-  CHECK(ContainsSubstring(analysis.assumptions, "conservative") ||
+  CHECK(ContainsSubstring(analysis.assumptions, "half-gap") ||
         ContainsSubstring(analysis.assumptions, "Z2KSNARK"));
 }
 
 void TestStirTheoremSoundnessAnalysisRejectsUnsupportedRegimes() {
   testutil::PrintInfo(
-      "theorem stir soundness analysis marks oversized or trivial regimes unsupported");
+      "theorem stir soundness analysis marks oversized or trivial half-gap regimes unsupported");
 
   const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
   const auto instance = MakeInstance(ctx, 243, 161);
@@ -665,7 +665,7 @@ void TestStirTheoremSoundnessAnalysisRejectsUnsupportedRegimes() {
   CHECK(!analysis.feasible);
   CHECK_EQ(
       analysis.flavor,
-      swgr::stir::StirTheoremSoundnessFlavor::GrConservativeUniqueOod);
+      swgr::stir::StirTheoremSoundnessFlavor::GrHalfGapUniqueOod);
   CHECK(analysis.rounds.size() <= std::size_t{2});
   CHECK(analysis.rounds.empty() || analysis.rounds[0].epsilon_out == 0.0L);
   CHECK(analysis.epsilon_fold >= 0.0L);
@@ -907,13 +907,13 @@ void TestStirBenchTimeEmitsTheoremMetadataAndUnsupportedZeroBits() {
       "--warmup", "0",
       "--reps", "1",
   });
-  CHECK(supported_output.find("soundness_mode=theorem_gr_conservative") !=
+  CHECK(supported_output.find("soundness_mode=theorem_gr") !=
         std::string::npos);
   CHECK(supported_output.find(
-            "soundness_model=epsilon_rbr_stir_gr_conservative_unique_ood") !=
+            "soundness_model=epsilon_rbr_stir_gr_half_gap_unique_ood") !=
         std::string::npos);
   CHECK(supported_output.find(
-            "soundness_scope=theorem_gr_conservative_existing_z2ksnark_results") !=
+            "soundness_scope=theorem_gr_existing_z2ksnark_half_gap_results") !=
         std::string::npos);
   CHECK(supported_output.find(
             "pow_policy=benchmark_only_not_in_theorem_bound") !=
@@ -930,7 +930,7 @@ void TestStirBenchTimeEmitsTheoremMetadataAndUnsupportedZeroBits() {
       "--warmup", "0",
       "--reps", "1",
   });
-  CHECK(unsupported_output.find("soundness_mode=theorem_gr_conservative") !=
+  CHECK(unsupported_output.find("soundness_mode=theorem_gr") !=
         std::string::npos);
   CHECK(unsupported_output.find("effective_security_bits=0") !=
         std::string::npos);

@@ -37,7 +37,7 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
 swgr::algebra::GRElem DeriveFoldingChallenge(
     const StirParameters& params, swgr::crypto::Transcript& transcript,
     const swgr::algebra::GRContext& ctx, std::string_view label) {
-  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_stir_folding_challenge(transcript, ctx, label);
   }
   return swgr::fri::derive_round_challenge(transcript, ctx, label);
@@ -46,7 +46,7 @@ swgr::algebra::GRElem DeriveFoldingChallenge(
 swgr::algebra::GRElem DeriveCombChallenge(
     const StirParameters& params, swgr::crypto::Transcript& transcript,
     const swgr::algebra::GRContext& ctx, std::string_view label) {
-  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_stir_comb_challenge(transcript, ctx, label);
   }
   return swgr::fri::derive_round_challenge(transcript, ctx, label);

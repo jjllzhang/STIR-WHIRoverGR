@@ -11,7 +11,7 @@
 namespace swgr::stir {
 
 enum class StirTheoremSoundnessFlavor {
-  GrConservativeUniqueOod,
+  GrHalfGapUniqueOod,
 };
 
 struct StirRoundTheoremSoundnessTerm {
@@ -26,7 +26,7 @@ struct StirRoundTheoremSoundnessTerm {
 
 struct StirTheoremSoundnessAnalysis {
   StirTheoremSoundnessFlavor flavor =
-      StirTheoremSoundnessFlavor::GrConservativeUniqueOod;
+      StirTheoremSoundnessFlavor::GrHalfGapUniqueOod;
   bool feasible = false;
   long double epsilon_fold = 0.0L;
   long double epsilon_fin = 0.0L;

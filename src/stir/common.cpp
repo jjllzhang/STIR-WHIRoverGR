@@ -508,7 +508,7 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
     const Domain& shift_domain, const Domain& folded_domain,
     swgr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t sample_count) {
-  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_theorem_ood_points(input_domain, shift_domain, folded_domain,
                                      transcript, label_prefix, sample_count);
   }
@@ -572,7 +572,7 @@ swgr::algebra::GRElem derive_shake_point(
     const Domain& shift_domain, const Domain& folded_domain,
     const std::vector<swgr::algebra::GRElem>& quotient_points,
     swgr::crypto::Transcript& transcript, std::string_view label_prefix) {
-  if (params.protocol_mode == StirProtocolMode::TheoremGrConservative) {
+  if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_theorem_shake_point(input_domain, shift_domain, folded_domain,
                                       quotient_points, transcript,
                                       label_prefix);

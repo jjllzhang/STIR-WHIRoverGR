@@ -37,9 +37,9 @@ long double ClampProbability(long double value) {
   return value;
 }
 
-long double ConservativeFoldEnvelope(const NTL::ZZ& teich_size,
-                                     std::uint64_t domain_size,
-                                     std::uint64_t combination_arity) {
+long double HalfGapFoldEnvelope(const NTL::ZZ& teich_size,
+                                std::uint64_t domain_size,
+                                std::uint64_t combination_arity) {
   NTL::ZZ numerator = teich_size;
   numerator = 0;
   numerator += combination_arity;
@@ -48,14 +48,24 @@ long double ConservativeFoldEnvelope(const NTL::ZZ& teich_size,
   return ClampProbability(ProbabilityFromRatio(numerator, teich_size));
 }
 
-long double ConservativeDegreeEnvelope(const NTL::ZZ& teich_size,
-                                       std::uint64_t degree_bound,
-                                       std::uint64_t domain_size) {
-  const std::uint64_t polynomial_degree =
-      std::max<std::uint64_t>(degree_bound + 1U, domain_size);
+long double HalfGapDegreeEnvelope(const NTL::ZZ& teich_size,
+                                  std::uint64_t effective_combination_arity,
+                                  std::uint64_t domain_size) {
   NTL::ZZ numerator(0);
-  numerator += polynomial_degree;
+  numerator += effective_combination_arity;
+  numerator *= domain_size;
+  numerator *= domain_size;
   return ClampProbability(ProbabilityFromRatio(numerator, teich_size));
+}
+
+bool DomainSupportsHalfGap(std::uint64_t domain_size,
+                           std::uint64_t combination_arity,
+                           const NTL::ZZ& teich_size) {
+  NTL::ZZ numerator(0);
+  numerator += combination_arity;
+  numerator *= domain_size;
+  numerator *= domain_size;
+  return numerator < teich_size;
 }
 
 long double UniqueQueryMissProbability(long double delta,
@@ -107,33 +117,26 @@ std::uint64_t ResolveFinalQueryCount(const StirParameters& params,
       final_domain_size);
 }
 
-bool DomainSupportsUniqueGap(std::uint64_t domain_size, const NTL::ZZ& teich_size) {
-  NTL::ZZ squared(0);
-  squared += domain_size;
-  squared *= domain_size;
-  return squared < teich_size;
-}
-
 }  // namespace
 
 StirTheoremSoundnessAnalysis analyze_theorem_soundness(
     const StirParameters& params, const StirInstance& instance) {
   StirTheoremSoundnessAnalysis analysis;
   analysis.proximity_gap_model =
-      "z2ksnark_gr_unique_gap_envelope_s_times_ell_sq_over_T";
+      "z2ksnark_gr_half_gap_envelope_s_times_ell_sq_over_T";
   analysis.ood_model = "unique_decoding_exceptional_complement";
   analysis.assumptions.push_back(
-      "Theorem analysis only applies to theorem_gr_conservative mode.");
+      "Theorem analysis only applies to theorem_gr mode.");
   analysis.assumptions.push_back(
       "Unique-decoding regime requires delta_i <= (1-rho_i)/2 in every round.");
   analysis.assumptions.push_back(
-      "Conservative GR folding envelope uses min(1, m*ell^2/|T|) from existing Z2KSNARK proximity results.");
+      "GR half-gap folding term uses min(1, m*ell^2/|T|) from the existing Z2KSNARK (1-rho)/2 proximity result.");
   analysis.assumptions.push_back(
-      "Conservative GR degree-correction envelope uses a random-point root bound over T.");
+      "GR half-gap degree-correction term uses min(1, m*ell^2/|T|) with m = t_i + s_ood under the same Z2KSNARK half-gap regime.");
   analysis.assumptions.push_back(
       "epsilon_out is fixed to 0 because theorem-mode OOD stays in the unique-decoding regime.");
 
-  if (params.protocol_mode != StirProtocolMode::TheoremGrConservative ||
+  if (params.protocol_mode != StirProtocolMode::TheoremGr ||
       !validate(params, instance)) {
     analysis.assumptions.push_back(
         "Unsupported: theorem soundness requires a theorem-mode parameter set that already passes theorem validation.");
@@ -152,17 +155,18 @@ StirTheoremSoundnessAnalysis analyze_theorem_soundness(
   Domain current_domain = instance.domain;
   std::uint64_t current_degree_bound = instance.claimed_degree;
 
-  if (!DomainSupportsUniqueGap(current_domain.size(), teich_size)) {
+  if (!DomainSupportsHalfGap(current_domain.size(),
+                             params.virtual_fold_factor, teich_size)) {
     analysis.assumptions.push_back(
-        "Unsupported: initial domain size is too large for the conservative (1-rho)/2 GR envelope to remain non-trivial.");
+        "Unsupported: initial domain size is too large for the theorem_gr half-gap folding regime to remain non-trivial.");
     return analysis;
   }
 
-  analysis.epsilon_fold = ConservativeFoldEnvelope(
+  analysis.epsilon_fold = HalfGapFoldEnvelope(
       teich_size, current_domain.size(), params.virtual_fold_factor);
   if (analysis.epsilon_fold >= 1.0L) {
     analysis.assumptions.push_back(
-        "Unsupported: conservative theorem folding bound is trivial for the initial domain.");
+        "Unsupported: theorem_gr half-gap folding bound is trivial for the initial domain.");
     return analysis;
   }
 
@@ -193,35 +197,46 @@ StirTheoremSoundnessAnalysis analyze_theorem_soundness(
           "Unsupported: at least one round leaves the unique-decoding theorem regime.");
       return analysis;
     }
-    if (!DomainSupportsUniqueGap(term.domain_size, teich_size)) {
+    const std::uint64_t degree_arity =
+        round.effective_query_count + params.ood_samples;
+    if (!DomainSupportsHalfGap(term.domain_size, params.virtual_fold_factor,
+                               teich_size)) {
       term.notes.push_back(
-          "Unsupported: round domain is too large for the conservative GR proximity envelope.");
+          "Unsupported: round domain is too large for the theorem_gr half-gap folding regime.");
       analysis.rounds.push_back(term);
       analysis.assumptions.push_back(
-          "Unsupported: at least one round has ell_i^2 comparable to |T|, so the conservative GR gap becomes trivial.");
+          "Unsupported: at least one round violates the theorem_gr half-gap folding size guard k*ell_i^2 < |T|.");
+      return analysis;
+    }
+    if (!DomainSupportsHalfGap(term.domain_size, degree_arity, teich_size)) {
+      term.notes.push_back(
+          "Unsupported: round domain is too large for the theorem_gr half-gap degree-correction regime.");
+      analysis.rounds.push_back(term);
+      analysis.assumptions.push_back(
+          "Unsupported: at least one round violates the theorem_gr half-gap degree-correction size guard (t_i+s_ood)*ell_i^2 < |T|.");
       return analysis;
     }
 
     const long double shift_hit =
         UniqueQueryMissProbability(delta, round.effective_query_count);
     const long double degree_term =
-        ConservativeDegreeEnvelope(teich_size, current_degree_bound, term.domain_size);
-    const long double fold_term = ConservativeFoldEnvelope(
+        HalfGapDegreeEnvelope(teich_size, degree_arity, term.domain_size);
+    const long double fold_term = HalfGapFoldEnvelope(
         teich_size, term.domain_size, params.virtual_fold_factor);
     if (degree_term >= 1.0L || fold_term >= 1.0L) {
       term.notes.push_back(
-          "Unsupported: conservative theorem degree or folding term is trivial in this round.");
+          "Unsupported: theorem_gr half-gap degree or folding term is trivial in this round.");
       analysis.rounds.push_back(term);
       analysis.assumptions.push_back(
-          "Unsupported: at least one round only admits a trivial conservative theorem bound.");
+          "Unsupported: at least one round only admits a trivial theorem_gr half-gap bound.");
       return analysis;
     }
 
     term.epsilon_shift = ClampProbability(shift_hit + degree_term + fold_term);
     term.notes.push_back(
-        "epsilon_shift = (1-delta_prev)^t_prev + conservative GR degree term + conservative GR folding term.");
+        "epsilon_shift = (1-delta_prev)^t_prev + theorem_gr half-gap degree term + theorem_gr half-gap folding term.");
     term.notes.push_back(
-        "delta_i is instantiated conservatively as (1-rho_i)/2 from existing Z2KSNARK proximity results.");
+        "delta_i is instantiated as (1-rho_i)/2 under the existing Z2KSNARK half-gap result.");
     analysis.rounds.push_back(term);
     total_error += term.epsilon_shift;
 
@@ -246,7 +261,7 @@ StirTheoremSoundnessAnalysis analyze_theorem_soundness(
   analysis.feasible = total_error < 1.0L;
   if (!analysis.feasible) {
     analysis.assumptions.push_back(
-        "Unsupported: the combined conservative theorem envelope is trivial for this parameter set.");
+        "Unsupported: the combined theorem_gr half-gap envelope is trivial for this parameter set.");
     return analysis;
   }
 
