@@ -326,24 +326,24 @@ Files:
 
 Tests to add:
 
-- [ ] Prototype regression test: current prototype path still verifies honest proofs.
-- [ ] Theorem sampler test: fold and comb challenges are sampled from `T`.
-- [ ] Theorem OOD test: OOD points lie in the explicit exceptional safe complement.
-- [ ] Theorem shake test: shake point avoids the quotient set and respects unit-difference constraints.
-- [ ] Theorem validator test: non-`T*` domains are rejected.
-- [ ] Theorem validator test: insufficient OOD candidate pool is rejected.
-- [ ] Honest theorem-mode prove/verify test.
-- [ ] Theorem soundness analysis smoke test.
-- [ ] Bench-metadata test if a small parser test is practical.
+- [x] Prototype regression test: current prototype path still verifies honest proofs.
+- [x] Theorem sampler test: fold and comb challenges are sampled from `T`.
+- [x] Theorem OOD test: OOD points lie in the explicit exceptional safe complement.
+- [x] Theorem shake test: shake point avoids the quotient set and respects unit-difference constraints.
+- [x] Theorem validator test: non-`T*` domains are rejected.
+- [x] Theorem validator test: insufficient OOD candidate pool is rejected.
+- [x] Honest theorem-mode prove/verify test.
+- [x] Theorem soundness analysis smoke test.
+- [x] Bench-metadata test via a lightweight `bench_time` text-output smoke in `test_stir.cpp`.
 
 Build-system changes:
 
-- [ ] Add a dedicated `test_stir_soundness` executable in `CMakeLists.txt` if the soundness module becomes too large for `test_stir.cpp`.
+- [x] Keep the soundness smoke in `test_stir.cpp`; a dedicated `test_stir_soundness` executable is not needed yet.
 
 Acceptance:
 
-- [ ] `ctest -R 'test_stir|test_stir_soundness'` passes.
-- [ ] Honest theorem-mode behavior is covered by a deterministic unit test.
+- [x] `ctest -R 'test_stir|test_stir_soundness'` passes.
+- [x] Honest theorem-mode behavior is covered by a deterministic unit test.
 
 Suggested commit:
 

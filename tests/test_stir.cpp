@@ -1,6 +1,9 @@
 #include <NTL/ZZ_pE.h>
 
 #include <algorithm>
+#include <array>
+#include <cstdio>
+#include <filesystem>
 #include <exception>
 #include <iostream>
 #include <string>
@@ -19,6 +22,7 @@
 #include "tests/test_common.hpp"
 
 int g_failures = 0;
+std::filesystem::path g_test_binary_dir;
 
 namespace {
 
@@ -179,6 +183,44 @@ bool ContainsSubstring(const std::vector<std::string>& values,
   return std::any_of(values.begin(), values.end(), [&](const std::string& value) {
     return value.find(needle) != std::string::npos;
   });
+}
+
+std::string ShellSingleQuote(std::string_view value) {
+  std::string quoted = "'";
+  for (const char ch : value) {
+    if (ch == '\'') {
+      quoted += "'\\''";
+    } else {
+      quoted.push_back(ch);
+    }
+  }
+  quoted += "'";
+  return quoted;
+}
+
+std::string RunBenchTimeText(const std::vector<std::string>& args) {
+  const auto bench_path = (g_test_binary_dir / "bench_time").string();
+  std::string command = ShellSingleQuote(bench_path);
+  for (const auto& arg : args) {
+    command += " ";
+    command += ShellSingleQuote(arg);
+  }
+  command += " 2>&1";
+
+  std::array<char, 256> buffer{};
+  std::string output;
+  FILE* pipe = popen(command.c_str(), "r");
+  if (pipe == nullptr) {
+    throw std::runtime_error("failed to spawn bench_time");
+  }
+  while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
+    output += buffer.data();
+  }
+  const int status = pclose(pipe);
+  if (status != 0) {
+    throw std::runtime_error("bench_time failed: " + output);
+  }
+  return output;
 }
 
 void TestStir9to3HonestRoundtripAndRoundShape() {
@@ -847,6 +889,55 @@ void TestStirValidationRejectsBadInputs() {
   CHECK(!swgr::stir::validate(MakeParams(), tiny_instance));
 }
 
+void TestStirBenchTimeEmitsTheoremMetadataAndUnsupportedZeroBits() {
+  testutil::PrintInfo(
+      "bench_time emits theorem-facing stir metadata and keeps unsupported rows at zero bits");
+
+  const auto supported_output = RunBenchTimeText({
+      "--protocol", "stir9to3",
+      "--n", "81",
+      "--d", "26",
+      "--r", "54",
+      "--stop-degree", "3",
+      "--ood-samples", "1",
+      "--queries", "2,4",
+      "--lambda", "128",
+      "--pow-bits", "0",
+      "--format", "text",
+      "--warmup", "0",
+      "--reps", "1",
+  });
+  CHECK(supported_output.find("soundness_mode=theorem_gr_conservative") !=
+        std::string::npos);
+  CHECK(supported_output.find(
+            "soundness_model=epsilon_rbr_stir_gr_conservative_unique_ood") !=
+        std::string::npos);
+  CHECK(supported_output.find(
+            "soundness_scope=theorem_gr_conservative_existing_z2ksnark_results") !=
+        std::string::npos);
+  CHECK(supported_output.find(
+            "pow_policy=benchmark_only_not_in_theorem_bound") !=
+        std::string::npos);
+
+  const auto unsupported_output = RunBenchTimeText({
+      "--protocol", "stir9to3",
+      "--n", "243",
+      "--d", "81",
+      "--r", "162",
+      "--lambda", "128",
+      "--pow-bits", "0",
+      "--format", "text",
+      "--warmup", "0",
+      "--reps", "1",
+  });
+  CHECK(unsupported_output.find("soundness_mode=theorem_gr_conservative") !=
+        std::string::npos);
+  CHECK(unsupported_output.find("effective_security_bits=0") !=
+        std::string::npos);
+  CHECK(unsupported_output.find("unsupported") != std::string::npos ||
+        unsupported_output.find("Unsupported") != std::string::npos);
+}
+
 void TestStirFreshContextsStayStableAcrossAutoAndManualSchedules() {
   testutil::PrintInfo(
       "fresh contexts keep stir auto and manual schedules stable after deterministic teich setup");
@@ -889,7 +980,10 @@ void TestStirFreshContextsStayStableAcrossAutoAndManualSchedules() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  if (argc > 0) {
+    g_test_binary_dir = std::filesystem::absolute(argv[0]).parent_path();
+  }
   try {
     RUN_TEST(TestStir9to3HonestRoundtripAndRoundShape);
     RUN_TEST(TestStirMultiRoundUsesPublicRootChain);
@@ -916,6 +1010,7 @@ int main() {
     RUN_TEST(TestStirRejectsTamperedFinalOpening);
     RUN_TEST(TestStirCompatWitnessNoLongerDrivesVerification);
     RUN_TEST(TestStirValidationRejectsBadInputs);
+    RUN_TEST(TestStirBenchTimeEmitsTheoremMetadataAndUnsupportedZeroBits);
     RUN_TEST(TestStirFreshContextsStayStableAcrossAutoAndManualSchedules);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
