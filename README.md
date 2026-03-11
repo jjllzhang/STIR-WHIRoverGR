@@ -190,6 +190,7 @@ Benchmark notes:
 
 - For single-thread comparisons, pin both `OMP_NUM_THREADS=1` and `--threads 1`
 - `bench_time` is the end-to-end timing surface for prover / verifier behavior and exact serializer-backed proof-byte accounting
+- `bench_stir_query_solver` solves a theorem-facing explicit STIR query schedule from `lambda_target` under the current `theorem_gr` half-gap model, and reports infeasible targets explicitly
 - Current `fri3` / `fri9` rows already run `commit + open + verify`; `prover_total_ms` includes both `commit` and `open`
 - `serialized_bytes_actual` is computed from the deterministic serializer of the actual external message shape rather than from hand-written compact payload formulas
 - Current FRI rows count the prover reply opening message (`value + opening proof`) rather than `commitment + opening` combined bytes; `alpha` remains verifier-chosen context and is not charged to the prover reply
@@ -200,6 +201,8 @@ Benchmark notes:
 - The current theorem_auto path is conservative: it is only enabled for `p=2`, and it rejects instances where the discrete gap gives `delta = 0`
 - `bench_time` still keeps one shared row schema across `FRI` and `STIR`; theorem-aligned standalone FRI rows now use `lambda_target` and `effective_security_bits`, while manual standalone FRI rows leave those fields as not applicable
 - Current `stir9to3` rows execute `theorem_gr` STIR parameters and emit theorem-facing half-gap metadata backed by the existing Z2KSNARK-based GR results; unsupported parameter sets still print a row, but they are marked through `soundness_notes` and report `effective_security_bits=0`
+- STIR now has three query modes in `bench_time`: `--queries auto` keeps the older heuristic live schedule, `--queries theorem_auto` solves an explicit per-round schedule from `lambda_target` using the current theorem_gr half-gap model, and `--queries q0[,q1,...]` keeps a caller-provided manual schedule
+- The standalone `bench_stir_query_solver` tool exposes the same theorem-driven STIR query solver without running prover/verifier timing loops; use it when the question is feasibility or minimal query counts rather than runtime
 - Current preset wrappers and parameter-search tooling preserve older fixed-`m` benchmark presets by mapping them to `manual_repetition`; omit `fri_repetitions` if you want theorem-auto standalone FRI rows
 - Archived benchmark outputs live in `results/`, with filenames aligned to workload names
 

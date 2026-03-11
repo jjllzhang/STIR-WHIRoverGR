@@ -50,6 +50,7 @@ struct TimeBenchOptions {
   std::uint64_t stop_degree = 9;
   std::uint64_t ood_samples = 2;
   std::vector<std::uint64_t> queries;
+  bool stir_query_theorem_auto = false;
   std::uint64_t threads = 1;
   std::uint64_t warmup = 1;
   std::uint64_t reps = 3;
@@ -279,7 +280,7 @@ void FillFriSoundnessMetadata(TimeBenchRow& row,
 void FillStirTheoremSoundnessMetadata(
     TimeBenchRow& row, const swgr::stir::StirTheoremSoundnessAnalysis& analysis,
     swgr::SecurityMode sec_mode, std::uint64_t lambda_target,
-    std::uint64_t pow_bits, bool manual_query_schedule) {
+    std::uint64_t pow_bits, std::string_view query_policy) {
   row.soundness_mode = "theorem_gr";
   row.fri_repetitions = 0;
   row.lambda_target = lambda_target;
@@ -287,8 +288,7 @@ void FillStirTheoremSoundnessMetadata(
   row.sec_mode = swgr::to_string(sec_mode);
   row.soundness_model = "epsilon_rbr_stir_gr_half_gap_unique_ood";
   row.soundness_scope = "theorem_gr_existing_z2ksnark_half_gap_results";
-  row.query_policy =
-      manual_query_schedule ? "manual_live_schedule" : "auto_live_schedule";
+  row.query_policy = std::string(query_policy);
   row.pow_policy = "benchmark_only_not_in_theorem_bound";
   row.effective_security_bits =
       analysis.feasible ? analysis.effective_security_bits : 0;
@@ -299,9 +299,12 @@ void FillStirTheoremSoundnessMetadata(
       "half-gap GR proximity assumptions come from existing Z2KSNARK results",
       "pow_bits is retained as a live benchmark/query knob and is not subtracted from theorem security bits",
   };
-  if (manual_query_schedule) {
+  if (query_policy == "manual_live_schedule") {
     notes.push_back(
         "manual query schedule overrides the live auto schedule before theorem analysis");
+  } else if (query_policy == "theorem_auto_solved_schedule") {
+    notes.push_back(
+        "query schedule was solved from lambda_target using the current theorem_gr half-gap model");
   }
   if (!analysis.feasible) {
     notes.push_back(
@@ -354,7 +357,7 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --sec-mode ConjectureCapacity|Conservative\n"
          "  --hash-profile STIR_NATIVE|WHIR_NATIVE\n"
          "  --stop-degree <uint> --ood-samples <uint>\n"
-         "  --queries auto|q0[,q1,...] --threads <uint>\n"
+         "  --queries auto|theorem_auto|q0[,q1,...] --threads <uint>\n"
          "    note: fri3/fri9 default to theorem_auto, which solves the\n"
          "    theorem-facing standalone FRI PCS repetition count m from\n"
          "    lambda_target; an explicit --fri-repetitions must then be >=\n"
@@ -364,10 +367,12 @@ std::string TimeBenchUsage(const char* binary_name) {
          "    manual_repetition instead\n"
          "    note: manual_repetition keeps a caller-provided m for FRI rows,\n"
          "    but those rows are intentionally non-theorem metadata\n"
-         "    note: --lambda/--pow-bits/--sec-mode/--queries remain the live\n"
-         "    STIR benchmark knobs; theorem metadata is reported for the\n"
-         "    resulting live parameterization, and pow_bits is not folded\n"
-         "    into theorem security bits\n"
+         "    note: STIR keeps three query modes: auto for the legacy\n"
+         "    heuristic schedule, theorem_auto for the theorem_gr query\n"
+         "    solver, and q0[,q1,...] for an explicit manual schedule\n"
+         "    note: theorem metadata is reported for the resulting live\n"
+         "    parameterization, and pow_bits is not folded into theorem\n"
+         "    security bits\n"
          "    note: text/csv/json output currently keeps one shared row schema\n"
          "    across FRI and STIR; theorem_fri and theorem_gr\n"
          "    rows use lambda_target/effective_security_bits, while\n"
@@ -428,7 +433,13 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
     } else if (key == "--ood-samples") {
       options.ood_samples = swgr::bench::ParseUint64(key, value);
     } else if (key == "--queries") {
-      options.queries = swgr::bench::ParseQueries(value);
+      if (swgr::bench::ToLowerCopy(value) == "theorem_auto") {
+        options.stir_query_theorem_auto = true;
+        options.queries.clear();
+      } else {
+        options.queries = swgr::bench::ParseQueries(value);
+        options.stir_query_theorem_auto = false;
+      }
     } else if (key == "--threads") {
       options.threads = swgr::bench::ParseUint64(key, value);
     } else if (key == "--warmup") {
@@ -1037,6 +1048,15 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
       .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
+  std::string query_policy = "auto_live_schedule";
+  if (options.stir_query_theorem_auto) {
+    const auto solved =
+        swgr::stir::solve_min_query_schedule_for_lambda(params, instance);
+    params.query_repetitions = solved.query_schedule;
+    query_policy = "theorem_auto_solved_schedule";
+  } else if (!options.queries.empty()) {
+    query_policy = "manual_live_schedule";
+  }
   PrintQueryWarnings("stir9to3",
                      swgr::stir::resolve_query_schedule_metadata(params, instance));
   const auto polynomial =
@@ -1061,7 +1081,7 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
   const auto analysis = swgr::stir::analyze_theorem_soundness(params, instance);
   FillStirTheoremSoundnessMetadata(row, analysis, options.sec_mode,
                                    options.lambda_target, options.pow_bits,
-                                   !options.queries.empty());
+                                   query_policy);
   return row;
 }
 

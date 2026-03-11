@@ -37,7 +37,17 @@ struct StirTheoremSoundnessAnalysis {
   std::vector<std::string> assumptions;
 };
 
+struct StirTheoremQuerySolveResult {
+  bool feasible = false;
+  std::vector<std::uint64_t> query_schedule;
+  StirTheoremSoundnessAnalysis analysis;
+  std::vector<std::string> notes;
+};
+
 StirTheoremSoundnessAnalysis analyze_theorem_soundness(
+    const StirParameters& params, const StirInstance& instance);
+
+StirTheoremQuerySolveResult solve_min_query_schedule_for_lambda(
     const StirParameters& params, const StirInstance& instance);
 
 }  // namespace swgr::stir

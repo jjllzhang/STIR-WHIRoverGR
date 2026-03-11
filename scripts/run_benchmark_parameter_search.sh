@@ -25,6 +25,7 @@ Default injected options:
 Any additional flags are passed through to search_benchmark_parameters.py.
 Examples:
   $(basename "$0") --n-values 81,243 --rho-values 1/3,1/9 --fri-soundness-mode manual_repetition --fri-repetitions 2 --soundness 128:22:ConjectureCapacity:auto
+  $(basename "$0") --protocols stir9to3 --n-values 81,243 --rho-values 1/3,1/9 --soundness 128:0:ConjectureCapacity:theorem_auto
   $(basename "$0") --include-time --time-top-k 20 --time-metric prover_total_ms
   $(basename "$0") --combined-csv results/custom.csv --summary-md results/custom.md
 USAGE

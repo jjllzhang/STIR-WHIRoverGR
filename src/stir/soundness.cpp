@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,21 @@
 
 namespace swgr::stir {
 namespace {
+
+struct QueryBounds {
+  std::vector<std::uint64_t> per_round_max;
+  std::uint64_t final_max = 0;
+};
+
+struct QuerySolveContext {
+  std::size_t round_count = 0;
+  NTL::ZZ teich_size;
+  long double epsilon_fold = 0.0L;
+  long double final_delta = 0.0L;
+  std::vector<std::uint64_t> round_domain_sizes;
+  std::vector<std::uint64_t> round_degree_bounds;
+  std::vector<std::uint64_t> round_query_caps;
+};
 
 long double ProbabilityFromRatio(const NTL::ZZ& numerator,
                                  const NTL::ZZ& denominator) {
@@ -115,6 +131,157 @@ std::uint64_t ResolveFinalQueryCount(const StirParameters& params,
           params.sec_mode, params.lambda_target, params.pow_bits, rho,
           round_count),
       final_domain_size);
+}
+
+QueryBounds ComputeQueryBounds(const StirParameters& params,
+                               const StirInstance& instance) {
+  QueryBounds bounds;
+  const std::size_t round_count = folding_round_count(instance, params);
+  const auto schedule = resolve_query_schedule_metadata(params, instance);
+  bounds.per_round_max.reserve(schedule.size());
+  for (const auto& round : schedule) {
+    bounds.per_round_max.push_back(
+        std::min(round.bundle_count, round.degree_budget));
+  }
+
+  Domain current_domain = instance.domain;
+  std::uint64_t current_degree_bound = instance.claimed_degree;
+  for (std::size_t round_index = 0; round_index < round_count; ++round_index) {
+    current_domain = current_domain.scale_offset(params.shift_power);
+    current_degree_bound =
+        folded_degree_bound(current_degree_bound, params.virtual_fold_factor);
+  }
+  bounds.final_max = current_domain.size();
+  return bounds;
+}
+
+StirTheoremSoundnessAnalysis AnalyzeWithSchedule(const StirParameters& params,
+                                                 const StirInstance& instance,
+                                                 const std::vector<std::uint64_t>& schedule) {
+  auto candidate = params;
+  candidate.query_repetitions = schedule;
+  return analyze_theorem_soundness(candidate, instance);
+}
+
+std::optional<QuerySolveContext> BuildQuerySolveContext(
+    const StirParameters& params, const StirInstance& instance,
+    std::vector<std::string>* notes) {
+  QuerySolveContext context;
+  context.round_count = folding_round_count(instance, params);
+  context.teich_size =
+      swgr::algebra::teichmuller_set_size(instance.domain.context());
+
+  Domain current_domain = instance.domain;
+  std::uint64_t current_degree_bound = instance.claimed_degree;
+  if (!DomainSupportsHalfGap(current_domain.size(), params.virtual_fold_factor,
+                             context.teich_size)) {
+    notes->push_back(
+        "initial domain already violates the theorem_gr half-gap folding size guard");
+    return std::nullopt;
+  }
+  context.epsilon_fold = HalfGapFoldEnvelope(
+      context.teich_size, current_domain.size(), params.virtual_fold_factor);
+  if (context.epsilon_fold >= 1.0L) {
+    notes->push_back(
+        "initial theorem_gr half-gap folding envelope is already trivial");
+    return std::nullopt;
+  }
+
+  const auto bounds = ComputeQueryBounds(params, instance);
+  context.round_query_caps = bounds.per_round_max;
+  context.round_domain_sizes.reserve(context.round_count);
+  context.round_degree_bounds.reserve(context.round_count);
+  for (std::size_t round_index = 0; round_index < context.round_count;
+       ++round_index) {
+    const Domain shift_domain = current_domain.scale_offset(params.shift_power);
+    const std::uint64_t next_degree_bound =
+        folded_degree_bound(current_degree_bound, params.virtual_fold_factor);
+    const long double rho =
+        static_cast<long double>(current_degree_bound + 1U) /
+        static_cast<long double>(current_domain.size());
+    const long double delta = 0.5L * (1.0L - rho);
+    if (!(delta > 0.0L)) {
+      notes->push_back(
+          "at least one theorem_gr round leaves the unique-decoding regime");
+      return std::nullopt;
+    }
+    if (!DomainSupportsHalfGap(current_domain.size(), params.virtual_fold_factor,
+                               context.teich_size)) {
+      notes->push_back(
+          "at least one theorem_gr round violates the half-gap folding size guard");
+      return std::nullopt;
+    }
+
+    std::uint64_t cap = context.round_query_caps[round_index];
+    while (cap > 0) {
+      const std::uint64_t degree_arity = cap + params.ood_samples;
+      if (!DomainSupportsHalfGap(current_domain.size(), degree_arity,
+                                 context.teich_size)) {
+        --cap;
+        continue;
+      }
+      const long double degree_term = HalfGapDegreeEnvelope(
+          context.teich_size, degree_arity, current_domain.size());
+      if (degree_term < 1.0L) {
+        break;
+      }
+      --cap;
+    }
+    if (cap == 0) {
+      notes->push_back(
+          "no positive round query count survives the theorem_gr degree-correction guard");
+      return std::nullopt;
+    }
+
+    context.round_query_caps[round_index] = cap;
+    context.round_domain_sizes.push_back(current_domain.size());
+    context.round_degree_bounds.push_back(current_degree_bound);
+    current_domain = shift_domain;
+    current_degree_bound = next_degree_bound;
+  }
+
+  const long double final_rho =
+      static_cast<long double>(current_degree_bound + 1U) /
+      static_cast<long double>(current_domain.size());
+  context.final_delta = 0.5L * (1.0L - final_rho);
+  if (!(context.final_delta > 0.0L)) {
+    notes->push_back("final theorem_gr round leaves the unique-decoding regime");
+    return std::nullopt;
+  }
+
+  return context;
+}
+
+long double RoundErrorForQueryCount(const QuerySolveContext& context,
+                                    const StirParameters& params,
+                                    std::size_t round_index,
+                                    std::uint64_t query_count) {
+  const std::uint64_t domain_size = context.round_domain_sizes[round_index];
+  const std::uint64_t degree_bound = context.round_degree_bounds[round_index];
+  const long double rho =
+      static_cast<long double>(degree_bound + 1U) /
+      static_cast<long double>(domain_size);
+  const long double delta = 0.5L * (1.0L - rho);
+  const std::uint64_t degree_arity = query_count + params.ood_samples;
+  const long double shift_hit = UniqueQueryMissProbability(delta, query_count);
+  const long double degree_term =
+      HalfGapDegreeEnvelope(context.teich_size, degree_arity, domain_size);
+  const long double fold_term = HalfGapFoldEnvelope(
+      context.teich_size, domain_size, params.virtual_fold_factor);
+  return ClampProbability(shift_hit + degree_term + fold_term);
+}
+
+std::vector<std::uint64_t> ReconstructSchedule(
+    const std::vector<std::vector<std::uint64_t>>& chosen_queries,
+    const std::vector<std::vector<std::uint64_t>>& previous_costs,
+    std::size_t stage_count, std::uint64_t final_cost) {
+  std::vector<std::uint64_t> schedule(stage_count, 0);
+  std::uint64_t current_cost = final_cost;
+  for (std::size_t stage = stage_count; stage > 0; --stage) {
+    schedule[stage - 1U] = chosen_queries[stage][current_cost];
+    current_cost = previous_costs[stage][current_cost];
+  }
+  return schedule;
 }
 
 }  // namespace
@@ -267,6 +434,114 @@ StirTheoremSoundnessAnalysis analyze_theorem_soundness(
 
   analysis.effective_security_bits = SecurityBitsFromError(total_error);
   return analysis;
+}
+
+StirTheoremQuerySolveResult solve_min_query_schedule_for_lambda(
+    const StirParameters& params, const StirInstance& instance) {
+  StirTheoremQuerySolveResult result;
+  result.notes.push_back(
+      "solver searches an explicit per-round STIR query schedule, minimizing total queries under the theorem_gr half-gap model");
+
+  if (params.protocol_mode != StirProtocolMode::TheoremGr) {
+    result.notes.push_back(
+        "solver only applies to theorem_gr mode because it relies on analyze_theorem_soundness(...)");
+    return result;
+  }
+
+  auto context = BuildQuerySolveContext(params, instance, &result.notes);
+  if (!context.has_value()) {
+    return result;
+  }
+
+  const auto bounds = ComputeQueryBounds(params, instance);
+  const std::size_t stage_count = context->round_count + 1U;
+  std::vector<std::vector<long double>> stage_errors(stage_count);
+  std::vector<std::uint64_t> stage_caps = context->round_query_caps;
+  stage_caps.push_back(bounds.final_max);
+
+  std::uint64_t total_cap = 0;
+  for (std::size_t round_index = 0; round_index < context->round_count;
+       ++round_index) {
+    stage_errors[round_index].resize(stage_caps[round_index] + 1U, 1.0L);
+    for (std::uint64_t query_count = 1; query_count <= stage_caps[round_index];
+         ++query_count) {
+      stage_errors[round_index][query_count] =
+          RoundErrorForQueryCount(*context, params, round_index, query_count);
+    }
+    total_cap += stage_caps[round_index];
+  }
+  stage_errors.back().resize(stage_caps.back() + 1U, 1.0L);
+  for (std::uint64_t query_count = 1; query_count <= stage_caps.back();
+       ++query_count) {
+    stage_errors.back()[query_count] =
+        UniqueQueryMissProbability(context->final_delta, query_count);
+  }
+  total_cap += stage_caps.back();
+
+  constexpr long double kImpossible = 2.0L;
+  std::vector<long double> dp(total_cap + 1U, kImpossible);
+  std::vector<long double> next_dp(total_cap + 1U, kImpossible);
+  std::vector<std::vector<std::uint64_t>> chosen_queries(
+      stage_count + 1U, std::vector<std::uint64_t>(total_cap + 1U, 0));
+  std::vector<std::vector<std::uint64_t>> previous_costs(
+      stage_count + 1U, std::vector<std::uint64_t>(total_cap + 1U, 0));
+  dp[0] = context->epsilon_fold;
+
+  std::uint64_t reachable_cap = 0;
+  for (std::size_t stage = 0; stage < stage_count; ++stage) {
+    std::fill(next_dp.begin(), next_dp.end(), kImpossible);
+    for (std::uint64_t cost = 0; cost <= reachable_cap; ++cost) {
+      if (!(dp[cost] < kImpossible)) {
+        continue;
+      }
+      for (std::uint64_t query_count = 1; query_count <= stage_caps[stage];
+           ++query_count) {
+        const std::uint64_t next_cost = cost + query_count;
+        const long double next_error = dp[cost] + stage_errors[stage][query_count];
+        if (!(next_error < next_dp[next_cost])) {
+          continue;
+        }
+        next_dp[next_cost] = next_error;
+        chosen_queries[stage + 1U][next_cost] = query_count;
+        previous_costs[stage + 1U][next_cost] = cost;
+      }
+    }
+    reachable_cap += stage_caps[stage];
+    dp.swap(next_dp);
+  }
+
+  std::optional<std::uint64_t> best_cost;
+  for (std::uint64_t cost = stage_count; cost <= total_cap; ++cost) {
+    if (SecurityBitsFromError(dp[cost]) >= params.lambda_target) {
+      best_cost = cost;
+      break;
+    }
+  }
+
+  if (!best_cost.has_value()) {
+    long double best_error = 1.0L;
+    std::uint64_t best_error_cost = stage_count;
+    for (std::uint64_t cost = stage_count; cost <= total_cap; ++cost) {
+      if (dp[cost] < best_error) {
+        best_error = dp[cost];
+        best_error_cost = cost;
+      }
+    }
+    result.query_schedule = ReconstructSchedule(
+        chosen_queries, previous_costs, stage_count, best_error_cost);
+    result.analysis = AnalyzeWithSchedule(params, instance, result.query_schedule);
+    result.notes.push_back(
+        "no admissible explicit query schedule reaches lambda_target under the current theorem_gr half-gap analysis");
+    return result;
+  }
+
+  result.feasible = true;
+  result.query_schedule =
+      ReconstructSchedule(chosen_queries, previous_costs, stage_count, *best_cost);
+  result.analysis = AnalyzeWithSchedule(params, instance, result.query_schedule);
+  result.notes.push_back(
+      "returned schedule minimizes the total explicit query count across theorem rounds plus the final round");
+  return result;
 }
 
 }  // namespace swgr::stir

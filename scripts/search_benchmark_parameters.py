@@ -89,7 +89,7 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help=(
             "Repeatable soundness tuple. Format: lambda:pow:sec-mode:queries "
-            "or lambda,pow,sec-mode,queries. queries can be auto or q0[,q1,...]"
+            "or lambda,pow,sec-mode,queries. queries can be auto, theorem_auto, or q0[,q1,...]"
         ),
     )
     parser.add_argument(
@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--default-queries",
         default="auto",
-        help="Fallback queries when no --soundness is provided",
+        help="Fallback queries when no --soundness is provided (auto, theorem_auto, or q0[,q1,...])",
     )
 
     parser.add_argument("--hash-profile", default="STIR_NATIVE")

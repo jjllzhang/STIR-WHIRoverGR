@@ -676,6 +676,48 @@ void TestStirTheoremSoundnessAnalysisRejectsUnsupportedRegimes() {
         (!analysis.rounds.empty() && ContainsSubstring(analysis.rounds[0].notes, "trivial")));
 }
 
+void TestStirTheoremQuerySolverFindsMinimalScheduleOnSupportedInstance() {
+  testutil::PrintInfo(
+      "theorem stir query solver finds a minimal supported explicit schedule");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 54});
+  const swgr::stir::StirInstance instance{
+      .domain = Domain::teichmuller_subgroup(ctx, 81),
+      .claimed_degree = 26,
+  };
+  auto params = MakeTheoremParams({}, 3);
+  params.lambda_target = 1;
+  params.ood_samples = 1;
+
+  const auto solved =
+      swgr::stir::solve_min_query_schedule_for_lambda(params, instance);
+  CHECK(solved.feasible);
+  CHECK_EQ(solved.analysis.effective_security_bits, std::uint64_t{1});
+  CHECK_EQ(solved.query_schedule.size(), std::size_t{2});
+  CHECK_EQ(solved.query_schedule[0], std::uint64_t{2});
+  CHECK_EQ(solved.query_schedule[1], std::uint64_t{5});
+}
+
+void TestStirTheoremQuerySolverReportsInfeasibleMainWorkload() {
+  testutil::PrintInfo(
+      "theorem stir query solver reports infeasible lambda targets on unsupported main-workload style instances");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const swgr::stir::StirInstance instance{
+      .domain = Domain::teichmuller_subgroup(ctx, 243),
+      .claimed_degree = 81,
+  };
+  auto params = MakeTheoremParams({}, 9);
+  params.lambda_target = 128;
+  params.ood_samples = 2;
+
+  const auto solved =
+      swgr::stir::solve_min_query_schedule_for_lambda(params, instance);
+  CHECK(!solved.feasible);
+  CHECK(!solved.query_schedule.empty());
+  CHECK_EQ(solved.analysis.effective_security_bits, std::uint64_t{4});
+}
+
 void TestStirRejectsTamperedPrevQueryOpening() {
   testutil::PrintInfo("stir verifier rejects a tampered previous-oracle opening");
 
@@ -919,6 +961,25 @@ void TestStirBenchTimeEmitsTheoremMetadataAndUnsupportedZeroBits() {
             "pow_policy=benchmark_only_not_in_theorem_bound") !=
         std::string::npos);
 
+  const auto theorem_auto_output = RunBenchTimeText({
+      "--protocol", "stir9to3",
+      "--n", "81",
+      "--d", "26",
+      "--r", "54",
+      "--stop-degree", "3",
+      "--ood-samples", "1",
+      "--queries", "theorem_auto",
+      "--lambda", "1",
+      "--pow-bits", "0",
+      "--format", "text",
+      "--warmup", "0",
+      "--reps", "1",
+  });
+  CHECK(theorem_auto_output.find("query_policy=theorem_auto_solved_schedule") !=
+        std::string::npos);
+  CHECK(theorem_auto_output.find("effective_security_bits=1") !=
+        std::string::npos);
+
   const auto unsupported_output = RunBenchTimeText({
       "--protocol", "stir9to3",
       "--n", "243",
@@ -933,6 +994,8 @@ void TestStirBenchTimeEmitsTheoremMetadataAndUnsupportedZeroBits() {
   CHECK(unsupported_output.find("soundness_mode=theorem_gr") !=
         std::string::npos);
   CHECK(unsupported_output.find("effective_security_bits=0") !=
+        std::string::npos);
+  CHECK(unsupported_output.find("query_policy=auto_live_schedule") !=
         std::string::npos);
   CHECK(unsupported_output.find("unsupported") != std::string::npos ||
         unsupported_output.find("Unsupported") != std::string::npos);
@@ -1000,6 +1063,8 @@ int main(int argc, char** argv) {
     RUN_TEST(TestStirTheoremModeMultiRoundUsesPublicRootChain);
     RUN_TEST(TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance);
     RUN_TEST(TestStirTheoremSoundnessAnalysisRejectsUnsupportedRegimes);
+    RUN_TEST(TestStirTheoremQuerySolverFindsMinimalScheduleOnSupportedInstance);
+    RUN_TEST(TestStirTheoremQuerySolverReportsInfeasibleMainWorkload);
     RUN_TEST(TestStirRejectsTamperedPrevQueryOpening);
     RUN_TEST(TestStirRejectsTamperedInitialRoot);
     RUN_TEST(TestStirRejectsTamperedGRoot);
