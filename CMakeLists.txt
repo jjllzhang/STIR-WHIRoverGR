@@ -58,6 +58,7 @@ set(STIR_OVER_GR_SOURCES
     src/stir/prover.cpp
     src/stir/verifier.cpp
     src/whir/common.cpp
+    src/whir/constraint.cpp
     src/whir/multiquadratic.cpp
     src/whir/parameters.cpp
     src/whir/prover.cpp
@@ -169,6 +170,10 @@ if(SWGR_BUILD_TESTS)
   target_link_libraries(test_whir_multiquadratic PRIVATE stir_over_gr)
   target_include_directories(test_whir_multiquadratic
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(test_whir_constraint tests/test_whir_constraint.cpp)
+  target_link_libraries(test_whir_constraint PRIVATE stir_over_gr)
+  target_include_directories(test_whir_constraint
+                             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_executable(test_soundness_configurator tests/test_soundness_configurator.cpp)
   target_link_libraries(test_soundness_configurator PRIVATE stir_over_gr)
   target_include_directories(test_soundness_configurator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -183,6 +188,8 @@ if(SWGR_BUILD_TESTS)
   add_test(NAME test_whir COMMAND $<TARGET_FILE:test_whir>)
   add_test(NAME test_whir_multiquadratic
            COMMAND $<TARGET_FILE:test_whir_multiquadratic>)
+  add_test(NAME test_whir_constraint
+           COMMAND $<TARGET_FILE:test_whir_constraint>)
   add_test(NAME test_soundness_configurator COMMAND $<TARGET_FILE:test_soundness_configurator>)
 endif()
 
