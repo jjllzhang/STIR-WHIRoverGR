@@ -55,7 +55,8 @@ bool validate(const WhirPublicParameters& pp) {
   std::uint64_t domain_size = pp.initial_domain.size();
   for (std::size_t layer = 0; layer < pp.layer_widths.size(); ++layer) {
     const std::uint64_t width = pp.layer_widths[layer];
-    if (width == 0 || width > live_variables || pp.degree_bounds[layer] == 0) {
+    if (width == 0 || width > live_variables || pp.degree_bounds[layer] == 0 ||
+        pp.shift_repetitions[layer] == 0) {
       return false;
     }
     std::uint64_t width_divisor = 0;

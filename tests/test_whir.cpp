@@ -12,6 +12,7 @@
 #include "tests/test_common.hpp"
 #include "whir/common.hpp"
 #include "whir/prover.hpp"
+#include "whir/verifier.hpp"
 
 int g_failures = 0;
 
@@ -246,6 +247,77 @@ void TestOpenRejectsMismatchedState() {
   CHECK(threw);
 }
 
+void TestVerifyAcceptsRoundtripOpening() {
+  testutil::PrintInfo("WHIR verifier accepts an honest opening roundtrip");
+
+  const auto pp = BuildPublicParameters();
+  const auto polynomial = BuildPolynomial(*pp.ctx);
+  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+  const swgr::whir::WhirVerifier verifier(swgr::whir::WhirParameters{});
+  swgr::whir::WhirCommitmentState state;
+  const auto commitment = prover.commit(pp, polynomial, &state);
+  const auto point = pp.ctx->with_ntl_context(
+      [&] { return std::vector<GRElem>{SmallElement(7)}; });
+  const auto opening = prover.open(commitment, state, point);
+
+  swgr::ProofStatistics stats;
+  CHECK(verifier.verify(commitment, point, opening, &stats));
+  CHECK(stats.serialized_bytes > 0);
+}
+
+void TestVerifyRejectsTamperingAndReplay() {
+  testutil::PrintInfo("WHIR verifier rejects tampered proof messages");
+
+  const auto pp = BuildPublicParameters();
+  const auto polynomial = BuildPolynomial(*pp.ctx);
+  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+  const swgr::whir::WhirVerifier verifier(swgr::whir::WhirParameters{});
+  swgr::whir::WhirCommitmentState state;
+  const auto commitment = prover.commit(pp, polynomial, &state);
+  const auto point = pp.ctx->with_ntl_context(
+      [&] { return std::vector<GRElem>{SmallElement(7)}; });
+  const auto opening = prover.open(commitment, state, point);
+
+  auto wrong_value = opening;
+  pp.ctx->with_ntl_context([&] {
+    wrong_value.value += pp.ctx->one();
+    return 0;
+  });
+  CHECK(!verifier.verify(commitment, point, wrong_value));
+
+  auto bad_sumcheck = opening;
+  pp.ctx->with_ntl_context([&] {
+    bad_sumcheck.proof.rounds[0].sumcheck_polynomials[0].coefficients[0] +=
+        pp.ctx->one();
+    return 0;
+  });
+  CHECK(!verifier.verify(commitment, point, bad_sumcheck));
+
+  auto bad_root = opening;
+  bad_root.proof.rounds[0].g_root[0] ^= 0x01U;
+  CHECK(!verifier.verify(commitment, point, bad_root));
+
+  auto bad_virtual_payload = opening;
+  bad_virtual_payload.proof.rounds[0]
+      .virtual_fold_openings.leaf_payloads[0][0] ^= 0x01U;
+  CHECK(!verifier.verify(commitment, point, bad_virtual_payload));
+
+  auto bad_final_constant = opening;
+  pp.ctx->with_ntl_context([&] {
+    bad_final_constant.proof.final_constant += pp.ctx->one();
+    return 0;
+  });
+  CHECK(!verifier.verify(commitment, point, bad_final_constant));
+
+  auto bad_final_payload = opening;
+  bad_final_payload.proof.final_openings.leaf_payloads[0][0] ^= 0x01U;
+  CHECK(!verifier.verify(commitment, point, bad_final_payload));
+
+  const auto different_point = pp.ctx->with_ntl_context(
+      [&] { return std::vector<GRElem>{SmallElement(8)}; });
+  CHECK(!verifier.verify(commitment, different_point, opening));
+}
+
 }  // namespace
 
 int main() {
@@ -257,6 +329,8 @@ int main() {
     RUN_TEST(TestCommitRejectsInvalidShapesAndUnsupportedPrime);
     RUN_TEST(TestOpenProducesWellShapedProof);
     RUN_TEST(TestOpenRejectsMismatchedState);
+    RUN_TEST(TestVerifyAcceptsRoundtripOpening);
+    RUN_TEST(TestVerifyRejectsTamperingAndReplay);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;
