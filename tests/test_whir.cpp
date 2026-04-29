@@ -70,7 +70,7 @@ swgr::whir::WhirPublicParameters BuildPublicParameters() {
         .variable_count = 1,
         .layer_widths = {1},
         .shift_repetitions = {1},
-        .final_repetitions = 0,
+        .final_repetitions = 1,
         .degree_bounds = {4},
         .deltas = {0.1L},
         .omega = omega,
@@ -202,6 +202,50 @@ void TestCommitRejectsInvalidShapesAndUnsupportedPrime() {
   CHECK(bad_prime_threw);
 }
 
+void TestOpenProducesWellShapedProof() {
+  testutil::PrintInfo("WHIR open path emits sumcheck, fold, and final openings");
+
+  const auto pp = BuildPublicParameters();
+  const auto polynomial = BuildPolynomial(*pp.ctx);
+  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+  swgr::whir::WhirCommitmentState state;
+  const auto commitment = prover.commit(pp, polynomial, &state);
+  const auto point = pp.ctx->with_ntl_context(
+      [&] { return std::vector<GRElem>{SmallElement(7)}; });
+
+  const auto opening = prover.open(commitment, state, point);
+  CHECK_EQ(opening.value, polynomial.evaluate(*pp.ctx, point));
+  CHECK(swgr::whir::proof_shape_valid(opening.proof));
+  CHECK_EQ(opening.proof.rounds.size(), std::size_t{1});
+  CHECK_EQ(opening.proof.rounds[0].sumcheck_polynomials.size(),
+           std::size_t{1});
+  CHECK(!opening.proof.rounds[0].g_root.empty());
+  CHECK(!opening.proof.rounds[0].virtual_fold_openings.queried_indices.empty());
+  CHECK(!opening.proof.final_openings.queried_indices.empty());
+  CHECK(opening.proof.stats.serialized_bytes > 0);
+}
+
+void TestOpenRejectsMismatchedState() {
+  testutil::PrintInfo("WHIR open path rejects state/root mismatches");
+
+  const auto pp = BuildPublicParameters();
+  const auto polynomial = BuildPolynomial(*pp.ctx);
+  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+  swgr::whir::WhirCommitmentState state;
+  const auto commitment = prover.commit(pp, polynomial, &state);
+  const auto point = pp.ctx->with_ntl_context(
+      [&] { return std::vector<GRElem>{SmallElement(7)}; });
+
+  state.oracle_root.front() ^= 0x01U;
+  bool threw = false;
+  try {
+    (void)prover.open(commitment, state, point);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+}
+
 }  // namespace
 
 int main() {
@@ -211,6 +255,8 @@ int main() {
     RUN_TEST(TestProofShapeValidation);
     RUN_TEST(TestCommitmentRootIsStableAndBindsTable);
     RUN_TEST(TestCommitRejectsInvalidShapesAndUnsupportedPrime);
+    RUN_TEST(TestOpenProducesWellShapedProof);
+    RUN_TEST(TestOpenRejectsMismatchedState);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

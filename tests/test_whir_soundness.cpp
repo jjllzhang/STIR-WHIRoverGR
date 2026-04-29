@@ -76,7 +76,7 @@ void TestSmallSmokeParamsAreAccepted() {
   CHECK_EQ(selected.public_params.initial_domain_size, std::uint64_t{81});
   CHECK_EQ(selected.public_params.layer_widths.size(), std::size_t{3});
   CHECK_EQ(selected.public_params.shift_repetitions.size(), std::size_t{3});
-  CHECK_EQ(selected.public_params.final_repetitions, std::uint64_t{0});
+  CHECK(selected.public_params.final_repetitions > std::uint64_t{0});
   CHECK_EQ(selected.repetition_security_bits, std::uint64_t{35});
   CHECK(selected.effective_security_bits >= std::uint64_t{32});
 }

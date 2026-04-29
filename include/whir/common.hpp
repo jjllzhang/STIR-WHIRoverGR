@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "algebra/gr_context.hpp"
+#include "crypto/fs/transcript.hpp"
 #include "crypto/merkle_tree/merkle_tree.hpp"
 #include "domain.hpp"
 #include "ldt.hpp"
@@ -101,6 +102,22 @@ std::uint64_t serialized_message_bytes(
     const swgr::algebra::GRContext& ctx, const WhirOpening& opening);
 
 bool proof_shape_valid(const WhirProof& proof);
+
+void absorb_public_parameters(swgr::crypto::Transcript& transcript,
+                              const WhirPublicParameters& pp);
+
+void absorb_opening_preamble(swgr::crypto::Transcript& transcript,
+                             const WhirCommitment& commitment,
+                             std::span<const swgr::algebra::GRElem> point,
+                             const swgr::algebra::GRElem& value);
+
+void absorb_sumcheck_polynomial(swgr::crypto::Transcript& transcript,
+                                const swgr::algebra::GRContext& ctx,
+                                const WhirSumcheckPolynomial& polynomial);
+
+std::vector<std::uint64_t> derive_unique_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t query_count);
 
 std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
     const swgr::algebra::GRContext& ctx,

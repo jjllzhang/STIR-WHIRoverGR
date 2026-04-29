@@ -427,6 +427,27 @@ AnalyzeCandidate(const WhirUniqueDecodingInputs &inputs,
     remaining_variables -= width;
   }
 
+  const std::uint64_t final_domain_divisor =
+      Pow3Checked(static_cast<std::uint64_t>(layer_widths.size()));
+  if (n0 % final_domain_divisor != 0) {
+    selection.notes.push_back(
+        "candidate n0 is not divisible by the final WHIR layer domain divisor");
+    return candidate;
+  }
+  const std::uint64_t final_domain_size = n0 / final_domain_divisor;
+  if (final_domain_size <= 1) {
+    selection.notes.push_back(
+        "candidate final WHIR domain is too small for constant checks");
+    return candidate;
+  }
+  const long double final_rho = 1.0L / static_cast<long double>(final_domain_size);
+  const long double final_delta = (1.0L - theta) * 0.5L * (1.0L - final_rho);
+  const std::uint64_t final_repetitions =
+      RepetitionCountForBits(final_delta, selection.repetition_security_bits);
+  selection.public_params.final_repetitions = final_repetitions;
+  log2_error_terms.push_back(static_cast<long double>(final_repetitions) *
+                             std::log2(1.0L - final_delta));
+
   if (algebraic_bound <= 0) {
     selection.notes.push_back("WHIR algebraic bound is unexpectedly zero");
     return candidate;

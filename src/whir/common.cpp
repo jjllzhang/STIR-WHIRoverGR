@@ -1,6 +1,7 @@
 #include "whir/common.hpp"
 
 #include <cstdint>
+#include <algorithm>
 #include <span>
 #include <string>
 #include <string_view>
@@ -8,6 +9,20 @@
 
 namespace swgr::whir {
 namespace {
+
+class ByteSink {
+ public:
+  void append_byte(std::uint8_t byte) { bytes_.push_back(byte); }
+
+  void append_bytes(std::span<const std::uint8_t> bytes) {
+    bytes_.insert(bytes_.end(), bytes.begin(), bytes.end());
+  }
+
+  const std::vector<std::uint8_t>& bytes() const { return bytes_; }
+
+ private:
+  std::vector<std::uint8_t> bytes_;
+};
 
 template <typename Sink>
 void SerializeRingElement(Sink& sink, const swgr::algebra::GRContext& ctx,
@@ -49,6 +64,31 @@ void SerializeWhirProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
   }
   SerializeRingElement(sink, ctx, proof.final_constant);
   SerializeMerkleProof(sink, proof.final_openings);
+}
+
+template <typename Sink>
+void SerializePublicParameters(Sink& sink, const WhirPublicParameters& pp) {
+  const auto& ctx = *pp.ctx;
+  swgr::SerializeUint64(sink, pp.variable_count);
+  swgr::SerializeUint64(sink, pp.initial_domain.size());
+  SerializeRingElement(sink, ctx, pp.initial_domain.offset());
+  SerializeRingElement(sink, ctx, pp.initial_domain.root());
+  SerializeRingElement(sink, ctx, pp.omega);
+  swgr::SerializeUint64(sink, pp.lambda_target);
+  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(pp.hash_profile));
+  swgr::SerializeUint64Vector(sink, pp.layer_widths);
+  swgr::SerializeUint64Vector(sink, pp.shift_repetitions);
+  swgr::SerializeUint64(sink, pp.final_repetitions);
+  swgr::SerializeUint64Vector(sink, pp.degree_bounds);
+}
+
+template <typename Sink>
+void SerializeRingVector(Sink& sink, const swgr::algebra::GRContext& ctx,
+                         std::span<const swgr::algebra::GRElem> values) {
+  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+  for (const auto& value : values) {
+    SerializeRingElement(sink, ctx, value);
+  }
 }
 
 bool MerkleProofShapeValid(const swgr::crypto::MerkleProof& proof) {
@@ -110,6 +150,56 @@ bool proof_shape_valid(const WhirProof& proof) {
     }
   }
   return true;
+}
+
+void absorb_public_parameters(swgr::crypto::Transcript& transcript,
+                              const WhirPublicParameters& pp) {
+  ByteSink sink;
+  SerializePublicParameters(sink, pp);
+  transcript.absorb_bytes(sink.bytes());
+}
+
+void absorb_opening_preamble(swgr::crypto::Transcript& transcript,
+                             const WhirCommitment& commitment,
+                             std::span<const swgr::algebra::GRElem> point,
+                             const swgr::algebra::GRElem& value) {
+  const auto& ctx = *commitment.public_params.ctx;
+  absorb_public_parameters(transcript, commitment.public_params);
+  transcript.absorb_bytes(commitment.oracle_root);
+  ByteSink sink;
+  SerializeRingVector(sink, ctx, point);
+  SerializeRingElement(sink, ctx, value);
+  transcript.absorb_bytes(sink.bytes());
+}
+
+void absorb_sumcheck_polynomial(swgr::crypto::Transcript& transcript,
+                                const swgr::algebra::GRContext& ctx,
+                                const WhirSumcheckPolynomial& polynomial) {
+  ByteSink sink;
+  SerializeSumcheckPolynomial(sink, ctx, polynomial);
+  transcript.absorb_bytes(sink.bytes());
+}
+
+std::vector<std::uint64_t> derive_unique_positions(
+    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::uint64_t modulus, std::uint64_t query_count) {
+  if (modulus == 0 || query_count == 0) {
+    return {};
+  }
+
+  const std::uint64_t capped_count = std::min(query_count, modulus);
+  std::vector<std::uint64_t> positions;
+  positions.reserve(static_cast<std::size_t>(capped_count));
+  for (std::uint64_t attempt = 0;
+       positions.size() < static_cast<std::size_t>(capped_count); ++attempt) {
+    const auto candidate = transcript.challenge_index(
+        std::string(label_prefix) + ":" + std::to_string(attempt), modulus);
+    if (std::find(positions.begin(), positions.end(), candidate) ==
+        positions.end()) {
+      positions.push_back(candidate);
+    }
+  }
+  return positions;
 }
 
 std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
