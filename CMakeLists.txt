@@ -63,6 +63,7 @@ set(STIR_OVER_GR_SOURCES
     src/whir/multiquadratic.cpp
     src/whir/parameters.cpp
     src/whir/prover.cpp
+    src/whir/soundness.cpp
     src/whir/verifier.cpp)
 
 add_library(galoisring_backend STATIC ${GALOIS_RING_BACKEND_SOURCES})
@@ -179,6 +180,10 @@ if(SWGR_BUILD_TESTS)
   target_link_libraries(test_whir_folding PRIVATE stir_over_gr)
   target_include_directories(test_whir_folding
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(test_whir_soundness tests/test_whir_soundness.cpp)
+  target_link_libraries(test_whir_soundness PRIVATE stir_over_gr)
+  target_include_directories(test_whir_soundness
+                             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_executable(test_soundness_configurator tests/test_soundness_configurator.cpp)
   target_link_libraries(test_soundness_configurator PRIVATE stir_over_gr)
   target_include_directories(test_soundness_configurator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -196,6 +201,7 @@ if(SWGR_BUILD_TESTS)
   add_test(NAME test_whir_constraint
            COMMAND $<TARGET_FILE:test_whir_constraint>)
   add_test(NAME test_whir_folding COMMAND $<TARGET_FILE:test_whir_folding>)
+  add_test(NAME test_whir_soundness COMMAND $<TARGET_FILE:test_whir_soundness>)
   add_test(NAME test_soundness_configurator COMMAND $<TARGET_FILE:test_soundness_configurator>)
 endif()
 
