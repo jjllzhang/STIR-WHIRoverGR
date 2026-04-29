@@ -70,23 +70,23 @@ struct WhirOpening {
 };
 
 inline constexpr std::string_view kTranscriptLabelPublicParameters =
-    "whir.public_parameters";
+    "whir.pp";
 inline constexpr std::string_view kTranscriptLabelCommitment =
     "whir.commitment";
 inline constexpr std::string_view kTranscriptLabelOpenPoint =
-    "whir.open_point";
+    "whir.open.point";
 inline constexpr std::string_view kTranscriptLabelOpenValue =
-    "whir.open_value";
+    "whir.open.value";
 inline constexpr std::string_view kTranscriptLabelSumcheckPolynomial =
-    "whir.sumcheck_polynomial";
+    "whir.sumcheck.poly";
 inline constexpr std::string_view kTranscriptLabelAlpha = "whir.alpha";
 inline constexpr std::string_view kTranscriptLabelGRoot = "whir.g_root";
 inline constexpr std::string_view kTranscriptLabelShift = "whir.shift";
 inline constexpr std::string_view kTranscriptLabelGamma = "whir.gamma";
 inline constexpr std::string_view kTranscriptLabelFinalConstant =
-    "whir.final_constant";
+    "whir.final.constant";
 inline constexpr std::string_view kTranscriptLabelFinalQuery =
-    "whir.final_query";
+    "whir.final.query";
 
 std::string indexed_label(std::string_view prefix, std::uint64_t round);
 
@@ -113,6 +113,7 @@ void absorb_opening_preamble(swgr::crypto::Transcript& transcript,
 
 void absorb_sumcheck_polynomial(swgr::crypto::Transcript& transcript,
                                 const swgr::algebra::GRContext& ctx,
+                                std::string_view label,
                                 const WhirSumcheckPolynomial& polynomial);
 
 std::vector<std::uint64_t> derive_unique_positions(

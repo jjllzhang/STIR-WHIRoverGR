@@ -65,6 +65,27 @@ void TestTranscriptIsDeterministicAndDomainSeparated() {
   CHECK(!(different.challenge_ring(ctx, "alpha") == lhs_ring));
 }
 
+void TestTranscriptLabeledAbsorbSeparatesEqualPayloads() {
+  testutil::PrintInfo(
+      "transcript labeled absorbs domain-separate equal payload bytes");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const std::vector<std::uint8_t> payload{4, 3, 2, 1};
+
+  swgr::crypto::Transcript lhs(swgr::HashProfile::STIR_NATIVE);
+  swgr::crypto::Transcript rhs(swgr::HashProfile::STIR_NATIVE);
+  lhs.absorb_labeled_bytes("label.a", payload);
+  rhs.absorb_labeled_bytes("label.a", payload);
+  CHECK(lhs.challenge_ring(ctx, "alpha") == rhs.challenge_ring(ctx, "alpha"));
+
+  swgr::crypto::Transcript different_label(swgr::HashProfile::STIR_NATIVE);
+  different_label.absorb_labeled_bytes("label.b", payload);
+  swgr::crypto::Transcript baseline(swgr::HashProfile::STIR_NATIVE);
+  baseline.absorb_labeled_bytes("label.a", payload);
+  CHECK(!(different_label.challenge_ring(ctx, "alpha") ==
+          baseline.challenge_ring(ctx, "alpha")));
+}
+
 void TestTranscriptTeichmullerChallengeIsDeterministicAndInT() {
   testutil::PrintInfo(
       "transcript teichmuller challenges stay deterministic and inside T");
@@ -215,6 +236,7 @@ int main() {
   try {
     RUN_TEST(TestHashBackendIsBlake3Only);
     RUN_TEST(TestTranscriptIsDeterministicAndDomainSeparated);
+    RUN_TEST(TestTranscriptLabeledAbsorbSeparatesEqualPayloads);
     RUN_TEST(TestTranscriptTeichmullerChallengeIsDeterministicAndInT);
     RUN_TEST(TestMerkleOpenVerifyAndRejectTamper);
     RUN_TEST(TestProofPlannerMatchesUniqueQueriesAndUpperBound);

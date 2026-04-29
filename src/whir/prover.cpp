@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "crypto/fs/transcript.hpp"
-#include "utils.hpp"
 #include "whir/constraint.hpp"
 #include "whir/folding.hpp"
 
@@ -124,19 +123,28 @@ WhirOpening WhirProver::open(
     throw std::invalid_argument(
         "whir::WhirProver::open state does not match commitment");
   }
-
-  auto current_tree =
-      build_oracle_tree(pp.hash_profile, ctx, state.initial_oracle);
-  if (current_tree.root() != commitment.oracle_root) {
-    throw std::invalid_argument(
-        "whir::WhirProver::open state oracle does not match commitment root");
-  }
   if (pp.final_repetitions == 0) {
     throw std::invalid_argument(
         "whir::WhirProver::open requires final_repetitions > 0");
   }
 
   const auto open_start = std::chrono::steady_clock::now();
+  double encode_ms = 0.0;
+  double merkle_ms = 0.0;
+  double transcript_ms = 0.0;
+  double fold_ms = 0.0;
+  double interpolate_ms = 0.0;
+  double query_open_ms = 0.0;
+
+  auto timer_start = std::chrono::steady_clock::now();
+  auto current_tree =
+      build_oracle_tree(pp.hash_profile, ctx, state.initial_oracle);
+  merkle_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
+  if (current_tree.root() != commitment.oracle_root) {
+    throw std::invalid_argument(
+        "whir::WhirProver::open state oracle does not match commitment root");
+  }
+
   auto current_polynomial = *state.polynomial;
   auto current_oracle = state.initial_oracle;
   auto current_domain = pp.initial_domain;
@@ -146,7 +154,10 @@ WhirOpening WhirProver::open(
   opening.proof.rounds.reserve(pp.layer_widths.size());
 
   swgr::crypto::Transcript transcript(pp.hash_profile);
+  timer_start = std::chrono::steady_clock::now();
   absorb_opening_preamble(transcript, commitment, point, opening.value);
+  transcript_ms +=
+      ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 
   WhirConstraint constraint(pp.ternary_grid);
   constraint.add_shift_term(ctx.one(),
@@ -162,34 +173,58 @@ WhirOpening WhirProver::open(
     std::vector<swgr::algebra::GRElem> alphas;
     alphas.reserve(static_cast<std::size_t>(width));
     for (std::uint64_t j = 0; j < width; ++j) {
+      timer_start = std::chrono::steady_clock::now();
       const auto h =
           honest_sumcheck_polynomial(ctx, current_polynomial, constraint, alphas);
+      interpolate_ms +=
+          ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
       round.sumcheck_polynomials.push_back(h);
+      timer_start = std::chrono::steady_clock::now();
       absorb_sumcheck_polynomial(transcript, ctx,
+                                 indexed_label(kTranscriptLabelSumcheckPolynomial,
+                                               static_cast<std::uint64_t>(layer),
+                                               j),
                                  round.sumcheck_polynomials.back());
       const auto alpha = transcript.challenge_teichmuller(
           ctx, indexed_label(kTranscriptLabelAlpha,
                              static_cast<std::uint64_t>(layer), j));
+      transcript_ms +=
+          ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
       sigma = sumcheck_next_sigma(ctx, h, alpha);
       alphas.push_back(alpha);
     }
 
     auto next_polynomial = current_polynomial.restrict_prefix(ctx, alphas);
     auto next_domain = current_domain.pow_map(3U);
+    timer_start = std::chrono::steady_clock::now();
     auto next_oracle = EncodeOracle(ctx, next_domain, next_polynomial);
+    encode_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
+    timer_start = std::chrono::steady_clock::now();
     auto next_tree = build_oracle_tree(pp.hash_profile, ctx, next_oracle);
+    merkle_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
     round.g_root = next_tree.root();
-    transcript.absorb_bytes(round.g_root);
+    timer_start = std::chrono::steady_clock::now();
+    transcript.absorb_labeled_bytes(
+        indexed_label(kTranscriptLabelGRoot,
+                      static_cast<std::uint64_t>(layer)),
+        round.g_root);
+    transcript_ms +=
+        ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 
     const std::uint64_t shift_domain_size =
         current_domain.size() / pow3_checked(width);
+    timer_start = std::chrono::steady_clock::now();
     const auto shift_positions = derive_unique_positions(
         transcript,
         indexed_label(kTranscriptLabelShift,
                       static_cast<std::uint64_t>(layer)),
         shift_domain_size, pp.shift_repetitions[layer]);
+    transcript_ms +=
+        ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
+    timer_start = std::chrono::steady_clock::now();
     auto folded_for_queries =
         repeated_ternary_fold_table(current_domain, current_oracle, alphas);
+    fold_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 
     std::vector<std::uint64_t> parent_indices;
     parent_indices.reserve(shift_positions.size() *
@@ -209,12 +244,18 @@ WhirOpening WhirProver::open(
           pow_m(ctx, shift_domain.element(shift_index),
                 next_polynomial.variable_count()));
     }
+    timer_start = std::chrono::steady_clock::now();
     round.virtual_fold_openings =
         current_tree.open(SortedUnique(std::move(parent_indices)));
+    query_open_ms +=
+        ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 
+    timer_start = std::chrono::steady_clock::now();
     const auto gamma = transcript.challenge_teichmuller(
         ctx, indexed_label(kTranscriptLabelGamma,
                            static_cast<std::uint64_t>(layer)));
+    transcript_ms +=
+        ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
     auto next_constraint = constraint.restrict_prefix(ctx, alphas);
     ctx.with_ntl_context([&] {
       auto gamma_power = gamma;
@@ -238,25 +279,33 @@ WhirOpening WhirProver::open(
     const std::vector<swgr::algebra::GRElem> empty_point;
     return current_polynomial.evaluate(ctx, empty_point);
   });
-  transcript.absorb_ring(ctx, opening.proof.final_constant);
+  timer_start = std::chrono::steady_clock::now();
+  transcript.absorb_labeled_ring(kTranscriptLabelFinalConstant, ctx,
+                                 opening.proof.final_constant);
   const auto final_positions = derive_unique_positions(
       transcript, kTranscriptLabelFinalQuery, current_domain.size(),
       pp.final_repetitions);
+  transcript_ms +=
+      ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
+  timer_start = std::chrono::steady_clock::now();
   opening.proof.final_openings = current_tree.open(final_positions);
+  query_open_ms +=
+      ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 
   opening.proof.stats.prover_rounds =
       static_cast<std::uint64_t>(opening.proof.rounds.size());
   opening.proof.stats.serialized_bytes = serialized_message_bytes(ctx, opening);
+  opening.proof.stats.prover_encode_ms = encode_ms;
+  opening.proof.stats.prover_merkle_ms = merkle_ms;
+  opening.proof.stats.prover_transcript_ms = transcript_ms;
+  opening.proof.stats.prover_fold_ms = fold_ms;
+  opening.proof.stats.prover_interpolate_ms = interpolate_ms;
+  opening.proof.stats.prover_query_open_ms = query_open_ms;
   opening.proof.stats.prover_total_ms =
       ElapsedMilliseconds(open_start, std::chrono::steady_clock::now());
   opening.proof.stats.prove_query_phase_ms =
       opening.proof.stats.prover_total_ms;
   return opening;
-}
-
-WhirProof WhirProver::prove() const {
-  (void)params_;
-  throw_unimplemented("whir::WhirProver::prove");
 }
 
 }  // namespace swgr::whir

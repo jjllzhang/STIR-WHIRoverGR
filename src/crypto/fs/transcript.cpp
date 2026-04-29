@@ -71,10 +71,28 @@ void Transcript::absorb_bytes(std::span<const std::uint8_t> data) {
   state_ = hash_bytes(profile_, HashRole::Transcript, framed);
 }
 
+void Transcript::absorb_labeled_bytes(std::string_view label,
+                                      std::span<const std::uint8_t> data) {
+  std::vector<std::uint8_t> framed;
+  framed.reserve(state_.size() + label.size() + data.size() + 96);
+  AppendTaggedString(framed, "domain", kAbsorbDomain);
+  AppendTaggedBytes(framed, "state", state_);
+  AppendTaggedString(framed, "label", label);
+  AppendTaggedBytes(framed, "message", data);
+  state_ = hash_bytes(profile_, HashRole::Transcript, framed);
+}
+
 void Transcript::absorb_ring(const algebra::GRContext& ctx,
                              const algebra::GRElem& x) {
   const auto bytes = algebra::serialize_ring_element(ctx, x);
   absorb_bytes(bytes);
+}
+
+void Transcript::absorb_labeled_ring(std::string_view label,
+                                     const algebra::GRContext& ctx,
+                                     const algebra::GRElem& x) {
+  const auto bytes = algebra::serialize_ring_element(ctx, x);
+  absorb_labeled_bytes(label, bytes);
 }
 
 std::vector<std::uint8_t> Transcript::squeeze_bytes(std::string_view label,

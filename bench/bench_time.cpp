@@ -1248,6 +1248,10 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
                               auto prover_stats = opening.proof.stats;
                               prover_stats.commit_ms =
                                   commitment.stats.commit_ms;
+                              prover_stats.prover_encode_ms +=
+                                  commitment.stats.prover_encode_ms;
+                              prover_stats.prover_merkle_ms +=
+                                  commitment.stats.prover_merkle_ms;
                               prover_stats.prover_total_ms +=
                                   commitment.stats.commit_ms;
                               AddRunStats(*current_row, prover_stats,

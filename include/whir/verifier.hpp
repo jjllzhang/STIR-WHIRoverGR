@@ -17,8 +17,6 @@ class WhirVerifier {
               const WhirOpening& opening,
               swgr::ProofStatistics* stats = nullptr) const;
 
-  bool verify(const WhirProof& proof) const;
-
  private:
   WhirParameters params_;
 };

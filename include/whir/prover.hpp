@@ -21,8 +21,6 @@ class WhirProver {
                    const WhirCommitmentState& state,
                    std::span<const swgr::algebra::GRElem> point) const;
 
-  WhirProof prove() const;
-
  private:
   WhirParameters params_;
 };

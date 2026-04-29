@@ -135,6 +135,23 @@ void TestRepeatedTernarySparseB2MatchesFullTable() {
   CheckSparseMatchesFullTable(domain, evals, alphas);
 }
 
+void TestRepeatedTernarySparseB3MatchesFullTable() {
+  testutil::PrintInfo(
+      "WHIR repeated ternary sparse fold matches full table for b=3");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const Domain domain = Domain::teichmuller_subgroup(ctx, 27);
+  const Polynomial poly = SamplePolynomial(ctx, domain, domain.size());
+  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const std::vector<GRElem> alphas = ctx.with_ntl_context([&] {
+    return std::vector<GRElem>{ctx.one() + domain.element(2),
+                               ctx.one() + domain.element(4),
+                               ctx.one() + domain.element(8)};
+  });
+
+  CheckSparseMatchesFullTable(domain, evals, alphas);
+}
+
 void TestVirtualParentIndexShape() {
   testutil::PrintInfo(
       "WHIR virtual parent indices match H_i^(3^b) fibers");
@@ -241,6 +258,7 @@ int main() {
   try {
     RUN_TEST(TestRepeatedTernarySparseB1MatchesFullTable);
     RUN_TEST(TestRepeatedTernarySparseB2MatchesFullTable);
+    RUN_TEST(TestRepeatedTernarySparseB3MatchesFullTable);
     RUN_TEST(TestVirtualParentIndexShape);
     RUN_TEST(TestInvalidInputsReject);
   } catch (const std::exception& ex) {

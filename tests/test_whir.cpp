@@ -93,15 +93,29 @@ swgr::whir::MultiQuadraticPolynomial BuildPolynomial(const GRContext& ctx) {
 void TestIndexedLabelsAreStableAndSeparated() {
   testutil::PrintInfo("WHIR transcript labels are stable and round-indexed");
 
+  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelPublicParameters),
+           std::string("whir.pp"));
+  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelCommitment),
+           std::string("whir.commitment"));
+  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelOpenPoint),
+           std::string("whir.open.point"));
+  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelOpenValue),
+           std::string("whir.open.value"));
   CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelAlpha, 2),
            std::string("whir.alpha:2"));
   CHECK_EQ(swgr::whir::indexed_label(
                swgr::whir::kTranscriptLabelSumcheckPolynomial, 2, 1),
-           std::string("whir.sumcheck_polynomial:2:1"));
-  CHECK(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelGamma, 0) !=
-        swgr::whir::indexed_label(swgr::whir::kTranscriptLabelShift, 0));
+           std::string("whir.sumcheck.poly:2:1"));
+  CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelGRoot, 3),
+           std::string("whir.g_root:3"));
+  CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelShift, 4, 5),
+           std::string("whir.shift:4:5"));
+  CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelGamma, 0),
+           std::string("whir.gamma:0"));
+  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelFinalConstant),
+           std::string("whir.final.constant"));
   CHECK_EQ(std::string(swgr::whir::kTranscriptLabelFinalQuery),
-           std::string("whir.final_query"));
+           std::string("whir.final.query"));
 }
 
 void TestSerializedBytesAreDeterministic() {

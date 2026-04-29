@@ -263,7 +263,7 @@ Main targets:
 - `stir_over_gr`: main project static library
 - aliases: `swgr::galoisring_backend`, `swgr::stir_over_gr`, `swgr::swgr`
 - `bench_time`: end-to-end timing benchmark for FRI, STIR, and `whir_gr_ud`
-- focused WHIR tests: `test_whir`, `test_whir_multiquadratic`, `test_whir_constraint`, `test_whir_folding`, `test_whir_soundness`
+- focused WHIR tests: `test_whir`, `test_whir_multiquadratic`, `test_whir_constraint`, `test_whir_folding`, `test_whir_soundness`, `test_whir_roundtrip`
 
 ## Repository Layout
 

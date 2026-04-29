@@ -156,7 +156,8 @@ void absorb_public_parameters(swgr::crypto::Transcript& transcript,
                               const WhirPublicParameters& pp) {
   ByteSink sink;
   SerializePublicParameters(sink, pp);
-  transcript.absorb_bytes(sink.bytes());
+  transcript.absorb_labeled_bytes(kTranscriptLabelPublicParameters,
+                                  sink.bytes());
 }
 
 void absorb_opening_preamble(swgr::crypto::Transcript& transcript,
@@ -165,19 +166,27 @@ void absorb_opening_preamble(swgr::crypto::Transcript& transcript,
                              const swgr::algebra::GRElem& value) {
   const auto& ctx = *commitment.public_params.ctx;
   absorb_public_parameters(transcript, commitment.public_params);
-  transcript.absorb_bytes(commitment.oracle_root);
-  ByteSink sink;
-  SerializeRingVector(sink, ctx, point);
-  SerializeRingElement(sink, ctx, value);
-  transcript.absorb_bytes(sink.bytes());
+  transcript.absorb_labeled_bytes(kTranscriptLabelCommitment,
+                                  commitment.oracle_root);
+
+  ByteSink point_sink;
+  SerializeRingVector(point_sink, ctx, point);
+  transcript.absorb_labeled_bytes(kTranscriptLabelOpenPoint,
+                                  point_sink.bytes());
+
+  ByteSink value_sink;
+  SerializeRingElement(value_sink, ctx, value);
+  transcript.absorb_labeled_bytes(kTranscriptLabelOpenValue,
+                                  value_sink.bytes());
 }
 
 void absorb_sumcheck_polynomial(swgr::crypto::Transcript& transcript,
                                 const swgr::algebra::GRContext& ctx,
+                                std::string_view label,
                                 const WhirSumcheckPolynomial& polynomial) {
   ByteSink sink;
   SerializeSumcheckPolynomial(sink, ctx, polynomial);
-  transcript.absorb_bytes(sink.bytes());
+  transcript.absorb_labeled_bytes(label, sink.bytes());
 }
 
 std::vector<std::uint64_t> derive_unique_positions(

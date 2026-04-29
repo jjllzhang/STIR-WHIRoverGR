@@ -16,7 +16,12 @@ class Transcript {
   explicit Transcript(HashProfile profile = HashProfile::STIR_NATIVE);
 
   void absorb_bytes(std::span<const std::uint8_t> data);
+  void absorb_labeled_bytes(std::string_view label,
+                            std::span<const std::uint8_t> data);
   void absorb_ring(const algebra::GRContext& ctx, const algebra::GRElem& x);
+  void absorb_labeled_ring(std::string_view label,
+                           const algebra::GRContext& ctx,
+                           const algebra::GRElem& x);
   algebra::GRElem challenge_ring(const algebra::GRContext& ctx,
                                  std::string_view label);
   algebra::GRElem challenge_teichmuller(const algebra::GRContext& ctx,
