@@ -134,7 +134,7 @@ inline OutputFormat ParseOutputFormat(std::string_view raw_value) {
 inline std::vector<std::string> ParseProtocols(std::string_view raw_value) {
   const std::string normalized = ToLowerCopy(raw_value);
   if (normalized == "all") {
-    return {"fri3", "fri9", "stir9to3"};
+    return {"fri3", "fri9", "stir9to3", "whir_gr_ud"};
   }
 
   std::vector<std::string> protocols;
@@ -143,7 +143,8 @@ inline std::vector<std::string> ParseProtocols(std::string_view raw_value) {
   while (start <= owned.size()) {
     const std::size_t comma = owned.find(',', start);
     std::string token = owned.substr(start, comma - start);
-    if (token != "fri3" && token != "fri9" && token != "stir9to3") {
+    if (token != "fri3" && token != "fri9" && token != "stir9to3" &&
+        token != "whir_gr_ud") {
       throw std::invalid_argument("unknown protocol: " + token);
     }
     if (std::find(protocols.begin(), protocols.end(), token) == protocols.end()) {

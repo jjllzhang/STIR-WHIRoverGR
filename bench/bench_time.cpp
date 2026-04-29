@@ -1,5 +1,6 @@
 #include "bench_common.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <exception>
@@ -11,6 +12,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <NTL/ZZ_pE.h>
 
 #if defined(SWGR_HAS_OPENMP)
 #include <omp.h>
@@ -26,6 +29,9 @@
 #include "stir/prover.hpp"
 #include "stir/soundness.hpp"
 #include "stir/verifier.hpp"
+#include "whir/prover.hpp"
+#include "whir/soundness.hpp"
+#include "whir/verifier.hpp"
 
 namespace {
 
@@ -51,6 +57,11 @@ struct TimeBenchOptions {
   std::uint64_t ood_samples = 2;
   std::vector<std::uint64_t> queries;
   bool stir_query_theorem_auto = false;
+  std::uint64_t whir_m = 3;
+  std::uint64_t whir_bmax = 1;
+  swgr::whir::WhirRational whir_rho0{1, 3};
+  swgr::whir::WhirRational whir_theta{1, 2};
+  std::optional<std::uint64_t> whir_repetitions;
   std::uint64_t threads = 1;
   std::uint64_t warmup = 1;
   std::uint64_t reps = 3;
@@ -157,6 +168,21 @@ std::string DeltaRatioString(
     const swgr::fri::StandaloneFriSoundnessAnalysis& analysis) {
   return std::to_string(analysis.delta_numerator) + "/" +
          std::to_string(analysis.delta_denominator);
+}
+
+swgr::whir::WhirRational ParseWhirRational(std::string_view flag_name,
+                                           std::string_view raw_value) {
+  const std::string owned(raw_value);
+  const std::size_t slash = owned.find('/');
+  if (slash == std::string::npos) {
+    return swgr::whir::WhirRational{
+        swgr::bench::ParseUint64(flag_name, owned), 1};
+  }
+  const auto numerator =
+      swgr::bench::ParseUint64(flag_name, owned.substr(0, slash));
+  const auto denominator =
+      swgr::bench::ParseUint64(flag_name, owned.substr(slash + 1));
+  return swgr::whir::WhirRational{numerator, denominator};
 }
 
 ResolvedFriSoundness ResolveFriSoundness(const TimeBenchOptions& options,
@@ -358,6 +384,9 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --hash-profile STIR_NATIVE|WHIR_NATIVE\n"
          "  --stop-degree <uint> --ood-samples <uint>\n"
          "  --queries auto|theorem_auto|q0[,q1,...] --threads <uint>\n"
+         "  --whir-m <uint> --whir-bmax <uint>\n"
+         "  --whir-rho0 <num/den> --whir-theta <num/den>\n"
+         "  --whir-repetitions <uint>\n"
          "    note: fri3/fri9 default to theorem_auto, which solves the\n"
          "    theorem-facing standalone FRI PCS repetition count m from\n"
          "    lambda_target; an explicit --fri-repetitions must then be >=\n"
@@ -373,6 +402,9 @@ std::string TimeBenchUsage(const char* binary_name) {
          "    note: theorem metadata is reported for the resulting live\n"
          "    parameterization, and pow_bits is not folded into theorem\n"
          "    security bits\n"
+         "    note: whir_gr_ud runs the unique-decoding GR(2^s,r) WHIR PCS\n"
+         "    selector from whir_gr2k_pcs.pdf and chooses r from lambda; the\n"
+         "    existing --k-exp option supplies s\n"
          "    note: text/csv/json output currently keeps one shared row schema\n"
          "    across FRI and STIR; theorem_fri and theorem_gr\n"
          "    rows use lambda_target/effective_security_bits, while\n"
@@ -440,6 +472,16 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
         options.queries = swgr::bench::ParseQueries(value);
         options.stir_query_theorem_auto = false;
       }
+    } else if (key == "--whir-m") {
+      options.whir_m = swgr::bench::ParseUint64(key, value);
+    } else if (key == "--whir-bmax") {
+      options.whir_bmax = swgr::bench::ParseUint64(key, value);
+    } else if (key == "--whir-rho0") {
+      options.whir_rho0 = ParseWhirRational(key, value);
+    } else if (key == "--whir-theta") {
+      options.whir_theta = ParseWhirRational(key, value);
+    } else if (key == "--whir-repetitions") {
+      options.whir_repetitions = swgr::bench::ParseUint64(key, value);
     } else if (key == "--threads") {
       options.threads = swgr::bench::ParseUint64(key, value);
     } else if (key == "--warmup") {
@@ -470,6 +512,16 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
   if (options.reps == 0) {
     throw std::invalid_argument("--reps must be > 0");
   }
+  if (options.whir_m == 0) {
+    throw std::invalid_argument("--whir-m must be > 0");
+  }
+  if (options.whir_bmax == 0) {
+    throw std::invalid_argument("--whir-bmax must be > 0");
+  }
+  if (options.whir_repetitions.has_value() &&
+      *options.whir_repetitions == 0) {
+    throw std::invalid_argument("--whir-repetitions must be > 0");
+  }
   return options;
 }
 
@@ -487,6 +539,38 @@ swgr::poly_utils::Polynomial SamplePolynomial(
     }
     coefficients.back() += ctx.one();
     return swgr::poly_utils::Polynomial(std::move(coefficients));
+  });
+}
+
+swgr::whir::MultiQuadraticPolynomial SampleWhirPolynomial(
+    const swgr::algebra::GRContext& ctx, std::uint64_t variable_count) {
+  return ctx.with_ntl_context([&] {
+    std::vector<swgr::algebra::GRElem> coefficients;
+    coefficients.reserve(
+        static_cast<std::size_t>(swgr::whir::pow3_checked(variable_count)));
+    auto current = ctx.one();
+    const auto twist = ctx.teich_generator();
+    for (std::uint64_t i = 0; i < swgr::whir::pow3_checked(variable_count);
+         ++i) {
+      coefficients.push_back(current + ctx.one());
+      current *= twist;
+    }
+    coefficients.back() += ctx.one();
+    return swgr::whir::MultiQuadraticPolynomial(variable_count,
+                                                std::move(coefficients));
+  });
+}
+
+std::vector<swgr::algebra::GRElem> SampleWhirOpenPoint(
+    const swgr::algebra::GRContext& ctx, const swgr::Domain& domain,
+    std::uint64_t variable_count) {
+  return ctx.with_ntl_context([&] {
+    std::vector<swgr::algebra::GRElem> point;
+    point.reserve(static_cast<std::size_t>(variable_count));
+    for (std::uint64_t i = 0; i < variable_count; ++i) {
+      point.push_back(ctx.one() + domain.element(i % domain.size()));
+    }
+    return point;
   });
 }
 
@@ -1085,6 +1169,120 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
   return row;
 }
 
+TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
+  if (options.p != 2) {
+    throw std::invalid_argument("whir_gr_ud currently requires --p 2");
+  }
+
+  auto selection = swgr::whir::select_whir_unique_decoding_parameters(
+      swgr::whir::WhirUniqueDecodingInputs{
+          .lambda_target = options.lambda_target,
+          .ring_exponent = options.k_exp,
+          .variable_count = options.whir_m,
+          .max_layer_width = options.whir_bmax,
+          .rho0 = options.whir_rho0,
+          .theta = options.whir_theta,
+      });
+  if (!selection.feasible) {
+    throw std::invalid_argument("WHIR unique-decoding selector found no "
+                                "feasible parameters: " +
+                                JoinNotes(selection.notes));
+  }
+
+  auto ctx = std::make_shared<swgr::algebra::GRContext>(swgr::algebra::GRConfig{
+      .p = 2,
+      .k_exp = options.k_exp,
+      .r = selection.selected_r,
+  });
+  const swgr::Domain domain = swgr::Domain::teichmuller_subgroup(
+      ctx, selection.public_params.initial_domain_size);
+  const auto pp = ctx->with_ntl_context([&] {
+    const auto omega = NTL::power(
+        domain.root(),
+        static_cast<long>(selection.public_params.initial_domain_size / 3U));
+    auto shift_repetitions = selection.public_params.shift_repetitions;
+    auto final_repetitions = selection.public_params.final_repetitions;
+    if (options.whir_repetitions.has_value()) {
+      std::fill(shift_repetitions.begin(), shift_repetitions.end(),
+                *options.whir_repetitions);
+      final_repetitions = *options.whir_repetitions;
+    }
+    return swgr::whir::WhirPublicParameters{
+        .ctx = ctx,
+        .initial_domain = domain,
+        .variable_count = options.whir_m,
+        .layer_widths = selection.public_params.layer_widths,
+        .shift_repetitions = std::move(shift_repetitions),
+        .final_repetitions = final_repetitions,
+        .degree_bounds = selection.public_params.degree_bounds,
+        .deltas = selection.public_params.deltas,
+        .omega = omega,
+        .ternary_grid = {ctx->one(), omega, omega * omega},
+        .lambda_target = options.lambda_target,
+        .hash_profile = options.hash_profile,
+    };
+  });
+
+  swgr::whir::WhirParameters params;
+  params.lambda_target = options.lambda_target;
+  params.hash_profile = options.hash_profile;
+  const auto polynomial = SampleWhirPolynomial(*ctx, options.whir_m);
+  const auto point = SampleWhirOpenPoint(*ctx, pp.initial_domain, options.whir_m);
+  const swgr::whir::WhirProver prover(params);
+  const swgr::whir::WhirVerifier verifier(params);
+
+  auto row = RunBenchLoop(options, "whir_gr_ud", 3, 3, 0,
+                          [&](TimeBenchRow* current_row) {
+                            swgr::whir::WhirCommitmentState state;
+                            const auto commitment =
+                                prover.commit(pp, polynomial, &state);
+                            const auto opening =
+                                prover.open(commitment, state, point);
+                            swgr::ProofStatistics verify_stats;
+                            if (!verifier.verify(commitment, point, opening,
+                                                 &verify_stats)) {
+                              throw std::runtime_error(
+                                  "WHIR verifier rejected honest proof");
+                            }
+                            if (current_row != nullptr) {
+                              auto prover_stats = opening.proof.stats;
+                              prover_stats.commit_ms =
+                                  commitment.stats.commit_ms;
+                              prover_stats.prover_total_ms +=
+                                  commitment.stats.commit_ms;
+                              AddRunStats(*current_row, prover_stats,
+                                          verify_stats);
+                            }
+                          });
+
+  const std::uint64_t code_dimension = swgr::whir::pow3_checked(options.whir_m);
+  row.ring = swgr::bench::RingString(2, options.k_exp, selection.selected_r);
+  row.n = pp.initial_domain.size();
+  row.d = code_dimension;
+  row.rho = swgr::bench::ReducedRatioString(code_dimension, row.n);
+  row.soundness_mode = "theorem_whir_gr_unique_decoding";
+  row.fri_repetitions = 0;
+  row.lambda_target = options.lambda_target;
+  row.pow_bits = 0;
+  row.sec_mode.clear();
+  row.soundness_model = "epsilon_iopp_whir_gr_unique_decoding";
+  row.soundness_scope = "whir_gr2k_pcs_unique_decoding";
+  row.query_policy = options.whir_repetitions.has_value()
+                         ? "debug_manual_whir_repetitions"
+                         : "selector_shift_and_final_repetitions";
+  row.pow_policy = "not_applicable";
+  row.effective_security_bits = selection.effective_security_bits;
+  auto notes = selection.notes;
+  notes.push_back("selected_r=" + std::to_string(selection.selected_r));
+  notes.push_back("initial_domain_size=" + std::to_string(row.n));
+  if (options.whir_repetitions.has_value()) {
+    notes.push_back("manual --whir-repetitions overrides selector repetitions "
+                    "for debugging only");
+  }
+  row.soundness_notes = JoinNotes(notes);
+  return row;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -1112,6 +1310,8 @@ int main(int argc, char** argv) {
         rows.push_back(MakeFriRow(options, ctx, 9));
       } else if (protocol == "stir9to3") {
         rows.push_back(MakeStirRow(options, ctx));
+      } else if (protocol == "whir_gr_ud") {
+        rows.push_back(MakeWhirRow(options));
       } else {
         throw std::invalid_argument("unsupported protocol in dispatch: " +
                                     protocol);
