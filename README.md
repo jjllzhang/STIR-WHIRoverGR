@@ -6,6 +6,7 @@ The public focus of this repository is:
 
 - algebra and domain infrastructure over Galois rings,
 - prototype prover / verifier paths for `FRI-3`, `FRI-9`, and `STIR(9->3)`,
+- a WHIR-over-GR unique-decoding PCS prototype following `whir_gr2k_pcs.pdf`,
 - transcript, Merkle, multiproof, benchmark, and parameter-search tooling around those protocol experiments.
 
 This repository is **prototype / research code**. It is intended for protocol exploration, implementation experiments, and measurement. It should not be treated as production-ready or audited cryptographic software.
@@ -18,11 +19,13 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - Uses radix-3 `fft3` / `inverse_fft3` fast paths on `3-smooth` domains, including `rs_encode` / `rs_interpolate`
 - Implements `BLAKE3`, Fiat-Shamir transcript, Merkle tree, and pruned multiproof planning
 - Provides prover / verifier surfaces for `FRI-3`, `FRI-9`, and `STIR(9->3)`
+- WHIR-over-GR unique-decoding PCS prototype is implemented for `GR(2^s,r)` with ternary domains, multi-quadratic polynomials, BCS-style Merkle commitments, Fiat-Shamir sumcheck/folding/opening, and selector-backed unique-decoding metadata
 - Provides `bench_time`, preset-driven wrappers, and parameter-search scripts
 
 ## Current Limits
 
-- `WHIR` currently remains an interface-level skeleton; `src/whir/prover.cpp` and `src/whir/verifier.cpp` are still unimplemented
+- WHIR support is the GR unique-decoding PCS prototype from `whir_gr2k_pcs.pdf`; it is not full finite-field WHIR, not Johnson/list-decoding WHIR, not ZK WHIR, and not a production-ready cryptographic library
+- WHIR currently targets `p=2` Galois rings, uses direct-enumeration sumcheck/prover helpers for correctness, and should be benchmarked first with small `lambda=32/64` smoke parameters before larger release-style runs
 - `FRI-3` and `FRI-9` now expose a theorem-facing BCS-style PCS surface over Teichmuller-supported domains, but they remain prototype / research implementations rather than production-ready or audited FRI-based PCS code
 - Current FRI openings keep `g_0` as a virtual quotient oracle, commit to `g_i` for `i >= 1`, and terminate by revealing the full final oracle table; proof-byte reporting comes from a deterministic length-prefixed serializer over that actual external opening/proof object
 - `STIR(9->3)` now keeps two distinct parameter surfaces over the same external proof shape:
@@ -91,6 +94,22 @@ STIR soundness interpretation:
 - This repository therefore does not claim Johnson/list-decoding alignment or full field-paper-equivalent STIR soundness.
 - The prototype STIR mode remains available in code, but current `stir9to3` benchmark rows execute the theorem-facing `theorem_gr` mode and describe only that theorem-facing metadata.
 
+Current WHIR-over-GR support follows the repository-local `whir_gr2k_pcs.pdf`
+scope rather than the full finite-field `WHIR.pdf` modes.
+
+Implemented WHIR-over-GR unique-decoding PCS contract:
+
+- public parameter selection from `(lambda, s, m, bmax, rho0, theta)` using the conservative Section 9 unique-decoding recipe
+- `Setup`-style construction of `GR(2^s,r)`, a Teichmuller subgroup `H0`, an order-3 grid `B={1,omega,omega^2}`, layer widths, repetitions, degree bounds, and soundness metadata
+- `Commit` to the table `f0[x] = F(Pow_m(x))` for a multi-quadratic polynomial `F`
+- `Open` with ternary sumcheck, repeated ternary virtual folds, shifted oracle commitments on `H_i.pow_map(3)`, shift queries over `H_i.pow_map(3^b)`, and final constant-oracle openings
+- `Verify` with transcript replay, degree and sumcheck identity checks, exact Merkle multiproof query matching, virtual-fold recomputation from opened leaves, final constraint check, and final constant openings
+
+WHIR soundness interpretation:
+
+- Benchmark rows for `whir_gr_ud` report `soundness_mode=theorem_whir_gr_unique_decoding`, `soundness_model=epsilon_iopp_whir_gr_unique_decoding`, and `soundness_scope=whir_gr2k_pcs_unique_decoding`.
+- The implementation intentionally does not claim WHIR-JB / WHIR-CB list-decoding, Johnson-bound modes, OOD uniqueness from the finite-field WHIR paper, or production cryptographic assurance.
+
 ## Dependencies
 
 Required:
@@ -142,7 +161,7 @@ cmake -S . -B build -DSWGR_USE_OPENMP=OFF
 For this repository, focused tests are more informative than relying on a single full `ctest` pass:
 
 ```bash
-ctest --test-dir build --output-on-failure -R 'test_gr_basic|test_domain|test_fft3|test_folding|test_crypto|test_fri|test_stir|test_soundness_configurator'
+ctest --test-dir build --output-on-failure -R 'test_gr_basic|test_domain|test_fft3|test_folding|test_crypto|test_fri|test_stir|test_whir|test_soundness_configurator'
 ```
 
 These tests cover:
@@ -151,7 +170,7 @@ These tests cover:
 - domain / Teichmuller construction,
 - `fft3` and `folding` correctness,
 - transcript / Merkle / multiproof behavior,
-- honest / tamper regressions for `FRI-3`, `FRI-9`, and `STIR(9->3)`,
+- honest / tamper regressions for `FRI-3`, `FRI-9`, `STIR(9->3)`, and WHIR-over-GR unique-decoding PCS,
 - basic soundness-configurator output behavior.
 
 ## Benchmarks
@@ -160,6 +179,20 @@ Inspect the benchmark CLIs:
 
 ```bash
 ./build-release/bench_time --help
+```
+
+Run a WHIR-over-GR unique-decoding smoke benchmark:
+
+```bash
+./build/bench_time \
+  --protocol whir_gr_ud \
+  --lambda 64 \
+  --whir-m 3 \
+  --whir-bmax 1 \
+  --whir-rho0 1/3 \
+  --warmup 0 \
+  --reps 1 \
+  --format text
 ```
 
 Run the main timing workload:
@@ -201,6 +234,8 @@ Benchmark notes:
 - The current theorem_auto path is conservative: it is only enabled for `p=2`, and it rejects instances where the discrete gap gives `delta = 0`
 - `bench_time` still keeps one shared row schema across `FRI` and `STIR`; theorem-aligned standalone FRI rows now use `lambda_target` and `effective_security_bits`, while manual standalone FRI rows leave those fields as not applicable
 - Current `stir9to3` rows execute `theorem_gr` STIR parameters and emit theorem-facing half-gap metadata backed by the existing Z2KSNARK-based GR results; unsupported parameter sets still print a row, but they are marked through `soundness_notes` and report `effective_security_bits=0`
+- Current `whir_gr_ud` rows execute commit/open/verify for the WHIR-over-GR unique-decoding PCS prototype, choose `r` from the selector, and report exact serialized opening bytes from the actual `WhirOpening`
+- `--whir-repetitions` is a debug override for shift/final repetitions; selector-derived repetitions are used by default for theorem-facing metadata
 - STIR now has three query modes in `bench_time`: `--queries auto` keeps the older heuristic live schedule, `--queries theorem_auto` solves an explicit per-round schedule from `lambda_target` using the current theorem_gr half-gap model, and `--queries q0[,q1,...]` keeps a caller-provided manual schedule
 - The standalone `bench_stir_query_solver` tool exposes the same theorem-driven STIR query solver without running prover/verifier timing loops; use it when the question is feasibility or minimal query counts rather than runtime
 - Current preset wrappers and parameter-search tooling preserve older fixed-`m` benchmark presets by mapping them to `manual_repetition`; omit `fri_repetitions` if you want theorem-auto standalone FRI rows
@@ -227,6 +262,8 @@ Main targets:
 - `galoisring_backend`: vendored Galois-ring backend static library
 - `stir_over_gr`: main project static library
 - aliases: `swgr::galoisring_backend`, `swgr::stir_over_gr`, `swgr::swgr`
+- `bench_time`: end-to-end timing benchmark for FRI, STIR, and `whir_gr_ud`
+- focused WHIR tests: `test_whir`, `test_whir_multiquadratic`, `test_whir_constraint`, `test_whir_folding`, `test_whir_soundness`
 
 ## Repository Layout
 
