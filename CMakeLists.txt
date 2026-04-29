@@ -59,6 +59,7 @@ set(STIR_OVER_GR_SOURCES
     src/stir/verifier.cpp
     src/whir/common.cpp
     src/whir/constraint.cpp
+    src/whir/folding.cpp
     src/whir/multiquadratic.cpp
     src/whir/parameters.cpp
     src/whir/prover.cpp
@@ -174,6 +175,10 @@ if(SWGR_BUILD_TESTS)
   target_link_libraries(test_whir_constraint PRIVATE stir_over_gr)
   target_include_directories(test_whir_constraint
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(test_whir_folding tests/test_whir_folding.cpp)
+  target_link_libraries(test_whir_folding PRIVATE stir_over_gr)
+  target_include_directories(test_whir_folding
+                             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_executable(test_soundness_configurator tests/test_soundness_configurator.cpp)
   target_link_libraries(test_soundness_configurator PRIVATE stir_over_gr)
   target_include_directories(test_soundness_configurator PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -190,6 +195,7 @@ if(SWGR_BUILD_TESTS)
            COMMAND $<TARGET_FILE:test_whir_multiquadratic>)
   add_test(NAME test_whir_constraint
            COMMAND $<TARGET_FILE:test_whir_constraint>)
+  add_test(NAME test_whir_folding COMMAND $<TARGET_FILE:test_whir_folding>)
   add_test(NAME test_soundness_configurator COMMAND $<TARGET_FILE:test_soundness_configurator>)
 endif()
 
