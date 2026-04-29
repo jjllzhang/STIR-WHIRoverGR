@@ -1,12 +1,17 @@
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "NTL/ZZ_pE.h"
+
 #include "algebra/gr_context.hpp"
+#include "domain.hpp"
 #include "tests/test_common.hpp"
 #include "whir/common.hpp"
+#include "whir/prover.hpp"
 
 int g_failures = 0;
 
@@ -15,6 +20,17 @@ namespace {
 using swgr::algebra::GRConfig;
 using swgr::algebra::GRContext;
 using swgr::algebra::GRElem;
+
+GRElem SmallElement(std::uint64_t value) {
+  GRElem out;
+  NTL::clear(out);
+  GRElem one;
+  NTL::set(one);
+  for (std::uint64_t i = 0; i < value; ++i) {
+    out += one;
+  }
+  return out;
+}
 
 swgr::crypto::MerkleProof FakeMerkleProof() {
   swgr::crypto::MerkleProof proof;
@@ -39,6 +55,37 @@ swgr::whir::WhirProof BuildWellShapedProof(const GRContext& ctx) {
     proof.final_constant = ctx.one();
     proof.final_openings = FakeMerkleProof();
     return proof;
+  });
+}
+
+swgr::whir::WhirPublicParameters BuildPublicParameters() {
+  auto ctx =
+      std::make_shared<GRContext>(GRConfig{.p = 2, .k_exp = 16, .r = 6});
+  const swgr::Domain domain = swgr::Domain::teichmuller_subgroup(ctx, 9);
+  return ctx->with_ntl_context([&] {
+    const GRElem omega = NTL::power(domain.root(), 3L);
+    return swgr::whir::WhirPublicParameters{
+        .ctx = ctx,
+        .initial_domain = domain,
+        .variable_count = 1,
+        .layer_widths = {1},
+        .shift_repetitions = {1},
+        .final_repetitions = 0,
+        .degree_bounds = {4},
+        .deltas = {0.1L},
+        .omega = omega,
+        .ternary_grid = {ctx->one(), omega, omega * omega},
+        .lambda_target = 128,
+        .hash_profile = swgr::HashProfile::WHIR_NATIVE,
+    };
+  });
+}
+
+swgr::whir::MultiQuadraticPolynomial BuildPolynomial(const GRContext& ctx) {
+  return ctx.with_ntl_context([&] {
+    return swgr::whir::MultiQuadraticPolynomial(
+        1, std::vector<GRElem>{SmallElement(2), SmallElement(3),
+                               SmallElement(5)});
   });
 }
 
@@ -94,6 +141,67 @@ void TestProofShapeValidation() {
   CHECK(swgr::whir::proof_shape_valid(BuildWellShapedProof(ctx)));
 }
 
+void TestCommitmentRootIsStableAndBindsTable() {
+  testutil::PrintInfo("WHIR commit path produces stable table Merkle roots");
+
+  const auto pp = BuildPublicParameters();
+  const auto polynomial = BuildPolynomial(*pp.ctx);
+  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+
+  swgr::whir::WhirCommitmentState lhs_state;
+  const auto lhs = prover.commit(pp, polynomial, &lhs_state);
+  swgr::whir::WhirCommitmentState rhs_state;
+  const auto rhs = prover.commit(pp, polynomial, &rhs_state);
+
+  CHECK_EQ(lhs.oracle_root, rhs.oracle_root);
+  CHECK_EQ(lhs_state.oracle_root, lhs.oracle_root);
+  CHECK_EQ(lhs_state.initial_oracle.size(),
+           static_cast<std::size_t>(pp.initial_domain.size()));
+  CHECK(lhs.stats.serialized_bytes > 0);
+
+  auto tampered_oracle = lhs_state.initial_oracle;
+  pp.ctx->with_ntl_context([&] {
+    tampered_oracle.front() += pp.ctx->one();
+    return 0;
+  });
+  const auto tampered_root =
+      swgr::whir::build_oracle_tree(pp.hash_profile, *pp.ctx, tampered_oracle)
+          .root();
+  CHECK(tampered_root != lhs.oracle_root);
+}
+
+void TestCommitRejectsInvalidShapesAndUnsupportedPrime() {
+  testutil::PrintInfo("WHIR commit path rejects wrong m and unsupported p");
+
+  auto pp = BuildPublicParameters();
+  const auto polynomial = BuildPolynomial(*pp.ctx);
+  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+
+  bool wrong_m_threw = false;
+  try {
+    const auto wrong_m = pp.ctx->with_ntl_context([&] {
+      return swgr::whir::MultiQuadraticPolynomial(
+          2, std::vector<GRElem>{pp.ctx->one()});
+    });
+    swgr::whir::WhirCommitmentState state;
+    (void)prover.commit(pp, wrong_m, &state);
+  } catch (const std::invalid_argument&) {
+    wrong_m_threw = true;
+  }
+  CHECK(wrong_m_threw);
+
+  pp.ctx =
+      std::make_shared<GRContext>(GRConfig{.p = 3, .k_exp = 2, .r = 2});
+  bool bad_prime_threw = false;
+  try {
+    swgr::whir::WhirCommitmentState state;
+    (void)prover.commit(pp, polynomial, &state);
+  } catch (const std::invalid_argument&) {
+    bad_prime_threw = true;
+  }
+  CHECK(bad_prime_threw);
+}
+
 }  // namespace
 
 int main() {
@@ -101,6 +209,8 @@ int main() {
     RUN_TEST(TestIndexedLabelsAreStableAndSeparated);
     RUN_TEST(TestSerializedBytesAreDeterministic);
     RUN_TEST(TestProofShapeValidation);
+    RUN_TEST(TestCommitmentRootIsStableAndBindsTable);
+    RUN_TEST(TestCommitRejectsInvalidShapesAndUnsupportedPrime);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;

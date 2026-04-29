@@ -2,6 +2,7 @@
 #define SWGR_WHIR_PROVER_HPP_
 
 #include "whir/common.hpp"
+#include "whir/multiquadratic.hpp"
 #include "whir/parameters.hpp"
 
 namespace swgr::whir {
@@ -9,6 +10,10 @@ namespace swgr::whir {
 class WhirProver {
  public:
   explicit WhirProver(WhirParameters params);
+
+  WhirCommitment commit(const WhirPublicParameters& pp,
+                        const MultiQuadraticPolynomial& polynomial,
+                        WhirCommitmentState* state) const;
 
   WhirProof prove() const;
 

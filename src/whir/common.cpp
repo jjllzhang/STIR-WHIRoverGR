@@ -4,6 +4,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace swgr::whir {
 namespace {
@@ -72,6 +73,12 @@ std::string indexed_label(std::string_view prefix, std::uint64_t round,
   return label;
 }
 
+std::uint64_t serialized_message_bytes(const WhirCommitment& commitment) {
+  swgr::CountingSink sink;
+  swgr::SerializeBytes(sink, commitment.oracle_root);
+  return sink.size();
+}
+
 std::uint64_t serialized_message_bytes(
     const swgr::algebra::GRContext& ctx, const WhirProof& proof) {
   swgr::CountingSink sink;
@@ -103,6 +110,26 @@ bool proof_shape_valid(const WhirProof& proof) {
     }
   }
   return true;
+}
+
+std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
+    const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals) {
+  return ctx.with_ntl_context([&] {
+    std::vector<std::vector<std::uint8_t>> leaves;
+    leaves.reserve(oracle_evals.size());
+    for (const auto& value : oracle_evals) {
+      leaves.push_back(ctx.serialize(value));
+    }
+    return leaves;
+  });
+}
+
+swgr::crypto::MerkleTree build_oracle_tree(
+    swgr::HashProfile profile, const swgr::algebra::GRContext& ctx,
+    const std::vector<swgr::algebra::GRElem>& oracle_evals) {
+  return swgr::crypto::MerkleTree(profile,
+                                  build_oracle_leaves(ctx, oracle_evals));
 }
 
 }  // namespace swgr::whir

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "../parameters.hpp"
+#include "whir/common.hpp"
 
 namespace swgr::whir {
 
@@ -14,6 +15,9 @@ struct WhirParameters {
 };
 
 bool validate(const WhirParameters& params);
+bool validate(const WhirPublicParameters& pp);
+bool validate(const WhirParameters& params, const WhirPublicParameters& pp);
+bool validate(const WhirParameters& params, const WhirCommitment& commitment);
 
 }  // namespace swgr::whir
 
