@@ -36,12 +36,11 @@ swgr::whir::WhirUniqueDecodingInputs SmallInputs() {
       .variable_count = 3,
       .max_layer_width = 1,
       .rho0 = swgr::whir::WhirRational{1, 3},
-      .theta = swgr::whir::WhirRational{1, 2},
   };
 }
 
 void TestInvalidRatesReject() {
-  testutil::PrintInfo("WHIR selector rejects invalid rho0 and theta");
+  testutil::PrintInfo("WHIR selector rejects invalid rho0");
 
   auto inputs = SmallInputs();
   inputs.rho0 = swgr::whir::WhirRational{0, 1};
@@ -53,15 +52,6 @@ void TestInvalidRatesReject() {
   ExpectInvalidArgument(
       [&] { swgr::whir::select_whir_unique_decoding_parameters(inputs); });
 
-  inputs = SmallInputs();
-  inputs.theta = swgr::whir::WhirRational{0, 1};
-  ExpectInvalidArgument(
-      [&] { swgr::whir::select_whir_unique_decoding_parameters(inputs); });
-
-  inputs = SmallInputs();
-  inputs.theta = swgr::whir::WhirRational{1, 1};
-  ExpectInvalidArgument(
-      [&] { swgr::whir::select_whir_unique_decoding_parameters(inputs); });
 }
 
 void TestSmallSmokeParamsAreAccepted() {
@@ -117,7 +107,7 @@ void TestRequiredDomainsDivideThroughRoundChain() {
     CHECK(layer.rate > 0.0L);
     CHECK(layer.rate < 1.0L);
     CHECK(layer.delta > 0.0L);
-    CHECK(layer.delta < 0.5L * (1.0L - layer.rate));
+    CHECK(std::fabs(layer.delta - 0.5L * (1.0L - layer.rate)) < 1.0e-18L);
   }
 }
 

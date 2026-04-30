@@ -18,7 +18,6 @@ struct WhirUniqueDecodingInputs {
   std::uint64_t variable_count = 0;  // m.
   std::uint64_t max_layer_width = 1; // bmax.
   WhirRational rho0{1, 3};
-  WhirRational theta{1, 2};
 
   // Optional benchmark guards. A value of 0 means "unbounded".
   std::uint64_t max_extension_degree = 0;

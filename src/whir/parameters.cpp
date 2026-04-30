@@ -72,7 +72,7 @@ bool validate(const WhirPublicParameters& pp) {
     const long double rho = static_cast<long double>(live_code_size) /
                             static_cast<long double>(domain_size);
     if (!(pp.deltas[layer] > 0.0L) ||
-        !(pp.deltas[layer] < 0.5L * (1.0L - rho))) {
+        !(pp.deltas[layer] <= 0.5L * (1.0L - rho))) {
       return false;
     }
 

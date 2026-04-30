@@ -60,7 +60,6 @@ struct TimeBenchOptions {
   std::uint64_t whir_m = 3;
   std::uint64_t whir_bmax = 1;
   swgr::whir::WhirRational whir_rho0{1, 3};
-  swgr::whir::WhirRational whir_theta{1, 2};
   std::optional<std::uint64_t> whir_repetitions;
   std::uint64_t threads = 1;
   std::uint64_t warmup = 1;
@@ -385,7 +384,7 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --stop-degree <uint> --ood-samples <uint>\n"
          "  --queries auto|theorem_auto|q0[,q1,...] --threads <uint>\n"
          "  --whir-m <uint> --whir-bmax <uint>\n"
-         "  --whir-rho0 <num/den> --whir-theta <num/den>\n"
+         "  --whir-rho0 <num/den>\n"
          "  --whir-repetitions <uint>\n"
          "    note: fri3/fri9 default to theorem_auto, which solves the\n"
          "    theorem-facing standalone FRI PCS repetition count m from\n"
@@ -478,8 +477,6 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
       options.whir_bmax = swgr::bench::ParseUint64(key, value);
     } else if (key == "--whir-rho0") {
       options.whir_rho0 = ParseWhirRational(key, value);
-    } else if (key == "--whir-theta") {
-      options.whir_theta = ParseWhirRational(key, value);
     } else if (key == "--whir-repetitions") {
       options.whir_repetitions = swgr::bench::ParseUint64(key, value);
     } else if (key == "--threads") {
@@ -1181,7 +1178,6 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
           .variable_count = options.whir_m,
           .max_layer_width = options.whir_bmax,
           .rho0 = options.whir_rho0,
-          .theta = options.whir_theta,
       });
   if (!selection.feasible) {
     throw std::invalid_argument("WHIR unique-decoding selector found no "

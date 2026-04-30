@@ -99,7 +99,7 @@ scope rather than the full finite-field `WHIR.pdf` modes.
 
 Implemented WHIR-over-GR unique-decoding PCS contract:
 
-- public parameter selection from `(lambda, s, m, bmax, rho0, theta)` using the conservative Section 9 unique-decoding recipe
+- public parameter selection from `(lambda, s, m, bmax, rho0)` using the WHIR-UD half-gap recipe `delta_i=(1-rho_i)/2`
 - `Setup`-style construction of `GR(2^s,r)`, a Teichmuller subgroup `H0`, an order-3 grid `B={1,omega,omega^2}`, layer widths, repetitions, degree bounds, and soundness metadata
 - `Commit` to the table `f0[x] = F(Pow_m(x))` for a multi-quadratic polynomial `F`
 - `Open` with ternary sumcheck, repeated ternary virtual folds, shifted oracle commitments on `H_i.pow_map(3)`, shift queries over `H_i.pow_map(3^b)`, and final constant-oracle openings

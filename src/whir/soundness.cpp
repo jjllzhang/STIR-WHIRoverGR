@@ -111,11 +111,6 @@ std::uint64_t Pow3Checked(std::uint64_t exponent) {
   return result;
 }
 
-long double ToLongDouble(const WhirRational &value) {
-  return static_cast<long double>(value.numerator) /
-         static_cast<long double>(value.denominator);
-}
-
 void ValidateOpenUnitRational(const WhirRational &value, const char *label) {
   if (value.denominator == 0) {
     throw std::invalid_argument(std::string(label) +
@@ -148,7 +143,6 @@ void ValidateInputs(const WhirUniqueDecodingInputs &inputs) {
     throw std::invalid_argument("WHIR n0 search step guard must be non-zero");
   }
   ValidateOpenUnitRational(inputs.rho0, "WHIR rho0");
-  ValidateOpenUnitRational(inputs.theta, "WHIR theta");
 }
 
 std::vector<std::uint64_t> LayerWidths(std::uint64_t variable_count,
@@ -349,7 +343,6 @@ AnalyzeCandidate(const WhirUniqueDecodingInputs &inputs,
                              1, "WHIR repetition layer count")),
       "WHIR repetition target bits");
 
-  const long double theta = ToLongDouble(inputs.theta);
   NTL::ZZ algebraic_bound(0);
   std::uint64_t remaining_variables = inputs.variable_count;
   std::vector<long double> log2_error_terms;
@@ -380,10 +373,10 @@ AnalyzeCandidate(const WhirUniqueDecodingInputs &inputs,
     const long double rho = static_cast<long double>(rate_numerator) /
                             static_cast<long double>(rate_denominator);
     const long double half_gap = 0.5L * (1.0L - rho);
-    const long double delta = (1.0L - theta) * half_gap;
-    if (!(delta > 0.0L) || !(delta < half_gap)) {
-      selection.notes.push_back("candidate leaves the strict WHIR delta_i in "
-                                "(0, (1-rho_i)/2) regime");
+    const long double delta = half_gap;
+    if (!(delta > 0.0L) || !(delta <= half_gap)) {
+      selection.notes.push_back("candidate leaves the WHIR half-gap "
+                                "unique-decoding regime");
       return candidate;
     }
 
@@ -441,7 +434,7 @@ AnalyzeCandidate(const WhirUniqueDecodingInputs &inputs,
     return candidate;
   }
   const long double final_rho = 1.0L / static_cast<long double>(final_domain_size);
-  const long double final_delta = (1.0L - theta) * 0.5L * (1.0L - final_rho);
+  const long double final_delta = 0.5L * (1.0L - final_rho);
   const std::uint64_t final_repetitions =
       RepetitionCountForBits(final_delta, selection.repetition_security_bits);
   selection.public_params.final_repetitions = final_repetitions;
@@ -475,8 +468,8 @@ AnalyzeCandidate(const WhirUniqueDecodingInputs &inputs,
       domain_divides_teichmuller_group(n0, selection.selected_r);
 
   if (!selection.feasible) {
-    selection.notes.push_back("candidate does not meet the conservative WHIR "
-                              "unique-decoding soundness target");
+    selection.notes.push_back(
+        "candidate does not meet the WHIR unique-decoding soundness target");
   }
   candidate.valid = true;
   return candidate;
@@ -528,6 +521,9 @@ select_whir_unique_decoding_parameters(const WhirUniqueDecodingInputs &inputs) {
   result.notes.push_back(
       "The ring exponent s is carried into public parameters; the Section 9 "
       "algebraic field-size search depends on the Teichmuller size 2^r.");
+  result.notes.push_back(
+      "Unique-decoding thresholds use the half-gap value "
+      "delta_i=(1-rho_i)/2.");
 
   const auto layer_widths =
       LayerWidths(inputs.variable_count, inputs.max_layer_width);
