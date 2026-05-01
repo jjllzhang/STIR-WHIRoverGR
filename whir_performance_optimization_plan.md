@@ -250,6 +250,27 @@ Acceptance:
 3. `profile_verify_algebra_mean_ms` for the `m=3` row decreases measurably or
    is explicitly documented as unchanged.
 
+Phase 2 validation on 2026-05-02:
+
+1. Cached ternary-grid Lagrange polynomial data per call and added per-term
+   prefix/tail digit-product tables for the coefficient-space sumcheck kernel.
+   Cache lifetime remains local to the active `GRContext` / NTL context.
+2. Added an explicit base-3 index split regression for
+   `prefix_index = idx % 3^j`, `live_digit = (idx / 3^j) % 3`, and
+   `tail_index = idx / 3^(j+1)`.
+3. Focused release WHIR CTest passed: 7/7 tests.
+4. Baseline `m=3`, `--warmup 1 --reps 3`, `--threads 1` produced
+   `serialized_bytes_actual=32360`, `prover_total_ms=929.103`,
+   `verify_ms=721.252`, and
+   `profile_prover_interpolate_mean_ms=171.797`.
+5. The `m=4`, `--warmup 0 --reps 1`, `--threads 1` row produced
+   `prover_total_ms=8337.173`,
+   `profile_prover_interpolate_mean_ms=2051.915`, and
+   `serialized_bytes_actual=131636`.
+6. Verifier algebra is effectively unchanged in this phase
+   (`profile_verify_algebra_mean_ms=535.608` for the `m=3` row), as expected
+   because the cache is local to prover sumcheck generation.
+
 ## Phase 3: Reuse Oracle and Merkle State
 
 Goal: remove duplicated full-oracle work from `WhirProver::open`.

@@ -252,6 +252,50 @@ std::vector<GRElem> GridPointFromIndex(const TernaryGrid &grid,
   return point;
 }
 
+void TestCoefficientIndexSplitMatchesBase3Digits() {
+  testutil::PrintInfo(
+      "sumcheck prefix/live/tail index split matches little-endian base-3");
+
+  for (std::uint64_t m = 1; m <= 6; ++m) {
+    const std::uint64_t bound = stir_whir_gr::whir::pow3_checked(m);
+    const std::vector<std::uint64_t> indices{
+        0,
+        1,
+        bound / 2U,
+        bound - 1U,
+    };
+    for (std::uint64_t prefix_length = 0; prefix_length < m; ++prefix_length) {
+      const std::uint64_t prefix_size =
+          stir_whir_gr::whir::pow3_checked(prefix_length);
+      const std::uint64_t tail_stride = prefix_size * 3U;
+      for (const std::uint64_t index : indices) {
+        const auto digits = stir_whir_gr::whir::decode_base3_index(index, m);
+        const std::uint64_t prefix_index = index % prefix_size;
+        const std::uint8_t live_digit =
+            static_cast<std::uint8_t>((index / prefix_size) % 3U);
+        const std::uint64_t tail_index = index / tail_stride;
+
+        std::uint64_t reconstructed_prefix = 0;
+        std::uint64_t place = 1;
+        for (std::uint64_t i = 0; i < prefix_length; ++i) {
+          reconstructed_prefix += digits[static_cast<std::size_t>(i)] * place;
+          place *= 3U;
+        }
+        CHECK_EQ(prefix_index, reconstructed_prefix);
+        CHECK_EQ(live_digit, digits[static_cast<std::size_t>(prefix_length)]);
+
+        std::uint64_t reconstructed_tail = 0;
+        place = 1;
+        for (std::uint64_t i = prefix_length + 1U; i < m; ++i) {
+          reconstructed_tail += digits[static_cast<std::size_t>(i)] * place;
+          place *= 3U;
+        }
+        CHECK_EQ(tail_index, reconstructed_tail);
+      }
+    }
+  }
+}
+
 GRElem SumOverGrid(const GRContext &ctx, const TernaryGrid &grid,
                    const MultiQuadraticPolynomial &polynomial,
                    const WhirConstraint &constraint) {
@@ -482,6 +526,7 @@ void TestInvalidShapesReject() {
 int main() {
   try {
     RUN_TEST(TestTernaryGridAndLagrangeBasis);
+    RUN_TEST(TestCoefficientIndexSplitMatchesBase3Digits);
     RUN_TEST(TestEqualityKernelReproducesMultiQuadratic);
     RUN_TEST(TestConstraintRestrictionMatchesDirectEvaluation);
     RUN_TEST(TestHonestSumcheckIdentities);
