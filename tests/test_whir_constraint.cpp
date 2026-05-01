@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -16,6 +18,7 @@ using stir_whir_gr::algebra::GRConfig;
 using stir_whir_gr::algebra::GRContext;
 using stir_whir_gr::algebra::GRElem;
 using stir_whir_gr::whir::MultiQuadraticPolynomial;
+using stir_whir_gr::whir::MultilinearPolynomial;
 using stir_whir_gr::whir::TernaryGrid;
 using stir_whir_gr::whir::WhirConstraint;
 using stir_whir_gr::whir::WhirSumcheckPolynomial;
@@ -68,6 +71,172 @@ std::vector<GRElem> SamplePoint(const GRContext &ctx, const TernaryGrid &grid,
                       SmallElement(i + 2U));
     }
     return point;
+  });
+}
+
+std::vector<GRElem> SampleGridPrefix(const TernaryGrid &grid,
+                                     std::uint64_t prefix_length) {
+  std::vector<GRElem> prefix;
+  prefix.reserve(static_cast<std::size_t>(prefix_length));
+  for (std::uint64_t i = 0; i < prefix_length; ++i) {
+    prefix.push_back(grid[static_cast<std::size_t>((i + 2U) % 3U)]);
+  }
+  return prefix;
+}
+
+std::vector<GRElem> SampleOffGridPrefix(const GRContext &ctx,
+                                        const TernaryGrid &grid,
+                                        std::uint64_t prefix_length) {
+  return ctx.with_ntl_context([&] {
+    std::vector<GRElem> prefix;
+    prefix.reserve(static_cast<std::size_t>(prefix_length));
+    for (std::uint64_t i = 0; i < prefix_length; ++i) {
+      prefix.push_back(grid[static_cast<std::size_t>((i + 1U) % 3U)] +
+                       SmallElement(i + 5U));
+    }
+    return prefix;
+  });
+}
+
+std::vector<GRElem> SparseHighCoefficients(const GRContext &ctx,
+                                           std::uint64_t variable_count) {
+  return ctx.with_ntl_context([&] {
+    std::vector<GRElem> coefficients(static_cast<std::size_t>(
+        stir_whir_gr::whir::pow3_checked(variable_count)));
+    for (auto &coefficient : coefficients) {
+      NTL::clear(coefficient);
+    }
+    if (!coefficients.empty()) {
+      coefficients.front() = SmallElement(3);
+      coefficients.back() = SmallElement(11);
+    }
+    std::uint64_t mixed_index = 0;
+    std::uint64_t place = 1;
+    for (std::uint64_t i = 0; i < variable_count; ++i) {
+      mixed_index += ((i % 3U) == 0U ? 2U : 1U) * place;
+      place *= 3U;
+    }
+    if (mixed_index < coefficients.size()) {
+      coefficients[static_cast<std::size_t>(mixed_index)] += SmallElement(7);
+    }
+    return coefficients;
+  });
+}
+
+std::vector<GRElem> EmbeddedMultilinearCoefficients(
+    const GRContext &ctx, std::uint64_t variable_count) {
+  return ctx.with_ntl_context([&] {
+    std::vector<GRElem> coefficients;
+    coefficients.reserve(static_cast<std::size_t>(
+        stir_whir_gr::whir::pow2_checked(variable_count)));
+    for (std::uint64_t i = 0; i < stir_whir_gr::whir::pow2_checked(variable_count);
+         ++i) {
+      coefficients.push_back(SmallElement((7U * i + 4U) % 17U));
+    }
+    return coefficients;
+  });
+}
+
+std::vector<GRElem> TrimmedHighZeroCoefficients(const GRContext &ctx,
+                                                std::uint64_t variable_count) {
+  return ctx.with_ntl_context([&] {
+    std::vector<GRElem> coefficients(static_cast<std::size_t>(
+        stir_whir_gr::whir::pow3_checked(variable_count)));
+    for (auto &coefficient : coefficients) {
+      NTL::clear(coefficient);
+    }
+    if (!coefficients.empty()) {
+      coefficients.front() = SmallElement(5);
+    }
+    if (coefficients.size() > 4U) {
+      coefficients[3] = SmallElement(9);
+    }
+    return coefficients;
+  });
+}
+
+std::vector<MultiQuadraticPolynomial> DifferentialPolynomials(
+    const GRContext &ctx, std::uint64_t variable_count) {
+  std::vector<MultiQuadraticPolynomial> polynomials;
+  polynomials.emplace_back(variable_count, SampleCoefficients(ctx, variable_count));
+  polynomials.emplace_back(variable_count,
+                           SparseHighCoefficients(ctx, variable_count));
+  polynomials.push_back(
+      MultilinearPolynomial(variable_count,
+                            EmbeddedMultilinearCoefficients(ctx, variable_count))
+          .to_multi_quadratic(ctx));
+  polynomials.emplace_back(variable_count, std::vector<GRElem>{});
+  polynomials.emplace_back(variable_count,
+                           TrimmedHighZeroCoefficients(ctx, variable_count));
+  return polynomials;
+}
+
+WhirConstraint MakeShiftLikeConstraint(const GRContext &ctx,
+                                       const TernaryGrid &grid,
+                                       std::uint64_t variable_count) {
+  WhirConstraint constraint(grid);
+  constraint.add_shift_term(ctx.one(), SamplePoint(ctx, grid, variable_count));
+  ctx.with_ntl_context([&] {
+    const GRElem first_weight = grid[2] + SmallElement(3);
+    const GRElem pow_base = grid[1] + SmallElement(4);
+    constraint.add_shift_term(first_weight,
+                              stir_whir_gr::whir::pow_m(ctx, pow_base,
+                                                         variable_count));
+    const GRElem second_weight = grid[1] + SmallElement(6);
+    constraint.add_shift_term(second_weight,
+                              SampleOffGridPrefix(ctx, grid, variable_count));
+    return 0;
+  });
+  return constraint;
+}
+
+std::vector<WhirConstraint> DifferentialConstraints(const GRContext &ctx,
+                                                    const TernaryGrid &grid,
+                                                    std::uint64_t variable_count) {
+  std::vector<WhirConstraint> constraints;
+  constraints.emplace_back(grid);
+
+  WhirConstraint single_term(grid);
+  single_term.add_shift_term(ctx.one(), SamplePoint(ctx, grid, variable_count));
+  constraints.push_back(std::move(single_term));
+  constraints.push_back(MakeShiftLikeConstraint(ctx, grid, variable_count));
+  return constraints;
+}
+
+WhirSumcheckPolynomial GenericReferenceSumcheck(
+    const GRContext &ctx, const MultiQuadraticPolynomial &polynomial,
+    const WhirConstraint &constraint, std::span<const GRElem> prefix) {
+  return stir_whir_gr::whir::honest_sumcheck_polynomial(
+      ctx, polynomial.variable_count(), constraint, prefix,
+      [&](std::span<const GRElem> point) {
+        return polynomial.evaluate(ctx, point);
+      });
+}
+
+void CheckSumcheckPolynomialsEqual(const GRContext &ctx, const TernaryGrid &grid,
+                                   const WhirSumcheckPolynomial &actual,
+                                   const WhirSumcheckPolynomial &expected) {
+  CHECK_EQ(actual.coefficients.size(), expected.coefficients.size());
+  const std::size_t shared_size =
+      std::min(actual.coefficients.size(), expected.coefficients.size());
+  for (std::size_t i = 0; i < shared_size; ++i) {
+    CHECK_EQ(actual.coefficients[i], expected.coefficients[i]);
+  }
+
+  ctx.with_ntl_context([&] {
+    std::vector<GRElem> evaluation_points{grid[0], grid[1], grid[2]};
+    const auto interpolation_points =
+        stir_whir_gr::whir::sumcheck_interpolation_points(ctx);
+    evaluation_points.insert(evaluation_points.end(), interpolation_points.begin(),
+                             interpolation_points.end());
+    evaluation_points.push_back(grid[1] + SmallElement(9));
+    evaluation_points.push_back(ctx.teich_generator() + SmallElement(2));
+    for (const auto &point : evaluation_points) {
+      CHECK_EQ(stir_whir_gr::whir::evaluate_sumcheck_polynomial(ctx, actual, point),
+               stir_whir_gr::whir::evaluate_sumcheck_polynomial(ctx, expected,
+                                                                 point));
+    }
+    return 0;
   });
 }
 
@@ -210,6 +379,37 @@ void TestHonestSumcheckIdentities() {
   }
 }
 
+void TestMultiQuadraticSumcheckMatchesGenericReference() {
+  testutil::PrintInfo(
+      "multi-quadratic sumcheck fast path matches generic enumerative oracle");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 12});
+  const TernaryGrid grid = MakeGrid(ctx);
+
+  for (std::uint64_t m = 1; m <= 4; ++m) {
+    const auto polynomials = DifferentialPolynomials(ctx, m);
+    const auto constraints = DifferentialConstraints(ctx, grid, m);
+    for (const auto &polynomial : polynomials) {
+      for (const auto &constraint : constraints) {
+        for (std::uint64_t prefix_length = 0; prefix_length < m; ++prefix_length) {
+          const std::vector<std::vector<GRElem>> prefixes{
+              SampleGridPrefix(grid, prefix_length),
+              SampleOffGridPrefix(ctx, grid, prefix_length),
+          };
+          for (const auto &prefix : prefixes) {
+            const WhirSumcheckPolynomial actual =
+                stir_whir_gr::whir::honest_sumcheck_polynomial(
+                    ctx, polynomial, constraint, prefix);
+            const WhirSumcheckPolynomial expected =
+                GenericReferenceSumcheck(ctx, polynomial, constraint, prefix);
+            CheckSumcheckPolynomialsEqual(ctx, grid, actual, expected);
+          }
+        }
+      }
+    }
+  }
+}
+
 void TestTamperingAndDeclaredDegreeFail() {
   testutil::PrintInfo(
       "tampered coefficients and oversized declared degree "
@@ -285,6 +485,7 @@ int main() {
     RUN_TEST(TestEqualityKernelReproducesMultiQuadratic);
     RUN_TEST(TestConstraintRestrictionMatchesDirectEvaluation);
     RUN_TEST(TestHonestSumcheckIdentities);
+    RUN_TEST(TestMultiQuadraticSumcheckMatchesGenericReference);
     RUN_TEST(TestTamperingAndDeclaredDegreeFail);
     RUN_TEST(TestInvalidShapesReject);
   } catch (const std::exception &ex) {

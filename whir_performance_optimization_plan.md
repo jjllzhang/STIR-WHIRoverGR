@@ -181,6 +181,24 @@ Acceptance:
 4. `m=4` release row completes without timeout under 180 s.
 5. Baseline `m=3` proof bytes remain `32360`.
 
+Phase 1 validation on 2026-05-02:
+
+1. Added exact differential tests comparing the specialized
+   `MultiQuadraticPolynomial` sumcheck path against the generic enumerative
+   `PointEvaluator` oracle for `m=1,2,3,4`, multiple prefix lengths, grid and
+   off-grid prefixes, dense/sparse/embedded-multilinear/zero/trimmed
+   polynomials, and single/multi-term/empty constraints.
+2. Focused release WHIR CTest passed: 6/6 tests, plus
+   `test_whir_soundness` passed separately.
+3. Baseline `m=3`, `--warmup 1 --reps 3`, `--threads 1` produced
+   `serialized_bytes_actual=32360`, `prover_total_ms=1574.414`,
+   `verify_ms=724.340`, and
+   `profile_prover_interpolate_mean_ms=813.607`.
+4. The previous `m=4` timeout row completed with `--warmup 0 --reps 1`:
+   `prover_total_ms=14983.909`,
+   `profile_prover_interpolate_mean_ms=8680.762`, and
+   `serialized_bytes_actual=131636`.
+
 Stop rule:
 
 If Phase 1 gives less than a 2x `m=3` prover improvement, stop and inspect the

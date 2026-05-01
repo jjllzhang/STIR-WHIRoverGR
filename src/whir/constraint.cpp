@@ -3,6 +3,7 @@
 #include <NTL/ZZ_pE.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -18,6 +19,17 @@ namespace stir_whir_gr::whir {
 namespace {
 
 constexpr std::size_t kSumcheckDegreePlusOne = 5U;
+constexpr std::size_t kTernaryDegreePlusOne = 3U;
+
+using EqPolynomialCoefficients =
+    std::array<algebra::GRElem, kTernaryDegreePlusOne>;
+using SumcheckCoefficients =
+    std::array<algebra::GRElem, kSumcheckDegreePlusOne>;
+
+struct EqCoordinateData {
+  EqPolynomialCoefficients eq_coefficients;
+  std::array<algebra::GRElem, kTernaryDegreePlusOne> grid_power_sums;
+};
 
 std::size_t CheckedSize(std::uint64_t value, const char *label) {
   if (value >
@@ -42,12 +54,174 @@ void RequireCompatibleTermSize(const std::vector<EqTerm> &terms,
   }
 }
 
+void Clear(EqPolynomialCoefficients *coefficients) {
+  for (auto &coefficient : *coefficients) {
+    clear(coefficient);
+  }
+}
+
+void Clear(SumcheckCoefficients *coefficients) {
+  for (auto &coefficient : *coefficients) {
+    clear(coefficient);
+  }
+}
+
 void AppendGridAssignment(const TernaryGrid &grid, std::uint64_t assignment,
                           std::span<algebra::GRElem> suffix) {
   for (auto &coordinate : suffix) {
     coordinate = grid[static_cast<std::size_t>(assignment % 3U)];
     assignment /= 3U;
   }
+}
+
+algebra::GRElem PowSmall(const algebra::GRElem &value, std::uint8_t exponent) {
+  if (exponent == 0U) {
+    algebra::GRElem out;
+    set(out);
+    return out;
+  }
+  if (exponent == 1U) {
+    return value;
+  }
+  if (exponent == 2U) {
+    return value * value;
+  }
+  throw std::invalid_argument("PowSmall supports only exponents 0, 1, 2");
+}
+
+EqPolynomialCoefficients LagrangeBasisPolynomial(
+    const algebra::GRContext &ctx, const TernaryGrid &grid,
+    std::size_t basis_index) {
+  if (basis_index >= grid.size()) {
+    throw std::out_of_range("lagrange basis index exceeds ternary grid");
+  }
+
+  EqPolynomialCoefficients coefficients;
+  Clear(&coefficients);
+  set(coefficients[0]);
+  std::size_t degree = 0;
+
+  algebra::GRElem denominator;
+  set(denominator);
+  const auto &basis_point = grid[basis_index];
+  for (std::size_t i = 0; i < grid.size(); ++i) {
+    if (i == basis_index) {
+      continue;
+    }
+
+    EqPolynomialCoefficients next;
+    Clear(&next);
+    for (std::size_t d = 0; d <= degree; ++d) {
+      next[d] -= coefficients[d] * grid[i];
+      next[d + 1U] += coefficients[d];
+    }
+    coefficients = next;
+    ++degree;
+    denominator *= basis_point - grid[i];
+  }
+
+  const algebra::GRElem denominator_inverse = ctx.inv(denominator);
+  for (auto &coefficient : coefficients) {
+    coefficient *= denominator_inverse;
+  }
+  return coefficients;
+}
+
+algebra::GRElem EvaluateEqPolynomial(
+    const EqPolynomialCoefficients &coefficients, const algebra::GRElem &x) {
+  algebra::GRElem out;
+  clear(out);
+  for (auto it = coefficients.rbegin(); it != coefficients.rend(); ++it) {
+    out *= x;
+    out += *it;
+  }
+  return out;
+}
+
+EqPolynomialCoefficients EqPolynomial(
+    const algebra::GRContext &ctx, const TernaryGrid &grid,
+    const algebra::GRElem &z) {
+  RequireValidGrid(ctx, grid);
+
+  EqPolynomialCoefficients out;
+  Clear(&out);
+  for (std::size_t i = 0; i < grid.size(); ++i) {
+    const algebra::GRElem z_weight =
+        lagrange_basis_on_ternary_grid(ctx, grid, i, z);
+    const auto basis_coefficients = LagrangeBasisPolynomial(ctx, grid, i);
+    for (std::size_t d = 0; d < out.size(); ++d) {
+      out[d] += z_weight * basis_coefficients[d];
+    }
+  }
+  return out;
+}
+
+EqCoordinateData BuildEqCoordinateData(
+    const algebra::GRContext &ctx, const TernaryGrid &grid,
+    const algebra::GRElem &z) {
+  EqCoordinateData data;
+  data.eq_coefficients = EqPolynomial(ctx, grid, z);
+  for (auto &sum : data.grid_power_sums) {
+    clear(sum);
+  }
+
+  for (std::size_t degree = 0; degree < data.grid_power_sums.size(); ++degree) {
+    for (const auto &point : grid) {
+      const auto power = PowSmall(point, static_cast<std::uint8_t>(degree));
+      data.grid_power_sums[degree] +=
+          power * EvaluateEqPolynomial(data.eq_coefficients, point);
+    }
+  }
+  return data;
+}
+
+std::vector<std::vector<EqCoordinateData>> BuildEqTermData(
+    const algebra::GRContext &ctx, const WhirConstraint &constraint,
+    std::uint64_t variable_count) {
+  std::vector<std::vector<EqCoordinateData>> out;
+  out.reserve(constraint.terms().size());
+  for (const auto &term : constraint.terms()) {
+    if (term.point.size() != CheckedSize(variable_count, "variable_count")) {
+      throw std::invalid_argument(
+          "honest_sumcheck_polynomial constraint arity mismatch");
+    }
+
+    std::vector<EqCoordinateData> term_data;
+    term_data.reserve(term.point.size());
+    for (const auto &coordinate : term.point) {
+      term_data.push_back(BuildEqCoordinateData(ctx, constraint.grid(), coordinate));
+    }
+    out.push_back(std::move(term_data));
+  }
+  return out;
+}
+
+SumcheckCoefficients ShiftEqPolynomial(
+    const EqPolynomialCoefficients &eq_coefficients, std::uint8_t shift) {
+  SumcheckCoefficients out;
+  Clear(&out);
+  if (shift > 2U) {
+    throw std::invalid_argument("ShiftEqPolynomial requires shift in [0, 2]");
+  }
+  for (std::size_t d = 0; d < eq_coefficients.size(); ++d) {
+    out[d + shift] += eq_coefficients[d];
+  }
+  return out;
+}
+
+void AddScaled(SumcheckCoefficients *out, const SumcheckCoefficients &term,
+               const algebra::GRElem &scale) {
+  for (std::size_t d = 0; d < out->size(); ++d) {
+    (*out)[d] += scale * term[d];
+  }
+}
+
+std::vector<algebra::GRElem> TrimTrailingZeros(SumcheckCoefficients coefficients) {
+  std::vector<algebra::GRElem> out(coefficients.begin(), coefficients.end());
+  while (!out.empty() && out.back() == 0) {
+    out.pop_back();
+  }
+  return out;
 }
 
 }  // namespace
@@ -295,11 +469,69 @@ WhirSumcheckPolynomial honest_sumcheck_polynomial(
 WhirSumcheckPolynomial honest_sumcheck_polynomial(
     const algebra::GRContext &ctx, const MultiQuadraticPolynomial &polynomial,
     const WhirConstraint &constraint, std::span<const algebra::GRElem> prefix) {
-  return honest_sumcheck_polynomial(
-      ctx, polynomial.variable_count(), constraint, prefix,
-      [&](std::span<const algebra::GRElem> point) {
-        return polynomial.evaluate(ctx, point);
-      });
+  const std::uint64_t variable_count = polynomial.variable_count();
+  if (prefix.size() >= CheckedSize(variable_count, "variable_count")) {
+    throw std::invalid_argument(
+        "honest_sumcheck_polynomial requires one live variable");
+  }
+  if (!constraint.empty() && constraint.variable_count() != variable_count) {
+    throw std::invalid_argument(
+        "honest_sumcheck_polynomial constraint arity mismatch");
+  }
+
+  return ctx.with_ntl_context([&] {
+    const std::size_t variable_index = prefix.size();
+    const auto eq_term_data =
+        BuildEqTermData(ctx, constraint, variable_count);
+
+    SumcheckCoefficients out;
+    Clear(&out);
+    const auto &coefficients = polynomial.coefficients();
+    for (std::size_t coefficient_index = 0;
+         coefficient_index < coefficients.size(); ++coefficient_index) {
+      const auto &coefficient = coefficients[coefficient_index];
+      if (coefficient == 0) {
+        continue;
+      }
+
+      std::uint64_t digits = static_cast<std::uint64_t>(coefficient_index);
+      std::array<std::uint8_t, 64> digit_cache{};
+      if (variable_count > digit_cache.size()) {
+        throw std::invalid_argument(
+            "honest_sumcheck_polynomial variable_count exceeds digit cache");
+      }
+      for (std::uint64_t variable = 0; variable < variable_count; ++variable) {
+        digit_cache[CheckedSize(variable, "variable")] =
+            static_cast<std::uint8_t>(digits % 3U);
+        digits /= 3U;
+      }
+
+      for (std::size_t term_index = 0; term_index < constraint.terms().size();
+           ++term_index) {
+        const auto &term = constraint.terms()[term_index];
+        const auto &term_data = eq_term_data[term_index];
+        algebra::GRElem scalar = coefficient * term.weight;
+        for (std::size_t variable = 0; variable < variable_index; ++variable) {
+          const std::uint8_t digit = digit_cache[variable];
+          scalar *= PowSmall(prefix[variable], digit) *
+                    EvaluateEqPolynomial(term_data[variable].eq_coefficients,
+                                         prefix[variable]);
+        }
+        for (std::size_t variable = variable_index + 1U;
+             variable < CheckedSize(variable_count, "variable_count");
+             ++variable) {
+          const std::uint8_t digit = digit_cache[variable];
+          scalar *= term_data[variable].grid_power_sums[digit];
+        }
+        const std::uint8_t live_digit = digit_cache[variable_index];
+        const auto live_polynomial = ShiftEqPolynomial(
+            term_data[variable_index].eq_coefficients, live_digit);
+        AddScaled(&out, live_polynomial, scalar);
+      }
+    }
+
+    return WhirSumcheckPolynomial{TrimTrailingZeros(out)};
+  });
 }
 
 std::size_t sumcheck_declared_degree(const WhirSumcheckPolynomial &polynomial) {
