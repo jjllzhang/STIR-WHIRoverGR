@@ -92,9 +92,8 @@ results/generated/**
 results/tmp/**
 results/runs/**
 
-# Keep tracked benchmark baselines and docs
+# Keep tracked benchmark baselines/reference material
 !results/.gitkeep
-!results/README.md
 !results/baselines/
 !results/baselines/**
 !results/reference/
