@@ -1,0 +1,95 @@
+{
+  "defaults": {
+    "protocols": ["whir_gr_ud"],
+    "lambda_target": 128,
+    "pow_bits": 0,
+    "hash_profile": "WHIR_NATIVE",
+    "threads": 1,
+    "whir_rho0": "1/2",
+    "whir_polynomial": "multilinear"
+  },
+  "experiments": [
+    {
+      "name": "gr216_r54_m3_multilinear_smoke",
+      "ring": "GR(2^16,54)",
+      "n": 81,
+      "d": 27,
+      "rho": "1/3",
+      "lambda_target": 32,
+      "whir_m": 3,
+      "whir_bmax": 1,
+      "whir_r": 54,
+      "whir_rho0": "1/3"
+    },
+    {
+      "name": "gr216_r162_m4_multilinear",
+      "ring": "GR(2^16,162)",
+      "n": 189,
+      "d": 81,
+      "rho": "3/7",
+      "whir_m": 4,
+      "whir_bmax": 3,
+      "whir_r": 162
+    },
+    {
+      "name": "gr216_r162_m5_multilinear",
+      "ring": "GR(2^16,162)",
+      "n": 513,
+      "d": 243,
+      "rho": "9/19",
+      "whir_m": 5,
+      "whir_bmax": 3,
+      "whir_r": 162
+    },
+    {
+      "name": "gr216_r162_m6_multilinear",
+      "ring": "GR(2^16,162)",
+      "n": 1539,
+      "d": 729,
+      "rho": "9/19",
+      "whir_m": 6,
+      "whir_bmax": 3,
+      "whir_r": 162
+    },
+    {
+      "name": "gr216_r162_m7_multilinear",
+      "ring": "GR(2^16,162)",
+      "n": 4617,
+      "d": 2187,
+      "rho": "9/19",
+      "whir_m": 7,
+      "whir_bmax": 3,
+      "whir_r": 162
+    },
+    {
+      "name": "gr216_r162_m8_multilinear",
+      "ring": "GR(2^16,162)",
+      "n": 13203,
+      "d": 6561,
+      "rho": "81/163",
+      "whir_m": 8,
+      "whir_bmax": 3,
+      "whir_r": 162
+    },
+    {
+      "name": "gr216_r162_m9_multilinear",
+      "ring": "GR(2^16,162)",
+      "n": 39609,
+      "d": 19683,
+      "rho": "81/163",
+      "whir_m": 9,
+      "whir_bmax": 3,
+      "whir_r": 162
+    },
+    {
+      "name": "gr216_r162_m10_multilinear",
+      "ring": "GR(2^16,162)",
+      "n": 124173,
+      "d": 59049,
+      "rho": "243/511",
+      "whir_m": 10,
+      "whir_bmax": 3,
+      "whir_r": 162
+    }
+  ]
+}

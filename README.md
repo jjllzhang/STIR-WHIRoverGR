@@ -19,13 +19,14 @@ This repository is **prototype / research code**. It is intended for protocol ex
 - Uses radix-3 `fft3` / `inverse_fft3` fast paths on `3-smooth` domains, including `rs_encode` / `rs_interpolate`
 - Implements `BLAKE3`, Fiat-Shamir transcript, Merkle tree, and pruned multiproof planning
 - Provides prover / verifier surfaces for `FRI-3`, `FRI-9`, and `STIR(9->3)`
-- WHIR-over-GR unique-decoding PCS prototype is implemented for `GR(2^s,r)` with ternary domains, multi-quadratic polynomials, BCS-style Merkle commitments, Fiat-Shamir sumcheck/folding/opening, and selector-backed unique-decoding metadata
+- WHIR-over-GR unique-decoding PCS prototype is implemented for `GR(2^s,r)` with ternary domains, multi-quadratic polynomials, explicit multilinear-polynomial embedding, BCS-style Merkle commitments, Fiat-Shamir sumcheck/folding/opening, and selector-backed unique-decoding metadata
 - Provides `bench_time`, preset-driven wrappers, and parameter-search scripts
 
 ## Current Limits
 
 - WHIR support is the GR unique-decoding PCS prototype from `whir_gr2k_pcs.pdf`; it is not full finite-field WHIR, not Johnson/list-decoding WHIR, not ZK WHIR, and not a production-ready cryptographic library
 - WHIR currently targets `p=2` Galois rings, uses direct-enumeration sumcheck/prover helpers for correctness, and should be benchmarked first with small `lambda=32/64` smoke parameters before larger release-style runs
+- WHIR multilinear inputs are embedded into the ternary multi-quadratic code path; the selector still reports the conservative `3^m` soundness dimension rather than a separate optimized multilinear rate
 - `FRI-3` and `FRI-9` now expose a theorem-facing BCS-style PCS surface over Teichmuller-supported domains, but they remain prototype / research implementations rather than production-ready or audited FRI-based PCS code
 - Current FRI openings keep `g_0` as a virtual quotient oracle, commit to `g_i` for `i >= 1`, and terminate by revealing the full final oracle table; proof-byte reporting comes from a deterministic length-prefixed serializer over that actual external opening/proof object
 - `STIR(9->3)` now keeps two distinct parameter surfaces over the same external proof shape:
@@ -99,9 +100,10 @@ scope rather than the full finite-field `WHIR.pdf` modes.
 
 Implemented WHIR-over-GR unique-decoding PCS contract:
 
-- public parameter selection from `(lambda, s, m, bmax, rho0)` using the WHIR-UD half-gap recipe `delta_i=(1-rho_i)/2`
+- public parameter selection from `(lambda, s, m, bmax, rho0)` using the WHIR-UD half-gap recipe `delta_i=(1-rho_i)/2`, with an optional fixed extension degree `r`
 - `Setup`-style construction of `GR(2^s,r)`, a Teichmuller subgroup `H0`, an order-3 grid `B={1,omega,omega^2}`, layer widths, repetitions, degree bounds, and soundness metadata
 - `Commit` to the table `f0[x] = F(Pow_m(x))` for a multi-quadratic polynomial `F`
+- `Commit` also accepts a multilinear polynomial and embeds it by zeroing the ternary quadratic coefficient positions
 - `Open` with ternary sumcheck, repeated ternary virtual folds, shifted oracle commitments on `H_i.pow_map(3)`, shift queries over `H_i.pow_map(3^b)`, and final constant-oracle openings
 - `Verify` with transcript replay, degree and sumcheck identity checks, exact Merkle multiproof query matching, virtual-fold recomputation from opened leaves, final constraint check, and final constant openings
 
@@ -184,38 +186,51 @@ Inspect the benchmark CLIs:
 Run a WHIR-over-GR unique-decoding smoke benchmark:
 
 ```bash
-./build/bench_time \
+./build-release/bench_time \
   --protocol whir_gr_ud \
   --lambda 64 \
+  --k-exp 16 \
+  --whir-r 108 \
   --whir-m 3 \
   --whir-bmax 1 \
   --whir-rho0 1/3 \
+  --whir-polynomial multilinear \
   --warmup 0 \
   --reps 1 \
   --format text
 ```
 
-Run the main timing workload:
+Run a benchmark preset:
 
 ```bash
-OMP_NUM_THREADS=1 ./scripts/run_timing_benchmark_from_preset.sh \
-  --preset bench/presets/main_benchmark_workload_gr216_r162.json \
+OMP_NUM_THREADS=1 ./scripts/bench/run_bench.sh \
+  --preset bench/presets/fri.json \
   --build-dir build-release \
   --threads 1 \
   --warmup 1 \
-  --reps 3 \
-  --output results/main_benchmark_workload_gr216_r162_timing.csv
+  --reps 3
+```
+
+Run only part of a multi-experiment preset:
+
+```bash
+OMP_NUM_THREADS=1 ./scripts/bench/run_bench.sh \
+  --preset bench/presets/whir.json \
+  --build-dir build-release \
+  --experiments gr216_r162_m4_multilinear,gr216_r162_m10_multilinear \
+  --threads 1 \
+  --warmup 0 \
+  --reps 1
 ```
 
 Run parameter search:
 
 ```bash
-./scripts/run_benchmark_parameter_search.sh \
+python3 scripts/bench/search_params.py \
+  --preset bench/presets/stir.json \
   --build-dir build-release \
   --n-values 81,243 \
   --rho-values 1/3,1/9 \
-  --fri-soundness-mode manual_repetition \
-  --fri-repetitions 2 \
   --soundness 128:22:ConjectureCapacity:auto
 ```
 
@@ -232,28 +247,34 @@ Benchmark notes:
 - Explicit `--fri-repetitions` on theorem_auto rows are treated as overrides that must be at least the required minimum `m`; otherwise `bench_time` fails fast
 - `--fri-soundness-mode manual_repetition` keeps a caller-provided fixed `m`, but those rows are intentionally emitted as `soundness_mode=manual_standalone_fri` rather than as theorem-aligned metadata
 - The current theorem_auto path is conservative: it is only enabled for `p=2`, and it rejects instances where the discrete gap gives `delta = 0`
-- `bench_time` still keeps one shared row schema across `FRI` and `STIR`; theorem-aligned standalone FRI rows now use `lambda_target` and `effective_security_bits`, while manual standalone FRI rows leave those fields as not applicable
+- `bench_time` still keeps one shared row schema across `FRI`, `STIR`, and `WHIR`; theorem-aligned standalone FRI rows now use `lambda_target` and `effective_security_bits`, while manual standalone FRI rows leave those fields as not applicable
 - Current `stir9to3` rows execute `theorem_gr` STIR parameters and emit theorem-facing half-gap metadata backed by the existing Z2KSNARK-based GR results; unsupported parameter sets still print a row, but they are marked through `soundness_notes` and report `effective_security_bits=0`
-- Current `whir_gr_ud` rows execute commit/open/verify for the WHIR-over-GR unique-decoding PCS prototype, choose `r` from the selector, and report exact serialized opening bytes from the actual `WhirOpening`
+- Current `whir_gr_ud` rows execute commit/open/verify for the WHIR-over-GR unique-decoding PCS prototype, choose `r` from the selector by default, accept `--whir-r`/`--whir-fixed-r` or explicit `--r` to fix `GR(2^s,r)`, and report exact serialized opening bytes from the actual `WhirOpening`
 - `--whir-repetitions` is a debug override for shift/final repetitions; selector-derived repetitions are used by default for theorem-facing metadata
 - STIR now has three query modes in `bench_time`: `--queries auto` keeps the older heuristic live schedule, `--queries theorem_auto` solves an explicit per-round schedule from `lambda_target` using the current theorem_gr half-gap model, and `--queries q0[,q1,...]` keeps a caller-provided manual schedule
 - The standalone `bench_stir_query_solver` tool exposes the same theorem-driven STIR query solver without running prover/verifier timing loops; use it when the question is feasibility or minimal query counts rather than runtime
-- Current preset wrappers and parameter-search tooling preserve older fixed-`m` benchmark presets by mapping them to `manual_repetition`; omit `fri_repetitions` if you want theorem-auto standalone FRI rows
-- Archived benchmark outputs live in `results/`, with filenames aligned to workload names
+- Current preset-runner and parameter-search tooling preserve older fixed-`m` benchmark presets by mapping them to `manual_repetition`; omit `fri_repetitions` if you want theorem-auto standalone FRI rows
+- Preset schema and benchmark file layout are documented in `bench/README.md`
+- Archived benchmark outputs live in `results/archive/`; new timing/search outputs default to ignored `results/runs/<timestamp>/` directories
 
 ## Preset Workloads
 
 Current preset filenames follow a shorter workload-first naming style:
 
-- `bench/presets/all_protocols_smoke_gr216_r54.json`
-- `bench/presets/main_benchmark_workload_gr216_r162.json`
-- `bench/presets/two_round_stir_gr216_r486.json`
+- `bench/presets/fri.json`
+- `bench/presets/stir.json`
+- `bench/presets/whir.json`
 
 Interpretation:
 
-- `all_protocols_smoke_gr216_r54.json` is the smallest cross-protocol smoke workload
-- `main_benchmark_workload_gr216_r162.json` is the main benchmark preset
-- `two_round_stir_gr216_r486.json` is the larger preset that exercises two STIR rounds
+- `fri.json` contains standalone FRI workloads, including `GR(2^16,54)` smoke
+  and `GR(2^16,162)` main-size examples
+- `stir.json` contains STIR workloads, including `GR(2^16,162)` main-size and
+  `GR(2^16,486)` two-round examples
+- `whir.json` contains WHIR unique-decoding multilinear workloads. The
+  `GR(2^16,162)` experiments default to 128-bit security and cover
+  `whir_m=4..10`; the older `GR(2^16,54)` smoke experiment remains an explicit
+  32-bit override.
 
 ## CMake Targets
 
@@ -269,9 +290,10 @@ Main targets:
 
 - `include/`: public headers and protocol interfaces
 - `src/`: implementations
-- `bench/`: benchmark entrypoints and presets
+- `bench/`: benchmark entrypoints, preset schema documentation, and presets
+- `scripts/bench/`: benchmark helper scripts for preset runs, parameter search, and plots
 - `tests/`: unit tests and protocol regressions
-- `scripts/`: benchmark wrappers, parameter search, and helper scripts
-- `results/`: archived benchmark outputs
+- `results/archive/`: curated benchmark CSV archives
+- `results/runs/`: ignored generated benchmark runs
 - `third_party/GaloisRing/`: vendored Galois-ring backend
 - `third_party/blake3/`: vendored `BLAKE3`

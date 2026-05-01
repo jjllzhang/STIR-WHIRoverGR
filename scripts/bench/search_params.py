@@ -38,6 +38,16 @@ class SweepPoint:
     rho: str
 
 
+@dataclass(frozen=True)
+class WhirOptions:
+    m: int
+    bmax: int
+    rho0: str
+    polynomial: str
+    fixed_r: Optional[int]
+    repetitions: Optional[int]
+
+
 class SearchError(RuntimeError):
     pass
 
@@ -61,6 +71,15 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--preset", default="", help="Preset JSON path (optional)")
     parser.add_argument(
+        "--experiments",
+        "--experiment",
+        default="",
+        help=(
+            "Run only selected preset experiment names or 1-based indices/ranges "
+            "(comma list, e.g. 2,4-6 or gr216_r162_main)"
+        ),
+    )
+    parser.add_argument(
         "--build-dir", default="build", help="Build directory containing bench binaries"
     )
     parser.add_argument(
@@ -72,7 +91,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--protocols",
         default="",
-        help="Comma-separated protocols: fri3,fri9,stir9to3 (default from preset or all)",
+        help=(
+            "Comma-separated protocols: fri3,fri9,stir9to3,whir_gr_ud "
+            "(or all; default from preset or fri3,fri9,stir9to3)"
+        ),
     )
 
     parser.add_argument("--n-values", default="", help="Comma-separated n sweep")
@@ -103,7 +125,11 @@ def parse_args() -> argparse.Namespace:
         help="Fallback queries when no --soundness is provided (auto, theorem_auto, or q0[,q1,...])",
     )
 
-    parser.add_argument("--hash-profile", default="STIR_NATIVE")
+    parser.add_argument(
+        "--hash-profile",
+        default="",
+        help="Hash profile (default: preset value, else STIR_NATIVE)",
+    )
     parser.add_argument(
         "--fri-soundness-mode",
         default="",
@@ -123,11 +149,28 @@ def parse_args() -> argparse.Namespace:
             "manual_repetition it is the actual fixed m."
         ),
     )
-    parser.add_argument("--stop-degree", type=int, default=9)
-    parser.add_argument("--ood-samples", type=int, default=2)
-    parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--stop-degree", type=int, default=None)
+    parser.add_argument("--ood-samples", type=int, default=None)
+    parser.add_argument("--threads", type=int, default=None)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--reps", type=int, default=3)
+    parser.add_argument("--whir-m", type=int, default=None)
+    parser.add_argument("--whir-bmax", type=int, default=None)
+    parser.add_argument(
+        "--whir-r",
+        "--whir-fixed-r",
+        dest="whir_r",
+        type=int,
+        default=None,
+        help="Fixed WHIR extension degree. If omitted, bench_time still sees preset ring r via --r.",
+    )
+    parser.add_argument("--whir-rho0", default="")
+    parser.add_argument(
+        "--whir-polynomial",
+        default="",
+        help="WHIR polynomial family: multiquadratic or multilinear",
+    )
+    parser.add_argument("--whir-repetitions", type=int, default=None)
 
     parser.add_argument("--include-time", action="store_true")
     parser.add_argument(
@@ -142,8 +185,16 @@ def parse_args() -> argparse.Namespace:
         "--time-top-k", type=int, default=10, help="Top-K for time ranking if include-time"
     )
 
-    parser.add_argument("--combined-csv", required=True, help="Output combined CSV path")
-    parser.add_argument("--summary-md", required=True, help="Output summary markdown path")
+    parser.add_argument(
+        "--combined-csv",
+        default="",
+        help="Output combined CSV path (default: results/runs/<timestamp>/search_combined.csv)",
+    )
+    parser.add_argument(
+        "--summary-md",
+        default="",
+        help="Output summary markdown path (default: results/runs/<timestamp>/search_summary.md)",
+    )
 
     return parser.parse_args()
 
@@ -205,21 +256,183 @@ def load_preset(path: str) -> Dict[str, object]:
         raise SearchError(f"failed to parse preset json: {preset_path}") from exc
 
 
+def expand_preset_experiments(preset: Dict[str, object]) -> List[Dict[str, object]]:
+    if "experiments" not in preset:
+        out = dict(preset)
+        out.setdefault("name", "default")
+        return [out]
+
+    defaults = preset.get("defaults", {})
+    if not isinstance(defaults, dict):
+        raise SearchError("preset field 'defaults' must be an object")
+
+    base = {
+        key: value
+        for key, value in preset.items()
+        if key not in {"defaults", "experiments", "description", "notes"}
+    }
+    shared = {**base, **defaults}
+    experiments = preset["experiments"]
+    if not isinstance(experiments, list):
+        raise SearchError("preset field 'experiments' must be a list")
+
+    out: List[Dict[str, object]] = []
+    for index, experiment in enumerate(experiments, start=1):
+        if not isinstance(experiment, dict):
+            raise SearchError(f"preset experiment #{index} must be an object")
+        merged = {**shared, **experiment}
+        merged.setdefault("name", f"experiment_{index}")
+        out.append(merged)
+    if not out:
+        raise SearchError("preset has no experiments")
+    return out
+
+
+def filter_preset_experiments(
+    experiments: Sequence[Dict[str, object]], raw_filter: str
+) -> List[Tuple[int, Dict[str, object]]]:
+    if not raw_filter.strip():
+        return list(enumerate(experiments, start=1))
+
+    names = {
+        str(experiment.get("name", f"experiment_{index}")): index
+        for index, experiment in enumerate(experiments, start=1)
+    }
+    selected: List[Tuple[int, Dict[str, object]]] = []
+    seen = set()
+    for token in parse_csv_list(raw_filter):
+        indices: List[int]
+        if token in names:
+            indices = [names[token]]
+        elif re.fullmatch(r"[0-9]+", token):
+            indices = [int(token)]
+        elif re.fullmatch(r"[0-9]+-[0-9]+", token):
+            begin, end = (int(part) for part in token.split("-", 1))
+            if begin > end:
+                raise SearchError(f"invalid descending experiment range: {token}")
+            indices = list(range(begin, end + 1))
+        else:
+            available = ", ".join(
+                f"{index}:{experiment.get('name', f'experiment_{index}')}"
+                for index, experiment in enumerate(experiments, start=1)
+            )
+            raise SearchError(
+                f"unknown experiment selector '{token}'. Available: {available}"
+            )
+        for index in indices:
+            if index < 1 or index > len(experiments):
+                raise SearchError(
+                    f"experiment index {index} out of range 1..{len(experiments)}"
+                )
+            if index in seen:
+                continue
+            seen.add(index)
+            selected.append((index, experiments[index - 1]))
+    if not selected:
+        raise SearchError(f"experiment filter selected no experiments: {raw_filter}")
+    return selected
+
+
 def resolve_protocols(args: argparse.Namespace, preset: Dict[str, object]) -> List[str]:
-    allowed = {"fri3", "fri9", "stir9to3"}
+    allowed_order = ["fri3", "fri9", "stir9to3", "whir_gr_ud"]
+    allowed = set(allowed_order)
     if args.protocols:
-        protocols = parse_csv_list(args.protocols)
+        raw_protocols = parse_csv_list(args.protocols)
     else:
         preset_protocols = preset.get("protocols", ["fri3", "fri9", "stir9to3"])
         if not isinstance(preset_protocols, list):
             raise SearchError("preset field 'protocols' must be a list")
-        protocols = [str(item).strip() for item in preset_protocols if str(item).strip()]
-    if not protocols:
-        raise SearchError("protocol list is empty")
-    for protocol in protocols:
+        raw_protocols = [
+            str(item).strip() for item in preset_protocols if str(item).strip()
+        ]
+    protocols: List[str] = []
+    for protocol in raw_protocols:
+        if protocol == "all":
+            for expanded in allowed_order:
+                if expanded not in protocols:
+                    protocols.append(expanded)
+            continue
         if protocol not in allowed:
             raise SearchError(f"unsupported protocol: {protocol}")
+        if protocol not in protocols:
+            protocols.append(protocol)
+    if not protocols:
+        raise SearchError("protocol list is empty")
     return protocols
+
+
+def preset_optional_int(preset: Dict[str, object], *keys: str) -> Optional[int]:
+    for key in keys:
+        if key not in preset:
+            continue
+        raw_value = preset[key]
+        if raw_value is None or str(raw_value).strip() == "":
+            return None
+        value = int(raw_value)
+        if value <= 0:
+            raise SearchError(f"preset {key} must be > 0")
+        return value
+    return None
+
+
+def resolve_whir_options(
+    args: argparse.Namespace, preset: Dict[str, object]
+) -> WhirOptions:
+    m = args.whir_m if args.whir_m is not None else int(preset.get("whir_m", 3))
+    bmax = (
+        args.whir_bmax
+        if args.whir_bmax is not None
+        else int(preset.get("whir_bmax", 1))
+    )
+    if m <= 0 or bmax <= 0:
+        raise SearchError("WHIR m and bmax must be > 0")
+
+    rho0 = args.whir_rho0 or str(preset.get("whir_rho0", "1/3"))
+    try:
+        rho0_ratio = Fraction(rho0)
+    except Exception as exc:
+        raise SearchError(f"invalid WHIR rho0: {rho0}") from exc
+    if rho0_ratio <= 0 or rho0_ratio >= 1:
+        raise SearchError(f"WHIR rho0 must be in (0,1), got {rho0}")
+    rho0 = f"{rho0_ratio.numerator}/{rho0_ratio.denominator}"
+
+    polynomial = args.whir_polynomial or str(
+        preset.get("whir_polynomial", "multiquadratic")
+    )
+    polynomial = polynomial.strip().lower()
+    if polynomial in {"multi_quadratic", "multi-quadratic"}:
+        polynomial = "multiquadratic"
+    if polynomial in {"multi_linear", "multi-linear"}:
+        polynomial = "multilinear"
+    if polynomial not in {"multiquadratic", "multilinear"}:
+        raise SearchError(
+            "WHIR polynomial must be multiquadratic or multilinear"
+        )
+
+    fixed_r = (
+        args.whir_r
+        if args.whir_r is not None
+        else preset_optional_int(preset, "whir_r", "whir_fixed_r")
+    )
+    if fixed_r is not None and fixed_r <= 0:
+        raise SearchError("WHIR fixed r must be > 0")
+
+    repetitions = (
+        args.whir_repetitions
+        if args.whir_repetitions is not None
+        else preset_optional_int(preset, "whir_repetitions")
+    )
+    if repetitions is not None and repetitions <= 0:
+        raise SearchError("WHIR repetitions must be > 0")
+
+    return WhirOptions(
+        m=m,
+        bmax=bmax,
+        rho0=rho0,
+        polynomial=polynomial,
+        fixed_r=fixed_r,
+        repetitions=repetitions,
+    )
 
 
 def parse_soundness_item(raw: str) -> SoundnessConfig:
@@ -378,6 +591,29 @@ def resolve_sweep_points(args: argparse.Namespace, preset: Dict[str, object]) ->
     return out
 
 
+def effective_runtime_args(
+    args: argparse.Namespace, preset: Dict[str, object]
+) -> argparse.Namespace:
+    resolved = argparse.Namespace(**vars(args))
+    resolved.hash_profile = args.hash_profile or str(
+        preset.get("hash_profile", "STIR_NATIVE")
+    )
+    resolved.stop_degree = (
+        args.stop_degree
+        if args.stop_degree is not None
+        else int(preset.get("stop_degree", 9))
+    )
+    resolved.ood_samples = (
+        args.ood_samples
+        if args.ood_samples is not None
+        else int(preset.get("ood_samples", 2))
+    )
+    resolved.threads = (
+        args.threads if args.threads is not None else int(preset.get("threads", 1))
+    )
+    return resolved
+
+
 def run_csv_command(cmd: Sequence[str]) -> List[Dict[str, str]]:
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
@@ -415,6 +651,7 @@ def build_time_command(
     soundness: SoundnessConfig,
     fri_soundness_mode: str,
     fri_repetitions: Optional[int],
+    whir_options: WhirOptions,
     args: argparse.Namespace,
 ) -> List[str]:
     cmd = [
@@ -458,6 +695,20 @@ def build_time_command(
         cmd += ["--fri-repetitions", str(fri_repetitions)]
     if soundness.queries:
         cmd += ["--queries", soundness.queries]
+    cmd += [
+        "--whir-m",
+        str(whir_options.m),
+        "--whir-bmax",
+        str(whir_options.bmax),
+        "--whir-rho0",
+        whir_options.rho0,
+        "--whir-polynomial",
+        whir_options.polynomial,
+    ]
+    if whir_options.fixed_r is not None:
+        cmd += ["--whir-r", str(whir_options.fixed_r)]
+    if whir_options.repetitions is not None:
+        cmd += ["--whir-repetitions", str(whir_options.repetitions)]
     return cmd
 
 
@@ -467,6 +718,7 @@ def write_csv(path: Path, rows: List[Dict[str, str]]) -> None:
         raise SearchError("no rows to write")
 
     preferred = [
+        "preset_experiment",
         "search_candidate_id",
         "search_soundness_id",
         "search_queries_spec",
@@ -696,20 +948,32 @@ def write_summary(
     path.write_text("".join(content), encoding="utf-8")
 
 
+def resolve_output_paths(args: argparse.Namespace) -> Tuple[Path, Path]:
+    if args.combined_csv and args.summary_md:
+        return Path(args.combined_csv), Path(args.summary_md)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = repo_root / "results" / "runs" / timestamp
+    combined_path = (
+        Path(args.combined_csv)
+        if args.combined_csv
+        else run_dir / "search_combined.csv"
+    )
+    summary_path = (
+        Path(args.summary_md)
+        if args.summary_md
+        else run_dir / "search_summary.md"
+    )
+    return combined_path, summary_path
+
+
 def main() -> int:
     args = parse_args()
-    preset = load_preset(args.preset)
-
-    if "ring" in preset:
-        ring = parse_ring(str(preset["ring"]))
-    else:
-        raise SearchError("preset with ring is required")
-
-    protocols = resolve_protocols(args, preset)
-    soundness_list = resolve_soundness_configs(args, preset)
-    fri_soundness_mode = resolve_fri_soundness_mode(args, preset)
-    fri_repetitions = resolve_fri_repetitions(args, preset, fri_soundness_mode)
-    sweep_points = resolve_sweep_points(args, preset)
+    preset_doc = load_preset(args.preset)
+    experiments = filter_preset_experiments(
+        expand_preset_experiments(preset_doc), args.experiments
+    )
 
     build_dir = Path(args.build_dir)
     time_bin = Path(args.time_bin) if args.time_bin else (build_dir / "bench_time")
@@ -718,65 +982,96 @@ def main() -> int:
         raise SearchError(f"time bench binary not found: {time_bin}")
 
     results: List[Dict[str, str]] = []
+    all_protocols: List[str] = []
+    rings: List[str] = []
     candidate_id = 0
 
-    total = len(sweep_points) * len(soundness_list)
-    for point in sweep_points:
-        for soundness_idx, soundness in enumerate(soundness_list):
-            candidate_id += 1
-            print(
-                (
-                    f"[search] candidate {candidate_id}/{total}: "
-                    f"n={point.n}, d={point.d}, rho={point.rho}, "
-                    f"fri_mode={fri_soundness_mode}, "
-                    f"fri_m={'auto' if fri_repetitions is None else fri_repetitions}, "
-                    f"lambda={soundness.lambda_target}, pow={soundness.pow_bits}, "
-                    f"sec={soundness.sec_mode}, queries={soundness.queries}"
-                ),
-                file=sys.stderr,
-            )
+    for experiment_index, (preset_source_index, preset) in enumerate(
+        experiments, start=1
+    ):
+        experiment_name = str(preset.get("name", f"experiment_{experiment_index}"))
+        if "ring" in preset:
+            ring = parse_ring(str(preset["ring"]))
+        else:
+            raise SearchError(f"preset experiment {experiment_name} is missing ring")
 
-            time_cmd = build_time_command(
-                time_bin,
-                ring,
-                protocols,
-                point,
-                soundness,
-                fri_soundness_mode,
-                fri_repetitions,
-                args,
-            )
-            time_rows = run_csv_command(time_cmd)
+        ring_label = f"GR({ring.p}^{ring.k_exp},{ring.r})"
+        if ring_label not in rings:
+            rings.append(ring_label)
 
-            for row in time_rows:
-                merged: Dict[str, str] = {
-                    "search_candidate_id": str(candidate_id),
-                    "search_soundness_id": str(soundness_idx),
-                    "search_queries_spec": soundness.queries,
-                    "search_time_metric": args.time_metric,
-                }
-                merged.update({key: str(value) for key, value in row.items()})
-                results.append(merged)
+        protocols = resolve_protocols(args, preset)
+        for protocol in protocols:
+            if protocol not in all_protocols:
+                all_protocols.append(protocol)
 
-    combined_path = Path(args.combined_csv)
+        soundness_list = resolve_soundness_configs(args, preset)
+        fri_soundness_mode = resolve_fri_soundness_mode(args, preset)
+        fri_repetitions = resolve_fri_repetitions(args, preset, fri_soundness_mode)
+        whir_options = resolve_whir_options(args, preset)
+        sweep_points = resolve_sweep_points(args, preset)
+        runtime_args = effective_runtime_args(args, preset)
+
+        total = len(sweep_points) * len(soundness_list)
+        local_candidate_id = 0
+        for point in sweep_points:
+            for soundness_idx, soundness in enumerate(soundness_list):
+                candidate_id += 1
+                local_candidate_id += 1
+                print(
+                    (
+                        f"[search] experiment {experiment_index}/{len(experiments)} "
+                        f"{experiment_name} (preset index {preset_source_index}), "
+                        f"candidate {candidate_id} "
+                        f"(local {local_candidate_id}/{total}): "
+                        f"n={point.n}, d={point.d}, rho={point.rho}, "
+                        f"fri_mode={fri_soundness_mode}, "
+                        f"fri_m={'auto' if fri_repetitions is None else fri_repetitions}, "
+                        f"lambda={soundness.lambda_target}, pow={soundness.pow_bits}, "
+                        f"sec={soundness.sec_mode}, queries={soundness.queries}"
+                    ),
+                    file=sys.stderr,
+                )
+
+                time_cmd = build_time_command(
+                    time_bin,
+                    ring,
+                    protocols,
+                    point,
+                    soundness,
+                    fri_soundness_mode,
+                    fri_repetitions,
+                    whir_options,
+                    runtime_args,
+                )
+                time_rows = run_csv_command(time_cmd)
+
+                for row in time_rows:
+                    merged: Dict[str, str] = {
+                        "preset_experiment": experiment_name,
+                        "search_candidate_id": str(candidate_id),
+                        "search_soundness_id": str(soundness_idx),
+                        "search_queries_spec": soundness.queries,
+                        "search_time_metric": args.time_metric,
+                    }
+                    merged.update({key: str(value) for key, value in row.items()})
+                    results.append(merged)
+
+    combined_path, summary_path = resolve_output_paths(args)
     write_csv(combined_path, results)
 
-    summary_path = Path(args.summary_md)
     write_summary(
         path=summary_path,
         rows=results,
-        protocols=protocols,
+        protocols=all_protocols,
         include_time=args.include_time,
         time_metric=args.time_metric,
         top_k=args.top_k,
         time_top_k=args.time_top_k,
         meta={
-            "ring": f"GR({ring.p}^{ring.k_exp},{ring.r})",
+            "ring": ", ".join(rings),
             "build_dir": str(build_dir),
             "time_bin": str(time_bin),
             "include_time": str(args.include_time).lower(),
-            "fri_soundness_mode": fri_soundness_mode,
-            "fri_repetitions": "auto" if fri_repetitions is None else str(fri_repetitions),
         },
     )
 

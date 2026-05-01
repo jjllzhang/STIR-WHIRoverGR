@@ -1,0 +1,28 @@
+{
+  "defaults": {
+    "protocols": ["stir9to3"],
+    "lambda_target": 128,
+    "pow_bits_size": 22,
+    "pow_bits_time": 0,
+    "queries": "auto",
+    "stop_degree": 9,
+    "ood_samples": 2,
+    "threads": 1
+  },
+  "experiments": [
+    {
+      "name": "gr216_r162_main",
+      "ring": "GR(2^16,162)",
+      "n": 243,
+      "d": 81,
+      "rho": "1/3"
+    },
+    {
+      "name": "gr216_r486_two_round",
+      "ring": "GR(2^16,486)",
+      "n": 729,
+      "d": 243,
+      "rho": "1/3"
+    }
+  ]
+}
