@@ -26,11 +26,11 @@ std::filesystem::path g_test_binary_dir;
 
 namespace {
 
-using swgr::Domain;
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::poly_utils::Polynomial;
+using stir_whir_gr::Domain;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::poly_utils::Polynomial;
 
 std::uint64_t EncodedRingVectorBytes(const GRContext& ctx,
                                      std::size_t value_count) {
@@ -46,8 +46,8 @@ std::uint64_t EncodedPolynomialBytes(const GRContext& ctx,
 }
 
 std::uint64_t LegacyRawStirBytes(const GRContext& ctx,
-                                 const swgr::stir::StirProofWithWitness& artifact) {
-  std::uint64_t bytes = swgr::stir::serialized_message_bytes(ctx, artifact.proof);
+                                 const stir_whir_gr::stir::StirProofWithWitness& artifact) {
+  std::uint64_t bytes = stir_whir_gr::stir::serialized_message_bytes(ctx, artifact.proof);
   bytes += sizeof(std::uint64_t);
   for (const auto& round_witness : artifact.witness.rounds) {
     bytes += EncodedPolynomialBytes(ctx, round_witness.input_polynomial);
@@ -77,10 +77,10 @@ Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
   });
 }
 
-swgr::stir::StirParameters MakeParams(
+stir_whir_gr::stir::StirParameters MakeParams(
     std::vector<std::uint64_t> query_repetitions = {1},
     std::uint64_t stop_degree = 3) {
-  swgr::stir::StirParameters params;
+  stir_whir_gr::stir::StirParameters params;
   params.virtual_fold_factor = 9;
   params.shift_power = 3;
   params.ood_samples = 2;
@@ -88,30 +88,30 @@ swgr::stir::StirParameters MakeParams(
   params.stop_degree = stop_degree;
   params.lambda_target = 64;
   params.pow_bits = 0;
-  params.sec_mode = swgr::SecurityMode::ConjectureCapacity;
-  params.hash_profile = swgr::HashProfile::STIR_NATIVE;
+  params.sec_mode = stir_whir_gr::SecurityMode::ConjectureCapacity;
+  params.hash_profile = stir_whir_gr::HashProfile::STIR_NATIVE;
   return params;
 }
 
-swgr::stir::StirParameters MakeAutoParams(std::uint64_t stop_degree = 3) {
+stir_whir_gr::stir::StirParameters MakeAutoParams(std::uint64_t stop_degree = 3) {
   return MakeParams({}, stop_degree);
 }
 
-swgr::stir::StirParameters MakeTheoremParams(
+stir_whir_gr::stir::StirParameters MakeTheoremParams(
     std::vector<std::uint64_t> query_repetitions = {1},
     std::uint64_t stop_degree = 3) {
   auto params = MakeParams(std::move(query_repetitions), stop_degree);
-  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGr;
-  params.challenge_sampling = swgr::stir::StirChallengeSampling::TeichmullerT;
+  params.protocol_mode = stir_whir_gr::stir::StirProtocolMode::TheoremGr;
+  params.challenge_sampling = stir_whir_gr::stir::StirChallengeSampling::TeichmullerT;
   params.ood_sampling =
-      swgr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
+      stir_whir_gr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
   return params;
 }
 
-swgr::stir::StirInstance MakeInstance(const GRContext& ctx,
+stir_whir_gr::stir::StirInstance MakeInstance(const GRContext& ctx,
                                       std::uint64_t domain_size = 27,
                                       std::uint64_t claimed_degree = 26) {
-  return swgr::stir::StirInstance{
+  return stir_whir_gr::stir::StirInstance{
       .domain = Domain::teichmuller_subgroup(ctx, domain_size),
       .claimed_degree = claimed_degree,
   };
@@ -138,43 +138,43 @@ void FlipFirstByte(std::vector<std::uint8_t>* bytes) {
   }
 }
 
-void TamperInitialRoot(swgr::stir::StirProof* proof) {
+void TamperInitialRoot(stir_whir_gr::stir::StirProof* proof) {
   FlipFirstByte(&proof->initial_root);
 }
 
-void TamperPrevQueryPayload(swgr::stir::StirProof* proof) {
+void TamperPrevQueryPayload(stir_whir_gr::stir::StirProof* proof) {
   FlipFirstByte(&proof->rounds[0].queries_to_prev.leaf_payloads[0]);
 }
 
-void TamperGRoot(swgr::stir::StirProof* proof) { FlipFirstByte(&proof->rounds[0].g_root); }
+void TamperGRoot(stir_whir_gr::stir::StirProof* proof) { FlipFirstByte(&proof->rounds[0].g_root); }
 
-void TamperBeta(const GRContext& ctx, swgr::stir::StirProof* proof) {
+void TamperBeta(const GRContext& ctx, stir_whir_gr::stir::StirProof* proof) {
   ctx.with_ntl_context([&] {
     proof->rounds[0].betas[0] += ctx.one();
     return 0;
   });
 }
 
-void TamperAnsPolynomial(const GRContext& ctx, swgr::stir::StirProof* proof) {
+void TamperAnsPolynomial(const GRContext& ctx, stir_whir_gr::stir::StirProof* proof) {
   NudgePolynomial(ctx, &proof->rounds[0].ans_polynomial);
 }
 
 void TamperShakePolynomial(const GRContext& ctx,
-                           swgr::stir::StirProof* proof) {
+                           stir_whir_gr::stir::StirProof* proof) {
   NudgePolynomial(ctx, &proof->rounds[0].shake_polynomial);
 }
 
 void TamperFinalPolynomial(const GRContext& ctx,
-                           swgr::stir::StirProof* proof) {
+                           stir_whir_gr::stir::StirProof* proof) {
   NudgePolynomial(ctx, &proof->final_polynomial);
 }
 
-void TamperFinalQueryPayload(swgr::stir::StirProof* proof) {
+void TamperFinalQueryPayload(stir_whir_gr::stir::StirProof* proof) {
   FlipFirstByte(&proof->queries_to_final.leaf_payloads[0]);
 }
 
 void TamperCompatWitness(const GRContext& ctx,
-                         swgr::stir::StirProofWithWitness* artifact) {
+                         stir_whir_gr::stir::StirProofWithWitness* artifact) {
   NudgePolynomial(ctx, &artifact->witness.rounds[0].input_polynomial);
 }
 
@@ -232,8 +232,8 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   const auto proof = prover.prove(instance, polynomial);
   const auto artifact = prover.prove_with_witness(instance, polynomial);
 
@@ -251,7 +251,7 @@ void TestStir9to3HonestRoundtripAndRoundShape() {
            artifact.witness.rounds[0].answer_polynomial.coefficients());
   CHECK(proof.final_polynomial.degree() <= std::size_t{0});
   CHECK_EQ(proof.stats.serialized_bytes,
-           swgr::stir::serialized_message_bytes(ctx, proof));
+           stir_whir_gr::stir::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
 }
 
@@ -266,8 +266,8 @@ void TestStirMultiRoundUsesPublicRootChain() {
   const auto polynomial = SamplePolynomial(
       ctx, instance.domain, static_cast<std::size_t>(instance.claimed_degree + 1));
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   const auto proof = prover.prove(instance, polynomial);
   const auto artifact = prover.prove_with_witness(instance, polynomial);
 
@@ -278,7 +278,7 @@ void TestStirMultiRoundUsesPublicRootChain() {
   CHECK_EQ(proof.rounds[1].queries_to_prev.queried_indices.size(), std::size_t{1});
   CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
   CHECK_EQ(proof.stats.serialized_bytes,
-           swgr::stir::serialized_message_bytes(ctx, proof));
+           stir_whir_gr::stir::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
 }
 
@@ -291,8 +291,8 @@ void TestStirZeroRoundFinalFoldStillVerifies() {
   const auto params = MakeParams({1}, 9);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   const auto proof = prover.prove(instance, polynomial);
 
   CHECK(verifier.verify(instance, proof));
@@ -313,8 +313,8 @@ void TestStirAutoScheduleMatchesConjectureCapacityDefault() {
   const auto polynomial = SamplePolynomial(
       ctx, instance.domain, static_cast<std::size_t>(instance.claimed_degree + 1));
 
-  const swgr::stir::StirProver prover(auto_params);
-  const swgr::stir::StirVerifier verifier(auto_params);
+  const stir_whir_gr::stir::StirProver prover(auto_params);
+  const stir_whir_gr::stir::StirVerifier verifier(auto_params);
   const auto proof = prover.prove(instance, polynomial);
 
   CHECK(verifier.verify(instance, proof));
@@ -339,12 +339,12 @@ void TestStirManualQueriesOverrideAutoSchedule() {
   auto manual_params = MakeParams({1, 1}, 3);
   manual_params.ood_samples = 1;
 
-  const swgr::stir::StirProver auto_prover(auto_params);
-  const swgr::stir::StirVerifier auto_verifier(auto_params);
+  const stir_whir_gr::stir::StirProver auto_prover(auto_params);
+  const stir_whir_gr::stir::StirVerifier auto_verifier(auto_params);
   const auto auto_proof = auto_prover.prove(instance, polynomial);
 
-  const swgr::stir::StirProver manual_prover(manual_params);
-  const swgr::stir::StirVerifier manual_verifier(manual_params);
+  const stir_whir_gr::stir::StirProver manual_prover(manual_params);
+  const stir_whir_gr::stir::StirVerifier manual_verifier(manual_params);
   const auto manual_proof = manual_prover.prove(instance, polynomial);
 
   CHECK(auto_verifier.verify(instance, auto_proof));
@@ -370,15 +370,15 @@ void TestStirCapsOversubscribedQueriesWithDegreeBudget() {
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
   const auto schedule_metadata =
-      swgr::stir::resolve_query_schedule_metadata(params, instance);
+      stir_whir_gr::stir::resolve_query_schedule_metadata(params, instance);
   CHECK_EQ(schedule_metadata.size(), std::size_t{1});
   CHECK_EQ(schedule_metadata[0].requested_query_count, std::uint64_t{10});
   CHECK_EQ(schedule_metadata[0].bundle_count, std::uint64_t{3});
   CHECK_EQ(schedule_metadata[0].effective_query_count, std::uint64_t{1});
   CHECK(schedule_metadata[0].cap_applied);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   const auto proof = prover.prove(instance, polynomial);
   CHECK(verifier.verify(instance, proof));
   CHECK_EQ(proof.rounds.size(), std::size_t{1});
@@ -396,15 +396,15 @@ void TestStirExceptionalSetsStayUnitDifferenceSafe() {
   const auto shift_domain = instance.domain.scale_offset(3);
   const std::vector<std::uint8_t> seed_material{0x53, 0x57, 0x47, 0x52};
 
-  CHECK(swgr::stir::domains_have_unit_differences(shift_domain, folded_domain));
+  CHECK(stir_whir_gr::stir::domains_have_unit_differences(shift_domain, folded_domain));
 
-  const auto ood_points = swgr::stir::derive_ood_points(
+  const auto ood_points = stir_whir_gr::stir::derive_ood_points(
       instance.domain, shift_domain, folded_domain, seed_material, 0, 2);
-  CHECK(swgr::stir::points_have_unit_differences(shift_domain, ood_points));
-  CHECK(swgr::stir::points_have_unit_differences(folded_domain, ood_points));
+  CHECK(stir_whir_gr::stir::points_have_unit_differences(shift_domain, ood_points));
+  CHECK(stir_whir_gr::stir::points_have_unit_differences(folded_domain, ood_points));
 
   const std::vector<GRElem> bad_points{shift_domain.element(0)};
-  CHECK(!swgr::stir::points_have_unit_differences(shift_domain, bad_points));
+  CHECK(!stir_whir_gr::stir::points_have_unit_differences(shift_domain, bad_points));
 }
 
 void TestStirTheoremChallengesLieInTeichmullerSet() {
@@ -412,18 +412,18 @@ void TestStirTheoremChallengesLieInTeichmullerSet() {
       "stir theorem folding and comb challenges are sampled from T");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  swgr::crypto::Transcript transcript(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
 
   for (std::size_t round_index = 0; round_index < 16; ++round_index) {
     const std::vector<std::uint8_t> root_bytes{
         static_cast<std::uint8_t>(0x40U + round_index)};
     transcript.absorb_bytes(root_bytes);
-    const auto folding = swgr::stir::derive_stir_folding_challenge(
+    const auto folding = stir_whir_gr::stir::derive_stir_folding_challenge(
         transcript, ctx, "stir.fold_alpha:" + std::to_string(round_index));
-    const auto comb = swgr::stir::derive_stir_comb_challenge(
+    const auto comb = stir_whir_gr::stir::derive_stir_comb_challenge(
         transcript, ctx, "stir.comb:" + std::to_string(round_index));
-    CHECK(swgr::algebra::is_teichmuller_element(ctx, folding));
-    CHECK(swgr::algebra::is_teichmuller_element(ctx, comb));
+    CHECK(stir_whir_gr::algebra::is_teichmuller_element(ctx, folding));
+    CHECK(stir_whir_gr::algebra::is_teichmuller_element(ctx, comb));
   }
 }
 
@@ -444,9 +444,9 @@ void TestStirTeichmullerUnitSubsetHelper() {
   const Domain non_teich_coset =
       Domain::teichmuller_coset(ctx, non_teich_unit, 9);
 
-  CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(subgroup));
-  CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(teich_coset));
-  CHECK(!swgr::stir::domain_is_subset_of_teichmuller_units(non_teich_coset));
+  CHECK(stir_whir_gr::stir::domain_is_subset_of_teichmuller_units(subgroup));
+  CHECK(stir_whir_gr::stir::domain_is_subset_of_teichmuller_units(teich_coset));
+  CHECK(!stir_whir_gr::stir::domain_is_subset_of_teichmuller_units(non_teich_coset));
 }
 
 void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
@@ -457,17 +457,17 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
   const auto instance = MakeInstance(ctx, 27, 26);
   const auto folded_domain = instance.domain.pow_map(9);
   const auto shift_domain = instance.domain.scale_offset(3);
-  swgr::crypto::Transcript ood_transcript(swgr::HashProfile::STIR_NATIVE);
-  swgr::crypto::Transcript shake_transcript(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript ood_transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript shake_transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
 
-  const auto ood_points = swgr::stir::derive_theorem_ood_points(
+  const auto ood_points = stir_whir_gr::stir::derive_theorem_ood_points(
       instance.domain, shift_domain, folded_domain, ood_transcript,
       "stir.theorem.ood", 2);
   CHECK_EQ(ood_points.size(), std::size_t{2});
-  CHECK(swgr::stir::theorem_ood_pool_has_capacity(
+  CHECK(stir_whir_gr::stir::theorem_ood_pool_has_capacity(
       instance.domain, shift_domain, folded_domain, 2));
   for (const auto& point : ood_points) {
-    CHECK(swgr::algebra::is_teichmuller_element(ctx, point));
+    CHECK(stir_whir_gr::algebra::is_teichmuller_element(ctx, point));
     CHECK(ctx.is_unit(point));
     CHECK(!instance.domain.contains(point));
     CHECK(!shift_domain.contains(point));
@@ -477,12 +477,12 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
   std::vector<GRElem> quotient_points = ood_points;
   quotient_points.push_back(folded_domain.element(0));
   quotient_points.push_back(folded_domain.element(1));
-  const auto shake_point = swgr::stir::derive_theorem_shake_point(
+  const auto shake_point = stir_whir_gr::stir::derive_theorem_shake_point(
       instance.domain, shift_domain, folded_domain, quotient_points,
       shake_transcript, "stir.theorem.shake");
-  CHECK(swgr::stir::theorem_shake_pool_has_capacity(
+  CHECK(stir_whir_gr::stir::theorem_shake_pool_has_capacity(
       instance.domain, shift_domain, folded_domain, quotient_points));
-  CHECK(swgr::algebra::is_teichmuller_element(ctx, shake_point));
+  CHECK(stir_whir_gr::algebra::is_teichmuller_element(ctx, shake_point));
   CHECK(ctx.is_unit(shake_point));
   CHECK(!instance.domain.contains(shake_point));
   CHECK(!shift_domain.contains(shake_point));
@@ -491,12 +491,12 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
         quotient_points.end());
 
   const auto theorem_params = MakeTheoremParams();
-  swgr::crypto::Transcript wrapped_ood_transcript(swgr::HashProfile::STIR_NATIVE);
-  swgr::crypto::Transcript direct_ood_transcript(swgr::HashProfile::STIR_NATIVE);
-  const auto wrapped_ood_points = swgr::stir::derive_ood_points(
+  stir_whir_gr::crypto::Transcript wrapped_ood_transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript direct_ood_transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
+  const auto wrapped_ood_points = stir_whir_gr::stir::derive_ood_points(
       theorem_params, instance.domain, shift_domain, folded_domain,
       wrapped_ood_transcript, "stir.theorem.ood.dispatch", 2);
-  const auto direct_ood_points = swgr::stir::derive_theorem_ood_points(
+  const auto direct_ood_points = stir_whir_gr::stir::derive_theorem_ood_points(
       instance.domain, shift_domain, folded_domain, direct_ood_transcript,
       "stir.theorem.ood.dispatch", 2);
   CHECK_EQ(wrapped_ood_points.size(), direct_ood_points.size());
@@ -504,12 +504,12 @@ void TestStirTheoremExceptionalSamplersStayInsideTeichmullerUnits() {
     CHECK_EQ(wrapped_ood_points[i], direct_ood_points[i]);
   }
 
-  swgr::crypto::Transcript wrapped_shake_transcript(swgr::HashProfile::STIR_NATIVE);
-  swgr::crypto::Transcript direct_shake_transcript(swgr::HashProfile::STIR_NATIVE);
-  const auto wrapped_shake_point = swgr::stir::derive_shake_point(
+  stir_whir_gr::crypto::Transcript wrapped_shake_transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript direct_shake_transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
+  const auto wrapped_shake_point = stir_whir_gr::stir::derive_shake_point(
       theorem_params, instance.domain, shift_domain, folded_domain,
       quotient_points, wrapped_shake_transcript, "stir.theorem.shake.dispatch");
-  const auto direct_shake_dispatch = swgr::stir::derive_theorem_shake_point(
+  const auto direct_shake_dispatch = stir_whir_gr::stir::derive_theorem_shake_point(
       instance.domain, shift_domain, folded_domain, quotient_points,
       direct_shake_transcript, "stir.theorem.shake.dispatch");
   CHECK_EQ(wrapped_shake_point, direct_shake_dispatch);
@@ -527,19 +527,19 @@ void TestStirTheoremValidationRejectsBadDomainsAndExhaustedPools() {
       three += ctx.one();
       return three;
     });
-    const swgr::stir::StirInstance bad_instance{
+    const stir_whir_gr::stir::StirInstance bad_instance{
         .domain = Domain::teichmuller_coset(ctx, non_teich_unit, 9),
         .claimed_degree = 8,
     };
 
-    CHECK(!swgr::stir::domain_is_subset_of_teichmuller_units(
+    CHECK(!stir_whir_gr::stir::domain_is_subset_of_teichmuller_units(
         bad_instance.domain));
-    CHECK(!swgr::stir::validate(MakeTheoremParams({1}, 3), bad_instance));
+    CHECK(!stir_whir_gr::stir::validate(MakeTheoremParams({1}, 3), bad_instance));
   }
 
   {
     const GRContext ctx(GRConfig{.p = 487, .k_exp = 2, .r = 1});
-    const swgr::stir::StirInstance saturated_instance{
+    const stir_whir_gr::stir::StirInstance saturated_instance{
         .domain = Domain::teichmuller_subgroup(ctx, 486),
         .claimed_degree = 485,
     };
@@ -547,19 +547,19 @@ void TestStirTheoremValidationRejectsBadDomainsAndExhaustedPools() {
     const auto folded_domain = saturated_instance.domain.pow_map(9);
     std::vector<GRElem> quotient_points{folded_domain.element(0)};
 
-    CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(
+    CHECK(stir_whir_gr::stir::domain_is_subset_of_teichmuller_units(
         saturated_instance.domain));
-    CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(shift_domain));
-    CHECK(swgr::stir::domain_is_subset_of_teichmuller_units(folded_domain));
-    CHECK(!swgr::stir::theorem_ood_pool_has_capacity(
+    CHECK(stir_whir_gr::stir::domain_is_subset_of_teichmuller_units(shift_domain));
+    CHECK(stir_whir_gr::stir::domain_is_subset_of_teichmuller_units(folded_domain));
+    CHECK(!stir_whir_gr::stir::theorem_ood_pool_has_capacity(
         saturated_instance.domain, shift_domain, folded_domain, 1));
-    CHECK(!swgr::stir::theorem_shake_pool_has_capacity(
+    CHECK(!stir_whir_gr::stir::theorem_shake_pool_has_capacity(
         saturated_instance.domain, shift_domain, folded_domain,
         quotient_points));
 
     auto theorem_params = MakeTheoremParams({1}, 3);
     theorem_params.ood_samples = 1;
-    CHECK(!swgr::stir::validate(theorem_params, saturated_instance));
+    CHECK(!stir_whir_gr::stir::validate(theorem_params, saturated_instance));
   }
 }
 
@@ -572,8 +572,8 @@ void TestStirTheoremModeHonestRoundtripAndRoundShape() {
   const auto params = MakeTheoremParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   const auto proof = prover.prove(instance, polynomial);
   const auto artifact = prover.prove_with_witness(instance, polynomial);
 
@@ -589,7 +589,7 @@ void TestStirTheoremModeHonestRoundtripAndRoundShape() {
   CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
   CHECK(proof.final_polynomial.degree() <= std::size_t{0});
   CHECK_EQ(proof.stats.serialized_bytes,
-           swgr::stir::serialized_message_bytes(ctx, proof));
+           stir_whir_gr::stir::serialized_message_bytes(ctx, proof));
   CHECK(proof.stats.serialized_bytes < LegacyRawStirBytes(ctx, artifact));
 }
 
@@ -604,8 +604,8 @@ void TestStirTheoremModeMultiRoundUsesPublicRootChain() {
   const auto polynomial = SamplePolynomial(
       ctx, instance.domain, static_cast<std::size_t>(instance.claimed_degree + 1));
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   const auto proof = prover.prove(instance, polynomial);
 
   CHECK(verifier.verify(instance, proof));
@@ -615,7 +615,7 @@ void TestStirTheoremModeMultiRoundUsesPublicRootChain() {
   CHECK_EQ(proof.rounds[1].queries_to_prev.queried_indices.size(), std::size_t{1});
   CHECK_EQ(proof.queries_to_final.queried_indices.size(), std::size_t{1});
   CHECK_EQ(proof.stats.serialized_bytes,
-           swgr::stir::serialized_message_bytes(ctx, proof));
+           stir_whir_gr::stir::serialized_message_bytes(ctx, proof));
 }
 
 void TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance() {
@@ -623,20 +623,20 @@ void TestStirTheoremSoundnessAnalysisComputesOnSupportedInstance() {
       "theorem stir soundness analysis computes a half-gap supported bound");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 54});
-  const swgr::stir::StirInstance instance{
+  const stir_whir_gr::stir::StirInstance instance{
       .domain = Domain::teichmuller_subgroup(ctx, 81),
       .claimed_degree = 26,
   };
   auto params = MakeTheoremParams({2, 4}, 3);
   params.ood_samples = 1;
 
-  CHECK(swgr::stir::validate(params, instance));
+  CHECK(stir_whir_gr::stir::validate(params, instance));
 
-  const auto analysis = swgr::stir::analyze_theorem_soundness(params, instance);
+  const auto analysis = stir_whir_gr::stir::analyze_theorem_soundness(params, instance);
   CHECK(analysis.feasible);
   CHECK_EQ(
       analysis.flavor,
-      swgr::stir::StirTheoremSoundnessFlavor::GrHalfGapUniqueOod);
+      stir_whir_gr::stir::StirTheoremSoundnessFlavor::GrHalfGapUniqueOod);
   CHECK_EQ(analysis.proximity_gap_model,
            std::string("z2ksnark_gr_half_gap_envelope_s_times_ell_sq_over_T"));
   CHECK_EQ(analysis.ood_model,
@@ -659,13 +659,13 @@ void TestStirTheoremSoundnessAnalysisRejectsUnsupportedRegimes() {
   auto params = MakeTheoremParams({1, 1}, 3);
   params.ood_samples = 1;
 
-  CHECK(swgr::stir::validate(params, instance));
+  CHECK(stir_whir_gr::stir::validate(params, instance));
 
-  const auto analysis = swgr::stir::analyze_theorem_soundness(params, instance);
+  const auto analysis = stir_whir_gr::stir::analyze_theorem_soundness(params, instance);
   CHECK(!analysis.feasible);
   CHECK_EQ(
       analysis.flavor,
-      swgr::stir::StirTheoremSoundnessFlavor::GrHalfGapUniqueOod);
+      stir_whir_gr::stir::StirTheoremSoundnessFlavor::GrHalfGapUniqueOod);
   CHECK(analysis.rounds.size() <= std::size_t{2});
   CHECK(analysis.rounds.empty() || analysis.rounds[0].epsilon_out == 0.0L);
   CHECK(analysis.epsilon_fold >= 0.0L);
@@ -681,7 +681,7 @@ void TestStirTheoremQuerySolverFindsMinimalScheduleOnSupportedInstance() {
       "theorem stir query solver finds a minimal supported explicit schedule");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 54});
-  const swgr::stir::StirInstance instance{
+  const stir_whir_gr::stir::StirInstance instance{
       .domain = Domain::teichmuller_subgroup(ctx, 81),
       .claimed_degree = 26,
   };
@@ -690,7 +690,7 @@ void TestStirTheoremQuerySolverFindsMinimalScheduleOnSupportedInstance() {
   params.ood_samples = 1;
 
   const auto solved =
-      swgr::stir::solve_min_query_schedule_for_lambda(params, instance);
+      stir_whir_gr::stir::solve_min_query_schedule_for_lambda(params, instance);
   CHECK(solved.feasible);
   CHECK_EQ(solved.analysis.effective_security_bits, std::uint64_t{1});
   CHECK_EQ(solved.query_schedule.size(), std::size_t{2});
@@ -703,7 +703,7 @@ void TestStirTheoremQuerySolverReportsInfeasibleMainWorkload() {
       "theorem stir query solver reports infeasible lambda targets on unsupported main-workload style instances");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 162});
-  const swgr::stir::StirInstance instance{
+  const stir_whir_gr::stir::StirInstance instance{
       .domain = Domain::teichmuller_subgroup(ctx, 243),
       .claimed_degree = 81,
   };
@@ -712,7 +712,7 @@ void TestStirTheoremQuerySolverReportsInfeasibleMainWorkload() {
   params.ood_samples = 2;
 
   const auto solved =
-      swgr::stir::solve_min_query_schedule_for_lambda(params, instance);
+      stir_whir_gr::stir::solve_min_query_schedule_for_lambda(params, instance);
   CHECK(!solved.feasible);
   CHECK(!solved.query_schedule.empty());
   CHECK_EQ(solved.analysis.effective_security_bits, std::uint64_t{4});
@@ -726,8 +726,8 @@ void TestStirRejectsTamperedPrevQueryOpening() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperPrevQueryPayload(&proof);
@@ -743,8 +743,8 @@ void TestStirRejectsTamperedInitialRoot() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperInitialRoot(&proof);
@@ -760,8 +760,8 @@ void TestStirRejectsTamperedGRoot() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperGRoot(&proof);
@@ -777,8 +777,8 @@ void TestStirRejectsTamperedBeta() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperBeta(ctx, &proof);
@@ -794,8 +794,8 @@ void TestStirRejectsTamperedAnsPolynomial() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperAnsPolynomial(ctx, &proof);
@@ -811,8 +811,8 @@ void TestStirRejectsTamperedShakePolynomial() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperShakePolynomial(ctx, &proof);
@@ -828,8 +828,8 @@ void TestStirRejectsTamperedFinalPolynomial() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperFinalPolynomial(ctx, &proof);
@@ -845,8 +845,8 @@ void TestStirRejectsTamperedFinalOpening() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto proof = prover.prove(instance, polynomial);
 
   TamperFinalQueryPayload(&proof);
@@ -863,8 +863,8 @@ void TestStirCompatWitnessNoLongerDrivesVerification() {
   const auto params = MakeParams();
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 27);
 
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
   auto artifact = prover.prove_with_witness(instance, polynomial);
 
   TamperCompatWitness(ctx, &artifact);
@@ -878,57 +878,57 @@ void TestStirValidationRejectsBadInputs() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const auto instance = MakeInstance(ctx);
-  CHECK(swgr::stir::validate(MakeParams(), instance));
+  CHECK(stir_whir_gr::stir::validate(MakeParams(), instance));
 
   auto bad_fold = MakeParams();
   bad_fold.virtual_fold_factor = 3;
-  CHECK(!swgr::stir::validate(bad_fold));
+  CHECK(!stir_whir_gr::stir::validate(bad_fold));
 
   auto bad_shift = MakeParams();
   bad_shift.shift_power = 9;
-  CHECK(!swgr::stir::validate(bad_shift));
+  CHECK(!stir_whir_gr::stir::validate(bad_shift));
 
   auto bad_queries = MakeParams();
   bad_queries.query_repetitions = {1, 0};
-  CHECK(!swgr::stir::validate(bad_queries));
+  CHECK(!stir_whir_gr::stir::validate(bad_queries));
 
-  const swgr::stir::StirParameters default_params;
+  const stir_whir_gr::stir::StirParameters default_params;
   CHECK_EQ(default_params.protocol_mode,
-           swgr::stir::StirProtocolMode::PrototypeEngineering);
+           stir_whir_gr::stir::StirProtocolMode::PrototypeEngineering);
   CHECK_EQ(default_params.challenge_sampling,
-           swgr::stir::StirChallengeSampling::AmbientRing);
+           stir_whir_gr::stir::StirChallengeSampling::AmbientRing);
   CHECK_EQ(default_params.ood_sampling,
-           swgr::stir::StirOodSamplingMode::PrototypeShiftedCoset);
+           stir_whir_gr::stir::StirOodSamplingMode::PrototypeShiftedCoset);
 
   auto theorem_with_ambient_challenge = MakeTheoremParams();
   theorem_with_ambient_challenge.challenge_sampling =
-      swgr::stir::StirChallengeSampling::AmbientRing;
-  CHECK(!swgr::stir::validate(theorem_with_ambient_challenge));
+      stir_whir_gr::stir::StirChallengeSampling::AmbientRing;
+  CHECK(!stir_whir_gr::stir::validate(theorem_with_ambient_challenge));
 
   auto theorem_with_prototype_ood = MakeTheoremParams();
   theorem_with_prototype_ood.ood_sampling =
-      swgr::stir::StirOodSamplingMode::PrototypeShiftedCoset;
-  CHECK(!swgr::stir::validate(theorem_with_prototype_ood));
+      stir_whir_gr::stir::StirOodSamplingMode::PrototypeShiftedCoset;
+  CHECK(!stir_whir_gr::stir::validate(theorem_with_prototype_ood));
 
-  CHECK(swgr::stir::validate(MakeTheoremParams(), instance));
+  CHECK(stir_whir_gr::stir::validate(MakeTheoremParams(), instance));
 
-  const swgr::stir::StirInstance bad_degree{
+  const stir_whir_gr::stir::StirInstance bad_degree{
       .domain = instance.domain,
       .claimed_degree = instance.domain.size(),
   };
-  CHECK(!swgr::stir::validate(MakeParams(), bad_degree));
-  CHECK(swgr::stir::domains_have_unit_differences(
+  CHECK(!stir_whir_gr::stir::validate(MakeParams(), bad_degree));
+  CHECK(stir_whir_gr::stir::domains_have_unit_differences(
       instance.domain.scale_offset(3), instance.domain.pow_map(9)));
 
   auto too_many_queries = MakeParams({2});
-  CHECK(swgr::stir::validate(too_many_queries, instance));
+  CHECK(stir_whir_gr::stir::validate(too_many_queries, instance));
 
   auto no_query_budget = MakeParams({1});
   no_query_budget.ood_samples = 3;
-  CHECK(!swgr::stir::validate(no_query_budget, instance));
+  CHECK(!stir_whir_gr::stir::validate(no_query_budget, instance));
 
   const auto tiny_instance = MakeInstance(ctx, 3, 2);
-  CHECK(!swgr::stir::validate(MakeParams(), tiny_instance));
+  CHECK(!stir_whir_gr::stir::validate(MakeParams(), tiny_instance));
 }
 
 void TestStirBenchTimeEmitsTheoremMetadataAndUnsupportedZeroBits() {
@@ -1029,13 +1029,13 @@ void TestStirFreshContextsStayStableAcrossAutoAndManualSchedules() {
     auto manual_params = MakeParams({1, 1}, 3);
     manual_params.ood_samples = 1;
 
-    const swgr::stir::StirProver auto_prover(auto_params);
-    const swgr::stir::StirVerifier auto_verifier(auto_params);
+    const stir_whir_gr::stir::StirProver auto_prover(auto_params);
+    const stir_whir_gr::stir::StirVerifier auto_verifier(auto_params);
     const auto auto_proof = auto_prover.prove(instance, polynomial);
     CHECK(auto_verifier.verify(instance, auto_proof));
 
-    const swgr::stir::StirProver manual_prover(manual_params);
-    const swgr::stir::StirVerifier manual_verifier(manual_params);
+    const stir_whir_gr::stir::StirProver manual_prover(manual_params);
+    const stir_whir_gr::stir::StirVerifier manual_verifier(manual_params);
     const auto manual_proof = manual_prover.prove(instance, polynomial);
     CHECK(manual_verifier.verify(instance, manual_proof));
   }

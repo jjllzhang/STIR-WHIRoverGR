@@ -1,5 +1,5 @@
-#ifndef SWGR_STIR_COMMON_HPP_
-#define SWGR_STIR_COMMON_HPP_
+#ifndef STIR_WHIR_GR_STIR_COMMON_HPP_
+#define STIR_WHIR_GR_STIR_COMMON_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -14,7 +14,7 @@
 #include "poly_utils/polynomial.hpp"
 #include "stir/parameters.hpp"
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 
 struct StirInstance {
   Domain domain;
@@ -34,28 +34,28 @@ struct StirRoundState {
 
 struct StirRoundProof {
   std::vector<std::uint8_t> g_root;
-  std::vector<swgr::algebra::GRElem> betas;
-  swgr::poly_utils::Polynomial ans_polynomial;
-  swgr::crypto::MerkleProof queries_to_prev;
-  swgr::poly_utils::Polynomial shake_polynomial;
+  std::vector<stir_whir_gr::algebra::GRElem> betas;
+  stir_whir_gr::poly_utils::Polynomial ans_polynomial;
+  stir_whir_gr::crypto::MerkleProof queries_to_prev;
+  stir_whir_gr::poly_utils::Polynomial shake_polynomial;
 };
 
 struct StirRoundWitness {
-  swgr::poly_utils::Polynomial input_polynomial;
-  swgr::poly_utils::Polynomial folded_polynomial;
-  std::vector<swgr::algebra::GRElem> shifted_oracle_evals;
-  swgr::poly_utils::Polynomial answer_polynomial;
-  swgr::poly_utils::Polynomial vanishing_polynomial;
-  swgr::poly_utils::Polynomial quotient_polynomial;
-  swgr::poly_utils::Polynomial next_polynomial;
+  stir_whir_gr::poly_utils::Polynomial input_polynomial;
+  stir_whir_gr::poly_utils::Polynomial folded_polynomial;
+  std::vector<stir_whir_gr::algebra::GRElem> shifted_oracle_evals;
+  stir_whir_gr::poly_utils::Polynomial answer_polynomial;
+  stir_whir_gr::poly_utils::Polynomial vanishing_polynomial;
+  stir_whir_gr::poly_utils::Polynomial quotient_polynomial;
+  stir_whir_gr::poly_utils::Polynomial next_polynomial;
 };
 
 struct StirProof {
   std::vector<std::uint8_t> initial_root;
   std::vector<StirRoundProof> rounds;
-  swgr::poly_utils::Polynomial final_polynomial;
-  swgr::crypto::MerkleProof queries_to_final;
-  swgr::ProofStatistics stats;
+  stir_whir_gr::poly_utils::Polynomial final_polynomial;
+  stir_whir_gr::crypto::MerkleProof queries_to_final;
+  stir_whir_gr::ProofStatistics stats;
 };
 
 struct StirWitness {
@@ -68,19 +68,19 @@ struct StirProofWithWitness {
 };
 
 std::uint64_t serialized_message_bytes(
-    const swgr::algebra::GRContext& ctx, const StirProof& proof);
+    const stir_whir_gr::algebra::GRContext& ctx, const StirProof& proof);
 
 bool points_have_unit_differences(
-    const Domain& domain, std::span<const swgr::algebra::GRElem> points);
+    const Domain& domain, std::span<const stir_whir_gr::algebra::GRElem> points);
 
 bool domains_have_unit_differences(const Domain& lhs, const Domain& rhs);
 
-swgr::algebra::GRElem derive_stir_folding_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_stir_folding_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label);
 
-swgr::algebra::GRElem derive_stir_comb_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_stir_comb_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label);
 
 bool domain_is_subset_of_teichmuller_units(const Domain& domain);
@@ -93,7 +93,7 @@ bool theorem_ood_pool_has_capacity(const Domain& input_domain,
 bool theorem_shake_pool_has_capacity(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    std::span<const swgr::algebra::GRElem> quotient_points);
+    std::span<const stir_whir_gr::algebra::GRElem> quotient_points);
 
 std::uint64_t folded_degree_bound(std::uint64_t degree_bound,
                                   std::uint64_t fold_factor);
@@ -106,59 +106,59 @@ std::vector<std::uint64_t> derive_unique_positions(
     std::uint64_t modulus, std::uint64_t requested_count);
 
 std::vector<std::uint64_t> derive_unique_positions(
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t requested_count);
 
-std::vector<swgr::algebra::GRElem> derive_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
     const std::vector<std::uint8_t>& oracle_commitment, std::uint64_t round_tag,
     std::uint64_t sample_count);
 
-std::vector<swgr::algebra::GRElem> derive_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_ood_points(
     const StirParameters& params, const Domain& input_domain,
     const Domain& shift_domain, const Domain& folded_domain,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t sample_count);
 
-std::vector<swgr::algebra::GRElem> derive_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
-    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    const Domain& folded_domain, stir_whir_gr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count);
 
-std::vector<swgr::algebra::GRElem> derive_theorem_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_theorem_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
-    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    const Domain& folded_domain, stir_whir_gr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count);
 
-swgr::algebra::GRElem derive_shake_point(
+stir_whir_gr::algebra::GRElem derive_shake_point(
     const StirParameters& params, const Domain& input_domain,
     const Domain& shift_domain, const Domain& folded_domain,
-    const std::vector<swgr::algebra::GRElem>& quotient_points,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix);
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_points,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix);
 
-swgr::algebra::GRElem derive_shake_point(
+stir_whir_gr::algebra::GRElem derive_shake_point(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    const std::vector<swgr::algebra::GRElem>& quotient_points,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix);
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_points,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix);
 
-swgr::algebra::GRElem derive_theorem_shake_point(
+stir_whir_gr::algebra::GRElem derive_theorem_shake_point(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    const std::vector<swgr::algebra::GRElem>& quotient_points,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix);
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_points,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix);
 
 bool try_reuse_next_round_input_oracle(
     const Domain& domain,
-    const std::vector<swgr::algebra::GRElem>& shifted_oracle_evals,
-    const swgr::poly_utils::Polynomial& answer_polynomial,
-    const swgr::poly_utils::Polynomial& vanishing_polynomial,
-    const swgr::poly_utils::Polynomial& quotient_polynomial,
-    const swgr::algebra::GRElem& comb_randomness,
+    const std::vector<stir_whir_gr::algebra::GRElem>& shifted_oracle_evals,
+    const stir_whir_gr::poly_utils::Polynomial& answer_polynomial,
+    const stir_whir_gr::poly_utils::Polynomial& vanishing_polynomial,
+    const stir_whir_gr::poly_utils::Polynomial& quotient_polynomial,
+    const stir_whir_gr::algebra::GRElem& comb_randomness,
     std::uint64_t target_degree_bound, std::uint64_t current_degree_bound,
-    std::vector<swgr::algebra::GRElem>* next_oracle_evals);
+    std::vector<stir_whir_gr::algebra::GRElem>* next_oracle_evals);
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir
 
-#endif  // SWGR_STIR_COMMON_HPP_
+#endif  // STIR_WHIR_GR_STIR_COMMON_HPP_

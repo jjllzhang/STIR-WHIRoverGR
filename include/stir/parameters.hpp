@@ -1,12 +1,12 @@
-#ifndef SWGR_STIR_PARAMETERS_HPP_
-#define SWGR_STIR_PARAMETERS_HPP_
+#ifndef STIR_WHIR_GR_STIR_PARAMETERS_HPP_
+#define STIR_WHIR_GR_STIR_PARAMETERS_HPP_
 
 #include <cstdint>
 #include <vector>
 
 #include "../parameters.hpp"
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 
 struct StirInstance;
 
@@ -41,8 +41,8 @@ struct StirParameters {
   std::uint64_t stop_degree = 3;
   std::uint64_t lambda_target = 128;
   std::uint64_t pow_bits = 0;
-  swgr::SecurityMode sec_mode = swgr::SecurityMode::ConjectureCapacity;
-  swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
+  stir_whir_gr::SecurityMode sec_mode = stir_whir_gr::SecurityMode::ConjectureCapacity;
+  stir_whir_gr::HashProfile hash_profile = stir_whir_gr::HashProfile::STIR_NATIVE;
   StirProtocolMode protocol_mode = StirProtocolMode::PrototypeEngineering;
   StirChallengeSampling challenge_sampling = StirChallengeSampling::AmbientRing;
   StirOodSamplingMode ood_sampling =
@@ -56,6 +56,6 @@ std::vector<RoundQueryScheduleMetadata> resolve_query_schedule_metadata(
 std::vector<std::uint64_t> resolve_query_repetitions(
     const StirParameters& params, const StirInstance& instance);
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir
 
-#endif  // SWGR_STIR_PARAMETERS_HPP_
+#endif  // STIR_WHIR_GR_STIR_PARAMETERS_HPP_

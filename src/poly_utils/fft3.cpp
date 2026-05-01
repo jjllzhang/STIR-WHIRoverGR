@@ -15,14 +15,14 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #include <omp.h>
 #endif
 
 using NTL::clear;
 using NTL::power;
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 namespace {
 
 constexpr std::uint64_t kParallelRadix3Threshold = 27U;
@@ -287,7 +287,7 @@ std::shared_ptr<const Radix3Plan> GetOrBuildRadix3Plan(const Domain& domain) {
 }
 
 int CurrentMaxThreads() {
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
   return omp_get_max_threads();
 #else
   return 1;
@@ -581,4 +581,4 @@ std::vector<algebra::GRElem> inverse_fft3(
   });
 }
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils

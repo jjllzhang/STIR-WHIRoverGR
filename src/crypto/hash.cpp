@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 namespace {
 
 constexpr HashBackend kSelectedHashBackend = HashBackend::Blake3;
@@ -78,4 +78,4 @@ std::vector<std::uint8_t> hash_bytes(HashProfile profile,
   return hash_bytes(profile, std::span<const std::uint8_t>(data));
 }
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto

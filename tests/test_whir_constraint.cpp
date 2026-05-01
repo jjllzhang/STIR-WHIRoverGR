@@ -11,14 +11,14 @@
 #include "whir/constraint.hpp"
 #include "whir/multiquadratic.hpp"
 
-using swgr::Domain;
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::whir::MultiQuadraticPolynomial;
-using swgr::whir::TernaryGrid;
-using swgr::whir::WhirConstraint;
-using swgr::whir::WhirSumcheckPolynomial;
+using stir_whir_gr::Domain;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::whir::MultiQuadraticPolynomial;
+using stir_whir_gr::whir::TernaryGrid;
+using stir_whir_gr::whir::WhirConstraint;
+using stir_whir_gr::whir::WhirSumcheckPolynomial;
 
 int g_failures = 0;
 
@@ -41,7 +41,7 @@ GRElem SmallElement(const GRContext &ctx, std::uint64_t value) {
 
 TernaryGrid MakeGrid(const GRContext &ctx) {
   const Domain subgroup = Domain::teichmuller_subgroup(ctx, 3);
-  return swgr::whir::ternary_grid(ctx, subgroup.root());
+  return stir_whir_gr::whir::ternary_grid(ctx, subgroup.root());
 }
 
 std::vector<GRElem> SampleCoefficients(const GRContext &ctx,
@@ -49,8 +49,8 @@ std::vector<GRElem> SampleCoefficients(const GRContext &ctx,
   return ctx.with_ntl_context([&] {
     std::vector<GRElem> coefficients;
     coefficients.reserve(
-        static_cast<std::size_t>(swgr::whir::pow3_checked(variable_count)));
-    for (std::uint64_t i = 0; i < swgr::whir::pow3_checked(variable_count);
+        static_cast<std::size_t>(stir_whir_gr::whir::pow3_checked(variable_count)));
+    for (std::uint64_t i = 0; i < stir_whir_gr::whir::pow3_checked(variable_count);
          ++i) {
       coefficients.push_back(SmallElement((5U * i + 2U) % 13U));
     }
@@ -90,7 +90,7 @@ GRElem SumOverGrid(const GRContext &ctx, const TernaryGrid &grid,
     GRElem sum;
     NTL::clear(sum);
     for (std::uint64_t i = 0;
-         i < swgr::whir::pow3_checked(polynomial.variable_count()); ++i) {
+         i < stir_whir_gr::whir::pow3_checked(polynomial.variable_count()); ++i) {
       const auto point =
           GridPointFromIndex(grid, polynomial.variable_count(), i);
       sum +=
@@ -107,21 +107,21 @@ void TestTernaryGridAndLagrangeBasis() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const TernaryGrid grid = MakeGrid(ctx);
 
-  CHECK(swgr::whir::points_have_pairwise_unit_differences(ctx, grid));
+  CHECK(stir_whir_gr::whir::points_have_pairwise_unit_differences(ctx, grid));
 
   ctx.with_ntl_context([&] {
     for (std::size_t i = 0; i < grid.size(); ++i) {
       for (std::size_t j = 0; j < grid.size(); ++j) {
         const GRElem actual =
-            swgr::whir::lagrange_basis_on_ternary_grid(ctx, grid, i, grid[j]);
+            stir_whir_gr::whir::lagrange_basis_on_ternary_grid(ctx, grid, i, grid[j]);
         CHECK_EQ(actual, i == j ? ctx.one() : ctx.zero());
       }
     }
 
     const auto interpolation_points =
-        swgr::whir::sumcheck_interpolation_points(ctx);
+        stir_whir_gr::whir::sumcheck_interpolation_points(ctx);
     CHECK_EQ(interpolation_points.size(), std::size_t{5});
-    CHECK(swgr::whir::points_have_pairwise_unit_differences(
+    CHECK(stir_whir_gr::whir::points_have_pairwise_unit_differences(
         ctx, interpolation_points));
     return 0;
   });
@@ -194,17 +194,17 @@ void TestHonestSumcheckIdentities() {
     GRElem current_sigma = polynomial.evaluate(ctx, z);
     std::vector<GRElem> prefix;
     for (std::uint64_t round = 0; round < m; ++round) {
-      const WhirSumcheckPolynomial h = swgr::whir::honest_sumcheck_polynomial(
+      const WhirSumcheckPolynomial h = stir_whir_gr::whir::honest_sumcheck_polynomial(
           ctx, polynomial, constraint, prefix);
-      CHECK(swgr::whir::check_sumcheck_degree(h, 4));
+      CHECK(stir_whir_gr::whir::check_sumcheck_degree(h, 4));
       CHECK(
-          swgr::whir::check_sumcheck_identity(ctx, grid, h, current_sigma, 4));
+          stir_whir_gr::whir::check_sumcheck_identity(ctx, grid, h, current_sigma, 4));
 
       const GRElem alpha = ctx.with_ntl_context([&] {
         return grid[static_cast<std::size_t>(round % 3U)] +
                SmallElement(round + 4U);
       });
-      current_sigma = swgr::whir::sumcheck_next_sigma(ctx, h, alpha);
+      current_sigma = stir_whir_gr::whir::sumcheck_next_sigma(ctx, h, alpha);
       prefix.push_back(alpha);
     }
   }
@@ -224,10 +224,10 @@ void TestTamperingAndDeclaredDegreeFail() {
   constraint.add_shift_term(ctx.one(), z);
 
   const WhirSumcheckPolynomial honest =
-      swgr::whir::honest_sumcheck_polynomial(ctx, polynomial, constraint, {});
+      stir_whir_gr::whir::honest_sumcheck_polynomial(ctx, polynomial, constraint, {});
   const GRElem current_sigma = polynomial.evaluate(ctx, z);
   CHECK(
-      swgr::whir::check_sumcheck_identity(ctx, grid, honest, current_sigma, 4));
+      stir_whir_gr::whir::check_sumcheck_identity(ctx, grid, honest, current_sigma, 4));
 
   WhirSumcheckPolynomial tampered = honest;
   if (tampered.coefficients.empty()) {
@@ -238,13 +238,13 @@ void TestTamperingAndDeclaredDegreeFail() {
       return 0;
     });
   }
-  CHECK(!swgr::whir::check_sumcheck_identity(ctx, grid, tampered, current_sigma,
+  CHECK(!stir_whir_gr::whir::check_sumcheck_identity(ctx, grid, tampered, current_sigma,
                                              4));
 
   WhirSumcheckPolynomial declared_too_large = honest;
   declared_too_large.coefficients.resize(6, ctx.zero());
-  CHECK(!swgr::whir::check_sumcheck_degree(declared_too_large, 4));
-  CHECK(!swgr::whir::check_sumcheck_identity(ctx, grid, declared_too_large,
+  CHECK(!stir_whir_gr::whir::check_sumcheck_degree(declared_too_large, 4));
+  CHECK(!stir_whir_gr::whir::check_sumcheck_identity(ctx, grid, declared_too_large,
                                              current_sigma, 4));
 }
 
@@ -269,7 +269,7 @@ void TestInvalidShapesReject() {
   bool no_live_variable_threw = false;
   try {
     const auto full_prefix = SamplePoint(ctx, grid, 2);
-    (void)swgr::whir::honest_sumcheck_polynomial(ctx, polynomial, constraint,
+    (void)stir_whir_gr::whir::honest_sumcheck_polynomial(ctx, polynomial, constraint,
                                                  full_prefix);
   } catch (const std::invalid_argument &) {
     no_live_variable_threw = true;

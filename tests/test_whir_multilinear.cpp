@@ -19,9 +19,9 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
 
 GRElem SmallElement(std::uint64_t value) {
   GRElem out;
@@ -46,17 +46,17 @@ std::vector<GRElem> SmallCoefficients(const GRContext& ctx,
   });
 }
 
-swgr::whir::WhirPublicParameters BuildPublicParameters() {
+stir_whir_gr::whir::WhirPublicParameters BuildPublicParameters() {
   constexpr std::uint64_t kVariableCount = 2;
   constexpr std::uint64_t kDomainSize = 27;
   auto ctx = std::make_shared<GRContext>(
       GRConfig{.p = 2, .k_exp = 16, .r = 18});
-  const swgr::Domain domain =
-      swgr::Domain::teichmuller_subgroup(ctx, kDomainSize);
+  const stir_whir_gr::Domain domain =
+      stir_whir_gr::Domain::teichmuller_subgroup(ctx, kDomainSize);
   return ctx->with_ntl_context([&] {
     const GRElem omega =
         NTL::power(domain.root(), static_cast<long>(kDomainSize / 3U));
-    return swgr::whir::WhirPublicParameters{
+    return stir_whir_gr::whir::WhirPublicParameters{
         .ctx = ctx,
         .initial_domain = domain,
         .variable_count = kVariableCount,
@@ -68,7 +68,7 @@ swgr::whir::WhirPublicParameters BuildPublicParameters() {
         .omega = omega,
         .ternary_grid = {ctx->one(), omega, omega * omega},
         .lambda_target = 32,
-        .hash_profile = swgr::HashProfile::WHIR_NATIVE,
+        .hash_profile = stir_whir_gr::HashProfile::WHIR_NATIVE,
     };
   });
 }
@@ -79,10 +79,10 @@ void TestEvaluationAndEmbedding() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
   const auto coefficients = SmallCoefficients(ctx, 4);
-  const swgr::whir::MultilinearPolynomial multilinear(2, coefficients);
+  const stir_whir_gr::whir::MultilinearPolynomial multilinear(2, coefficients);
   const auto embedded = multilinear.to_multi_quadratic(ctx);
 
-  CHECK_EQ(swgr::whir::pow2_checked(4), std::uint64_t{16});
+  CHECK_EQ(stir_whir_gr::whir::pow2_checked(4), std::uint64_t{16});
   CHECK_EQ(embedded.variable_count(), std::uint64_t{2});
   CHECK_EQ(embedded.coefficients().size(), std::size_t{5});
   CHECK_EQ(embedded.coefficients()[0], coefficients[0]);
@@ -107,13 +107,13 @@ void TestInvalidInputsReject() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
   bool bad_length_threw = false;
   try {
-    (void)swgr::whir::MultilinearPolynomial(2, SmallCoefficients(ctx, 5));
+    (void)stir_whir_gr::whir::MultilinearPolynomial(2, SmallCoefficients(ctx, 5));
   } catch (const std::invalid_argument&) {
     bad_length_threw = true;
   }
   CHECK(bad_length_threw);
 
-  const swgr::whir::MultilinearPolynomial polynomial(2,
+  const stir_whir_gr::whir::MultilinearPolynomial polynomial(2,
                                                     SmallCoefficients(ctx, 4));
   bool bad_point_threw = false;
   try {
@@ -125,7 +125,7 @@ void TestInvalidInputsReject() {
 
   bool overflow_threw = false;
   try {
-    (void)swgr::whir::pow2_checked(64);
+    (void)stir_whir_gr::whir::pow2_checked(64);
   } catch (const std::overflow_error&) {
     overflow_threw = true;
   }
@@ -137,19 +137,19 @@ void TestWhirRoundtripAcceptsMultilinearPolynomial() {
       "WHIR commit/open/verify accepts a multilinear polynomial");
 
   const auto pp = BuildPublicParameters();
-  swgr::whir::WhirParameters params;
+  stir_whir_gr::whir::WhirParameters params;
   params.lambda_target = pp.lambda_target;
   params.hash_profile = pp.hash_profile;
 
-  const swgr::whir::MultilinearPolynomial polynomial(
+  const stir_whir_gr::whir::MultilinearPolynomial polynomial(
       2, SmallCoefficients(*pp.ctx, 4));
   const auto point = pp.ctx->with_ntl_context([&] {
     return std::vector<GRElem>{SmallElement(13), SmallElement(17)};
   });
 
-  const swgr::whir::WhirProver prover(params);
-  const swgr::whir::WhirVerifier verifier(params);
-  swgr::whir::WhirCommitmentState state;
+  const stir_whir_gr::whir::WhirProver prover(params);
+  const stir_whir_gr::whir::WhirVerifier verifier(params);
+  stir_whir_gr::whir::WhirCommitmentState state;
   const auto commitment = prover.commit(pp, polynomial, &state);
   const auto opening = prover.open(commitment, state, point);
 

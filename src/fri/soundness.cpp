@@ -10,7 +10,7 @@
 
 #include <NTL/ZZ.h>
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 namespace {
 
 long CheckedLong(std::uint64_t value, const char* label) {
@@ -140,4 +140,4 @@ StandaloneFriSoundnessAnalysis analyze_standalone_soundness(
   return result;
 }
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri

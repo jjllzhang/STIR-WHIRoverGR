@@ -7,7 +7,7 @@
 #include "soundness/configurator.hpp"
 #include "stir/common.hpp"
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 
 namespace {
 
@@ -39,7 +39,7 @@ bool validate(const StirParameters& params) {
     return false;
   }
 
-  return swgr::soundness::validate_manual_queries(params.query_repetitions);
+  return stir_whir_gr::soundness::validate_manual_queries(params.query_repetitions);
 }
 
 std::vector<std::uint64_t> resolve_query_repetitions(
@@ -59,7 +59,7 @@ std::vector<RoundQueryScheduleMetadata> resolve_query_schedule_metadata(
   const auto requested_schedule =
       params.query_repetitions.empty()
           ? std::vector<std::uint64_t>()
-          : swgr::fri::query_schedule(rounds, params.query_repetitions);
+          : stir_whir_gr::fri::query_schedule(rounds, params.query_repetitions);
 
   std::vector<RoundQueryScheduleMetadata> metadata;
   metadata.reserve(rounds);
@@ -72,7 +72,7 @@ std::vector<RoundQueryScheduleMetadata> resolve_query_schedule_metadata(
     } else {
       const double rho = static_cast<double>(current_degree_bound + 1U) /
                          static_cast<double>(current_domain_size);
-      requested_query_count = swgr::soundness::auto_query_count_for_round(
+      requested_query_count = stir_whir_gr::soundness::auto_query_count_for_round(
           params.sec_mode, params.lambda_target, params.pow_bits, rho,
           round_index);
     }
@@ -180,4 +180,4 @@ bool validate(const StirParameters& params, const StirInstance& instance) {
   return true;
 }
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir

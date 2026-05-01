@@ -14,7 +14,7 @@
 #include "poly_utils/interpolation.hpp"
 #include "poly_utils/quotient.hpp"
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 namespace {
 
 double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
@@ -50,10 +50,10 @@ std::vector<std::uint64_t> ExpandFiberIndices(
   return UniqueSorted(indices);
 }
 
-void AbsorbEvaluationClaim(swgr::crypto::Transcript& transcript,
-                           const swgr::algebra::GRContext& ctx,
-                           const swgr::algebra::GRElem& alpha,
-                           const swgr::algebra::GRElem& value) {
+void AbsorbEvaluationClaim(stir_whir_gr::crypto::Transcript& transcript,
+                           const stir_whir_gr::algebra::GRContext& ctx,
+                           const stir_whir_gr::algebra::GRElem& alpha,
+                           const stir_whir_gr::algebra::GRElem& value) {
   transcript.absorb_bytes(ctx.serialize(alpha));
   transcript.absorb_bytes(ctx.serialize(value));
 }
@@ -64,7 +64,7 @@ FriProver::FriProver(FriParameters params) : params_(std::move(params)) {}
 
 FriCommitment FriProver::commit(
     const FriInstance& instance,
-    const swgr::poly_utils::Polynomial& polynomial) const {
+    const stir_whir_gr::poly_utils::Polynomial& polynomial) const {
   if (!validate(params_, instance)) {
     throw std::invalid_argument(
         "fri::FriProver::commit received invalid instance");
@@ -87,7 +87,7 @@ FriCommitment FriProver::commit(
 
   const auto commit_start = std::chrono::steady_clock::now();
   const auto encode_start = std::chrono::steady_clock::now();
-  const auto oracle = swgr::poly_utils::rs_encode(instance.domain, polynomial);
+  const auto oracle = stir_whir_gr::poly_utils::rs_encode(instance.domain, polynomial);
   commitment.stats.prover_encode_ms =
       ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
   const auto merkle_start = std::chrono::steady_clock::now();
@@ -108,8 +108,8 @@ FriCommitment FriProver::commit(
 }
 
 FriOpening FriProver::open(const FriCommitment& commitment,
-                           const swgr::poly_utils::Polynomial& polynomial,
-                           const swgr::algebra::GRElem& alpha) const {
+                           const stir_whir_gr::poly_utils::Polynomial& polynomial,
+                           const stir_whir_gr::algebra::GRElem& alpha) const {
   if (!validate(params_, commitment)) {
     throw std::invalid_argument(
         "fri::FriProver::open received invalid commitment");
@@ -135,7 +135,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
 
   const auto encode_start = std::chrono::steady_clock::now();
   const auto committed_oracle =
-      swgr::poly_utils::rs_encode(commitment.domain, polynomial);
+      stir_whir_gr::poly_utils::rs_encode(commitment.domain, polynomial);
   encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
 
   const auto merkle_start = std::chrono::steady_clock::now();
@@ -154,10 +154,10 @@ FriOpening FriProver::open(const FriCommitment& commitment,
 
   const auto quotient_start = std::chrono::steady_clock::now();
   const auto quotient_polynomial =
-      swgr::poly_utils::quotient_polynomial_from_answers(ctx, polynomial, {alpha},
+      stir_whir_gr::poly_utils::quotient_polynomial_from_answers(ctx, polynomial, {alpha},
                                                          {value});
   const auto quotient_oracle =
-      swgr::poly_utils::rs_encode(opening_instance(commitment).domain,
+      stir_whir_gr::poly_utils::rs_encode(opening_instance(commitment).domain,
                                   quotient_polynomial);
   quotient_ms +=
       ElapsedMilliseconds(quotient_start, std::chrono::steady_clock::now());
@@ -174,7 +174,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
 
   const std::size_t total_rounds =
       folding_round_count(reduced_instance, params_.fold_factor, params_.stop_degree);
-  swgr::crypto::Transcript transcript(params_.hash_profile);
+  stir_whir_gr::crypto::Transcript transcript(params_.hash_profile);
   transcript.absorb_bytes(commitment.oracle_root);
   AbsorbEvaluationClaim(transcript, ctx, alpha, value);
 
@@ -187,7 +187,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
     auto current_oracle = quotient_oracle;
     std::vector<Domain> oracle_domains;
     oracle_domains.reserve(total_rounds);
-    std::vector<swgr::crypto::MerkleTree> oracle_trees;
+    std::vector<stir_whir_gr::crypto::MerkleTree> oracle_trees;
     oracle_trees.reserve(total_rounds);
 
     for (std::size_t round_index = 0; round_index < total_rounds; ++round_index) {
@@ -198,7 +198,7 @@ FriOpening FriProver::open(const FriCommitment& commitment,
           ElapsedMilliseconds(transcript_start, std::chrono::steady_clock::now());
 
       const auto fold_start = std::chrono::steady_clock::now();
-      current_oracle = swgr::poly_utils::fold_table_k(
+      current_oracle = stir_whir_gr::poly_utils::fold_table_k(
           current_domain, current_oracle, params_.fold_factor, folding_alpha);
       fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
       current_domain = current_domain.pow_map(params_.fold_factor);
@@ -273,4 +273,4 @@ FriOpening FriProver::open(const FriCommitment& commitment,
   return opening;
 }
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri

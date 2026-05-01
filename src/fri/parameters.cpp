@@ -2,7 +2,7 @@
 
 #include "utils.hpp"
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 
 bool validate(const FriParameters& params) {
   if ((params.fold_factor != 3 && params.fold_factor != 9) ||
@@ -44,7 +44,7 @@ bool validate(const FriParameters& params, const FriInstance& instance) {
   if (instance.domain.size() == 0) {
     return false;
   }
-  if (!swgr::is_power_of(instance.domain.size(), 3)) {
+  if (!stir_whir_gr::is_power_of(instance.domain.size(), 3)) {
     return false;
   }
   if (instance.claimed_degree >= instance.domain.size()) {
@@ -93,4 +93,4 @@ bool validate(const FriCommitment& commitment, const FriOpeningClaim& claim) {
          opening_point_valid(commitment, claim.alpha);
 }
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri

@@ -1,12 +1,12 @@
-#ifndef SWGR_POLY_UTILS_FFT3_HPP_
-#define SWGR_POLY_UTILS_FFT3_HPP_
+#ifndef STIR_WHIR_GR_POLY_UTILS_FFT3_HPP_
+#define STIR_WHIR_GR_POLY_UTILS_FFT3_HPP_
 
 #include <vector>
 
 #include "domain.hpp"
 #include "poly_utils/polynomial.hpp"
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 
 std::vector<algebra::GRElem> fft3(const Domain& domain,
                                   const Polynomial& poly);
@@ -14,6 +14,6 @@ std::vector<algebra::GRElem> fft3(const Domain& domain,
 std::vector<algebra::GRElem> inverse_fft3(
     const Domain& domain, const std::vector<algebra::GRElem>& evals);
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils
 
-#endif  // SWGR_POLY_UTILS_FFT3_HPP_
+#endif  // STIR_WHIR_GR_POLY_UTILS_FFT3_HPP_

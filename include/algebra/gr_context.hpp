@@ -1,5 +1,5 @@
-#ifndef SWGR_ALGEBRA_GR_CONTEXT_HPP_
-#define SWGR_ALGEBRA_GR_CONTEXT_HPP_
+#ifndef STIR_WHIR_GR_ALGEBRA_GR_CONTEXT_HPP_
+#define STIR_WHIR_GR_ALGEBRA_GR_CONTEXT_HPP_
 
 #include <NTL/ZZ.h>
 #include <NTL/ZZ_p.h>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 
 using GRElem = NTL::ZZ_pE;
 
@@ -63,7 +63,7 @@ class GRContext {
     if (count <= 0) {
       return;
     }
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #pragma omp parallel if(parallelize)
     {
       with_ntl_context([&] {
@@ -95,7 +95,7 @@ class GRContext {
     }
 
     const std::ptrdiff_t chunk_count = (count + chunk_size - 1) / chunk_size;
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #pragma omp parallel if(parallelize)
     {
       with_ntl_context([&] {
@@ -142,6 +142,6 @@ class GRContext {
   mutable std::shared_ptr<LazyState> lazy_state_;
 };
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra
 
-#endif  // SWGR_ALGEBRA_GR_CONTEXT_HPP_
+#endif  // STIR_WHIR_GR_ALGEBRA_GR_CONTEXT_HPP_

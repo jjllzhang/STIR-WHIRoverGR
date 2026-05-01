@@ -1,5 +1,5 @@
-#ifndef SWGR_CRYPTO_FS_TRANSCRIPT_HPP_
-#define SWGR_CRYPTO_FS_TRANSCRIPT_HPP_
+#ifndef STIR_WHIR_GR_CRYPTO_FS_TRANSCRIPT_HPP_
+#define STIR_WHIR_GR_CRYPTO_FS_TRANSCRIPT_HPP_
 
 #include <cstdint>
 #include <span>
@@ -9,7 +9,7 @@
 #include "algebra/gr_context.hpp"
 #include "parameters.hpp"
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 
 class Transcript {
  public:
@@ -40,6 +40,6 @@ class Transcript {
   std::uint64_t squeeze_counter_ = 0;
 };
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto
 
-#endif  // SWGR_CRYPTO_FS_TRANSCRIPT_HPP_
+#endif  // STIR_WHIR_GR_CRYPTO_FS_TRANSCRIPT_HPP_

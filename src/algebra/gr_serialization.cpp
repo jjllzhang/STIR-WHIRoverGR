@@ -1,6 +1,6 @@
 #include "algebra/gr_serialization.hpp"
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 
 std::vector<std::uint8_t> serialize_ring_element(const GRContext& ctx,
                                                  const GRElem& x) {
@@ -12,4 +12,4 @@ GRElem deserialize_ring_element(const GRContext& ctx,
   return ctx.deserialize(bytes);
 }
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra

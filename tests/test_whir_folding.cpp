@@ -16,11 +16,11 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::Domain;
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::poly_utils::Polynomial;
+using stir_whir_gr::Domain;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::poly_utils::Polynomial;
 
 Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
                             std::size_t coefficient_count) {
@@ -83,22 +83,22 @@ void CheckSparseMatchesFullTable(const Domain& domain,
                                  const std::vector<GRElem>& evals,
                                  const std::vector<GRElem>& alphas) {
   const auto full =
-      swgr::whir::repeated_ternary_fold_table(domain, evals, alphas);
+      stir_whir_gr::whir::repeated_ternary_fold_table(domain, evals, alphas);
   for (std::uint64_t child = 0; child < full.size(); ++child) {
-    const auto indices = swgr::whir::virtual_fold_query_indices(
+    const auto indices = stir_whir_gr::whir::virtual_fold_query_indices(
         domain.size(), static_cast<std::uint64_t>(alphas.size()), child);
     const auto points = SparsePoints(domain, indices);
     const auto values = SparseValues(evals, indices);
 
     const GRElem sparse = domain.context().with_ntl_context([&] {
-      return swgr::whir::evaluate_repeated_ternary_fold_from_values(
+      return stir_whir_gr::whir::evaluate_repeated_ternary_fold_from_values(
           points, values, alphas);
     });
     CHECK_EQ(sparse, full[static_cast<std::size_t>(child)]);
 
     const auto payloads = SparsePayloads(domain.context(), evals, indices);
     const GRElem from_payloads =
-        swgr::whir::evaluate_virtual_fold_query_from_leaf_payloads(
+        stir_whir_gr::whir::evaluate_virtual_fold_query_from_leaf_payloads(
             domain, static_cast<std::uint64_t>(alphas.size()), child, payloads,
             alphas);
     CHECK_EQ(from_payloads, full[static_cast<std::size_t>(child)]);
@@ -112,7 +112,7 @@ void TestRepeatedTernarySparseB1MatchesFullTable() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const Domain domain = Domain::teichmuller_subgroup(ctx, 9);
   const Polynomial poly = SamplePolynomial(ctx, domain, domain.size());
-  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const auto evals = stir_whir_gr::poly_utils::rs_encode(domain, poly);
   const std::vector<GRElem> alphas = ctx.with_ntl_context(
       [&] { return std::vector<GRElem>{ctx.one() + domain.element(2)}; });
 
@@ -126,7 +126,7 @@ void TestRepeatedTernarySparseB2MatchesFullTable() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const Domain domain = Domain::teichmuller_subgroup(ctx, 9);
   const Polynomial poly = SamplePolynomial(ctx, domain, domain.size());
-  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const auto evals = stir_whir_gr::poly_utils::rs_encode(domain, poly);
   const std::vector<GRElem> alphas = ctx.with_ntl_context([&] {
     return std::vector<GRElem>{ctx.one() + domain.element(2),
                                ctx.one() + domain.element(4)};
@@ -142,7 +142,7 @@ void TestRepeatedTernarySparseB3MatchesFullTable() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const Domain domain = Domain::teichmuller_subgroup(ctx, 27);
   const Polynomial poly = SamplePolynomial(ctx, domain, domain.size());
-  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const auto evals = stir_whir_gr::poly_utils::rs_encode(domain, poly);
   const std::vector<GRElem> alphas = ctx.with_ntl_context([&] {
     return std::vector<GRElem>{ctx.one() + domain.element(2),
                                ctx.one() + domain.element(4),
@@ -159,7 +159,7 @@ void TestVirtualParentIndexShape() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
   const Domain domain = Domain::teichmuller_subgroup(ctx, 27);
   const Domain folded = domain.pow_map(9);
-  const auto indices = swgr::whir::virtual_fold_query_indices(
+  const auto indices = stir_whir_gr::whir::virtual_fold_query_indices(
       domain.size(), /*b=*/2, /*child_index=*/1);
 
   const std::vector<std::uint64_t> expected{
@@ -188,7 +188,7 @@ void TestInvalidInputsReject() {
 
   bool threw = false;
   try {
-    (void)swgr::whir::repeated_ternary_fold_table(
+    (void)stir_whir_gr::whir::repeated_ternary_fold_table(
         domain, std::vector<GRElem>(8, ctx.one()), alphas);
   } catch (const std::invalid_argument&) {
     threw = true;
@@ -197,7 +197,7 @@ void TestInvalidInputsReject() {
 
   threw = false;
   try {
-    (void)swgr::whir::virtual_fold_query_indices(10, /*b=*/2,
+    (void)stir_whir_gr::whir::virtual_fold_query_indices(10, /*b=*/2,
                                                  /*child_index=*/0);
   } catch (const std::invalid_argument&) {
     threw = true;
@@ -206,7 +206,7 @@ void TestInvalidInputsReject() {
 
   threw = false;
   try {
-    (void)swgr::whir::virtual_fold_query_indices(9, /*b=*/2,
+    (void)stir_whir_gr::whir::virtual_fold_query_indices(9, /*b=*/2,
                                                  /*child_index=*/1);
   } catch (const std::out_of_range&) {
     threw = true;
@@ -218,7 +218,7 @@ void TestInvalidInputsReject() {
     ctx.with_ntl_context([&] {
       const std::vector<GRElem> points{domain.element(0), domain.element(3)};
       const std::vector<GRElem> values{ctx.one(), domain.root()};
-      (void)swgr::whir::evaluate_repeated_ternary_fold_from_values(
+      (void)stir_whir_gr::whir::evaluate_repeated_ternary_fold_from_values(
           points, values, alphas);
       return 0;
     });
@@ -232,7 +232,7 @@ void TestInvalidInputsReject() {
     ctx.with_ntl_context([&] {
       const std::vector<GRElem> points{ctx.one(), ctx.one(), domain.root()};
       const std::vector<GRElem> values{ctx.one(), domain.root(), ctx.one()};
-      (void)swgr::whir::evaluate_repeated_ternary_fold_from_values(
+      (void)stir_whir_gr::whir::evaluate_repeated_ternary_fold_from_values(
           points, values, alphas);
       return 0;
     });
@@ -244,7 +244,7 @@ void TestInvalidInputsReject() {
   threw = false;
   try {
     const std::vector<std::vector<std::uint8_t>> empty_payloads;
-    (void)swgr::whir::evaluate_virtual_fold_query_from_leaf_payloads(
+    (void)stir_whir_gr::whir::evaluate_virtual_fold_query_from_leaf_payloads(
         domain, /*b=*/1, /*child_index=*/0, empty_payloads, alphas);
   } catch (const std::invalid_argument&) {
     threw = true;

@@ -11,7 +11,7 @@
 using NTL::clear;
 using NTL::set;
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
 std::size_t CheckedSize(std::uint64_t value, const char* label) {
@@ -331,4 +331,4 @@ algebra::GRElem MultilinearPolynomial::evaluate_pow(
   return to_multi_quadratic(ctx).evaluate_pow(ctx, x);
 }
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir

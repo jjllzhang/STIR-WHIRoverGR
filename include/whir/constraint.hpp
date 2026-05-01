@@ -1,5 +1,5 @@
-#ifndef SWGR_WHIR_CONSTRAINT_HPP_
-#define SWGR_WHIR_CONSTRAINT_HPP_
+#ifndef STIR_WHIR_GR_WHIR_CONSTRAINT_HPP_
+#define STIR_WHIR_GR_WHIR_CONSTRAINT_HPP_
 
 #include <array>
 #include <cstddef>
@@ -12,7 +12,7 @@
 #include "whir/common.hpp"
 #include "whir/multiquadratic.hpp"
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 
 using TernaryGrid = std::array<algebra::GRElem, 3>;
 
@@ -102,6 +102,6 @@ algebra::GRElem sumcheck_next_sigma(const algebra::GRContext &ctx,
                                     const WhirSumcheckPolynomial &polynomial,
                                     const algebra::GRElem &alpha);
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir
 
-#endif  // SWGR_WHIR_CONSTRAINT_HPP_
+#endif  // STIR_WHIR_GR_WHIR_CONSTRAINT_HPP_

@@ -23,9 +23,9 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
 
 struct RoundtripCase {
   const char* name = "";
@@ -69,21 +69,21 @@ std::vector<std::uint64_t> LayerWidths(std::uint64_t variable_count,
   return widths;
 }
 
-swgr::whir::WhirPublicParameters BuildPublicParameters(
+stir_whir_gr::whir::WhirPublicParameters BuildPublicParameters(
     std::uint64_t variable_count, std::uint64_t max_layer_width) {
   const std::uint64_t domain_size =
-      swgr::whir::pow3_checked(variable_count + 1U);
+      stir_whir_gr::whir::pow3_checked(variable_count + 1U);
   auto ctx = std::make_shared<GRContext>(
       GRConfig{.p = 2,
                .k_exp = 16,
                .r = ExtensionDegreeForDomainSize(domain_size)});
-  const swgr::Domain domain =
-      swgr::Domain::teichmuller_subgroup(ctx, domain_size);
+  const stir_whir_gr::Domain domain =
+      stir_whir_gr::Domain::teichmuller_subgroup(ctx, domain_size);
   return ctx->with_ntl_context([&] {
     const GRElem omega =
         NTL::power(domain.root(), static_cast<long>(domain_size / 3U));
     const auto widths = LayerWidths(variable_count, max_layer_width);
-    return swgr::whir::WhirPublicParameters{
+    return stir_whir_gr::whir::WhirPublicParameters{
         .ctx = ctx,
         .initial_domain = domain,
         .variable_count = variable_count,
@@ -95,22 +95,22 @@ swgr::whir::WhirPublicParameters BuildPublicParameters(
         .omega = omega,
         .ternary_grid = {ctx->one(), omega, omega * omega},
         .lambda_target = 32,
-        .hash_profile = swgr::HashProfile::WHIR_NATIVE,
+        .hash_profile = stir_whir_gr::HashProfile::WHIR_NATIVE,
     };
   });
 }
 
-swgr::whir::MultiQuadraticPolynomial BuildPolynomial(
+stir_whir_gr::whir::MultiQuadraticPolynomial BuildPolynomial(
     const GRContext& ctx, std::uint64_t variable_count) {
   return ctx.with_ntl_context([&] {
     std::vector<GRElem> coefficients;
     coefficients.reserve(
-        static_cast<std::size_t>(swgr::whir::pow3_checked(variable_count)));
-    for (std::uint64_t i = 0; i < swgr::whir::pow3_checked(variable_count);
+        static_cast<std::size_t>(stir_whir_gr::whir::pow3_checked(variable_count)));
+    for (std::uint64_t i = 0; i < stir_whir_gr::whir::pow3_checked(variable_count);
          ++i) {
       coefficients.push_back(SmallElement((11U * i + 5U) % 23U));
     }
-    return swgr::whir::MultiQuadraticPolynomial(variable_count,
+    return stir_whir_gr::whir::MultiQuadraticPolynomial(variable_count,
                                                 std::move(coefficients));
   });
 }
@@ -132,19 +132,19 @@ void RunRoundtripCase(const RoundtripCase& test_case) {
 
   const auto pp = BuildPublicParameters(test_case.variable_count,
                                         test_case.max_layer_width);
-  swgr::whir::WhirParameters params;
+  stir_whir_gr::whir::WhirParameters params;
   params.lambda_target = pp.lambda_target;
   params.hash_profile = pp.hash_profile;
   const auto polynomial = BuildPolynomial(*pp.ctx, test_case.variable_count);
   const auto point = BuildOpenPoint(*pp.ctx, test_case.variable_count);
 
-  const swgr::whir::WhirProver prover(params);
-  const swgr::whir::WhirVerifier verifier(params);
-  swgr::whir::WhirCommitmentState state;
+  const stir_whir_gr::whir::WhirProver prover(params);
+  const stir_whir_gr::whir::WhirVerifier verifier(params);
+  stir_whir_gr::whir::WhirCommitmentState state;
   const auto commitment = prover.commit(pp, polynomial, &state);
   const auto opening = prover.open(commitment, state, point);
 
-  swgr::ProofStatistics verifier_stats;
+  stir_whir_gr::ProofStatistics verifier_stats;
   CHECK(verifier.verify(commitment, point, opening, &verifier_stats));
   CHECK_EQ(opening.value, polynomial.evaluate(*pp.ctx, point));
   CHECK_EQ(opening.proof.rounds.size(), pp.layer_widths.size());
@@ -153,7 +153,7 @@ void RunRoundtripCase(const RoundtripCase& test_case) {
              static_cast<std::size_t>(pp.layer_widths[i]));
   }
   CHECK_EQ(verifier_stats.serialized_bytes,
-           swgr::whir::serialized_message_bytes(*pp.ctx, opening));
+           stir_whir_gr::whir::serialized_message_bytes(*pp.ctx, opening));
   CHECK(commitment.stats.prover_encode_ms > 0.0);
   CHECK(commitment.stats.prover_merkle_ms > 0.0);
   CHECK(opening.proof.stats.prover_encode_ms > 0.0);

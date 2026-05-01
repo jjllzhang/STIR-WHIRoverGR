@@ -1,12 +1,12 @@
-#ifndef SWGR_LDT_HPP_
-#define SWGR_LDT_HPP_
+#ifndef STIR_WHIR_GR_LDT_HPP_
+#define STIR_WHIR_GR_LDT_HPP_
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
 
-namespace swgr {
+namespace stir_whir_gr {
 
 class CountingSink {
  public:
@@ -77,6 +77,6 @@ struct ProofStatistics {
   double verifier_total_ms = 0.0;
 };
 
-}  // namespace swgr
+}  // namespace stir_whir_gr
 
-#endif  // SWGR_LDT_HPP_
+#endif  // STIR_WHIR_GR_LDT_HPP_

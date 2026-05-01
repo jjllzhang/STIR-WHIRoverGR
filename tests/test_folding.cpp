@@ -13,11 +13,11 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::Domain;
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::poly_utils::Polynomial;
+using stir_whir_gr::Domain;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::poly_utils::Polynomial;
 
 Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain) {
   const auto coeffs = ctx.with_ntl_context([&] {
@@ -61,13 +61,13 @@ void CheckFoldAgainstInterpolation(const Domain& domain, const Polynomial& poly,
                                    std::uint64_t k_fold,
                                    const GRElem& alpha) {
   const GRContext& ctx = domain.context();
-  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const auto evals = stir_whir_gr::poly_utils::rs_encode(domain, poly);
   const auto folded_table =
-      swgr::poly_utils::fold_table_k(domain, evals, k_fold, alpha);
+      stir_whir_gr::poly_utils::fold_table_k(domain, evals, k_fold, alpha);
   const Polynomial folded_poly =
-      ctx.with_ntl_context([&] { return swgr::poly_utils::poly_fold(poly, k_fold, alpha); });
+      ctx.with_ntl_context([&] { return stir_whir_gr::poly_utils::poly_fold(poly, k_fold, alpha); });
   const auto expected_table =
-      swgr::poly_utils::rs_encode(domain.pow_map(k_fold), folded_poly);
+      stir_whir_gr::poly_utils::rs_encode(domain.pow_map(k_fold), folded_poly);
 
   CHECK_EQ(folded_table.size(), expected_table.size());
   for (std::size_t i = 0; i < folded_table.size(); ++i) {
@@ -85,9 +85,9 @@ void CheckFoldAgainstInterpolation(const Domain& domain, const Polynomial& poly,
         fiber_values.push_back(evals[static_cast<std::size_t>(index)]);
       }
       const Polynomial interpolated =
-          swgr::poly_utils::interpolate_for_gr_wrapper(ctx, fiber_points, fiber_values);
+          stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(ctx, fiber_points, fiber_values);
       const GRElem direct =
-          swgr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
+          stir_whir_gr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
       CHECK_EQ(direct, interpolated.evaluate(ctx, alpha));
     }
     return 0;
@@ -105,7 +105,7 @@ void CheckFoldAtFiberPoint(const Domain& domain, std::uint64_t k_fold,
                            std::uint64_t fiber_offset) {
   const GRContext& ctx = domain.context();
   const Polynomial poly = SamplePolynomial(ctx, domain);
-  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const auto evals = stir_whir_gr::poly_utils::rs_encode(domain, poly);
   const std::uint64_t folded_size = domain.size() / k_fold;
 
   ctx.with_ntl_context([&] {
@@ -121,7 +121,7 @@ void CheckFoldAtFiberPoint(const Domain& domain, std::uint64_t k_fold,
 
     const GRElem alpha = fiber_points[static_cast<std::size_t>(fiber_offset)];
     const GRElem direct =
-        swgr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
+        stir_whir_gr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
     CHECK_EQ(direct, fiber_values[static_cast<std::size_t>(fiber_offset)]);
     return 0;
   });
@@ -160,18 +160,18 @@ void TestFoldTableKRepeatedCallsStayStable() {
   const Domain domain = Domain::teichmuller_subgroup(ctx, 243);
   const Polynomial poly =
       SampleLongPolynomial(ctx, domain, static_cast<std::size_t>(domain.size()));
-  const auto evals = swgr::poly_utils::rs_encode(domain, poly);
+  const auto evals = stir_whir_gr::poly_utils::rs_encode(domain, poly);
   const GRElem alpha =
       ctx.with_ntl_context([&] { return ctx.one() + domain.element(1) + domain.element(11); });
   const Polynomial folded_poly =
-      ctx.with_ntl_context([&] { return swgr::poly_utils::poly_fold(poly, 9, alpha); });
+      ctx.with_ntl_context([&] { return stir_whir_gr::poly_utils::poly_fold(poly, 9, alpha); });
   const auto expected =
-      swgr::poly_utils::rs_encode(domain.pow_map(9), folded_poly);
+      stir_whir_gr::poly_utils::rs_encode(domain.pow_map(9), folded_poly);
 
   std::vector<GRElem> first_result;
   for (int iteration = 0; iteration < 6; ++iteration) {
     const auto folded =
-        swgr::poly_utils::fold_table_k(domain, evals, 9, alpha);
+        stir_whir_gr::poly_utils::fold_table_k(domain, evals, 9, alpha);
     CHECK_EQ(folded.size(), expected.size());
     for (std::size_t i = 0; i < folded.size(); ++i) {
       CHECK_EQ(folded[i], expected[i]);
@@ -223,10 +223,10 @@ void TestFoldEvalGenericFallback() {
     fiber_values.push_back(x + one_plus_x);
 
     const GRElem alpha = one + one + x;
-    const Polynomial interpolated = swgr::poly_utils::interpolate_for_gr_wrapper(
+    const Polynomial interpolated = stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(
         ctx, fiber_points, fiber_values);
     const GRElem direct =
-        swgr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
+        stir_whir_gr::poly_utils::fold_eval_k(fiber_points, fiber_values, alpha);
     CHECK_EQ(direct, interpolated.evaluate(ctx, alpha));
     return 0;
   });

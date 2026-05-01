@@ -1,10 +1,10 @@
-#ifndef SWGR_CRYPTO_MERKLE_TREE_PROOF_PLANNER_HPP_
-#define SWGR_CRYPTO_MERKLE_TREE_PROOF_PLANNER_HPP_
+#ifndef STIR_WHIR_GR_CRYPTO_MERKLE_TREE_PROOF_PLANNER_HPP_
+#define STIR_WHIR_GR_CRYPTO_MERKLE_TREE_PROOF_PLANNER_HPP_
 
 #include <cstdint>
 #include <vector>
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 
 struct ProofPlanStats {
   std::uint64_t opened_leaf_count = 0;
@@ -34,6 +34,6 @@ ProofPlanStats plan_pruned_multiproof(
     std::uint64_t tree_leaf_count, const std::vector<std::uint64_t>& queried_indices,
     std::uint64_t leaf_payload_bytes, std::uint64_t digest_bytes);
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto
 
-#endif  // SWGR_CRYPTO_MERKLE_TREE_PROOF_PLANNER_HPP_
+#endif  // STIR_WHIR_GR_CRYPTO_MERKLE_TREE_PROOF_PLANNER_HPP_

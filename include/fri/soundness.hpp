@@ -1,9 +1,9 @@
-#ifndef SWGR_FRI_SOUNDNESS_HPP_
-#define SWGR_FRI_SOUNDNESS_HPP_
+#ifndef STIR_WHIR_GR_FRI_SOUNDNESS_HPP_
+#define STIR_WHIR_GR_FRI_SOUNDNESS_HPP_
 
 #include <cstdint>
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 
 // Theorem-facing standalone FRI PCS soundness inputs for
 // epsilon_rbr^FRI = max(s * ell / 2^r, (1 - delta)^m).
@@ -27,6 +27,6 @@ struct StandaloneFriSoundnessAnalysis {
 StandaloneFriSoundnessAnalysis analyze_standalone_soundness(
     const StandaloneFriSoundnessInputs& inputs);
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri
 
-#endif  // SWGR_FRI_SOUNDNESS_HPP_
+#endif  // STIR_WHIR_GR_FRI_SOUNDNESS_HPP_

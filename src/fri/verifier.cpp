@@ -14,7 +14,7 @@
 #include "poly_utils/folding.hpp"
 #include "poly_utils/interpolation.hpp"
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 namespace {
 
 double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
@@ -50,16 +50,16 @@ std::vector<std::uint64_t> ExpandFiberIndices(
   return UniqueSorted(indices);
 }
 
-void AbsorbEvaluationClaim(swgr::crypto::Transcript& transcript,
-                           const swgr::algebra::GRContext& ctx,
-                           const swgr::algebra::GRElem& alpha,
-                           const swgr::algebra::GRElem& value) {
+void AbsorbEvaluationClaim(stir_whir_gr::crypto::Transcript& transcript,
+                           const stir_whir_gr::algebra::GRContext& ctx,
+                           const stir_whir_gr::algebra::GRElem& alpha,
+                           const stir_whir_gr::algebra::GRElem& value) {
   transcript.absorb_bytes(ctx.serialize(alpha));
   transcript.absorb_bytes(ctx.serialize(value));
 }
 
-const swgr::algebra::GRElem* LookupIndexedValue(
-    const std::vector<std::pair<std::uint64_t, swgr::algebra::GRElem>>& indexed,
+const stir_whir_gr::algebra::GRElem* LookupIndexedValue(
+    const std::vector<std::pair<std::uint64_t, stir_whir_gr::algebra::GRElem>>& indexed,
     std::uint64_t index) {
   const auto it = std::lower_bound(
       indexed.begin(), indexed.end(), index,
@@ -73,8 +73,8 @@ const swgr::algebra::GRElem* LookupIndexedValue(
 }
 
 bool DecodeSingletonValues(
-    const swgr::algebra::GRContext& ctx, const swgr::crypto::MerkleProof& proof,
-    std::vector<std::pair<std::uint64_t, swgr::algebra::GRElem>>* indexed) {
+    const stir_whir_gr::algebra::GRContext& ctx, const stir_whir_gr::crypto::MerkleProof& proof,
+    std::vector<std::pair<std::uint64_t, stir_whir_gr::algebra::GRElem>>* indexed) {
   indexed->clear();
   if (proof.leaf_payloads.size() != proof.queried_indices.size()) {
     return false;
@@ -95,28 +95,28 @@ bool DecodeSingletonValues(
   return true;
 }
 
-swgr::algebra::GRElem BasisWeight(
-    const std::vector<swgr::algebra::GRElem>& fiber_points,
-    std::size_t missing_index, const swgr::algebra::GRElem& folding_alpha,
-    const swgr::algebra::GRContext& ctx) {
+stir_whir_gr::algebra::GRElem BasisWeight(
+    const std::vector<stir_whir_gr::algebra::GRElem>& fiber_points,
+    std::size_t missing_index, const stir_whir_gr::algebra::GRElem& folding_alpha,
+    const stir_whir_gr::algebra::GRContext& ctx) {
   return ctx.with_ntl_context([&] {
-    std::vector<swgr::algebra::GRElem> basis(fiber_points.size(), ctx.zero());
+    std::vector<stir_whir_gr::algebra::GRElem> basis(fiber_points.size(), ctx.zero());
     basis[missing_index] = ctx.one();
-    return swgr::poly_utils::fold_eval_k(fiber_points, basis, folding_alpha);
+    return stir_whir_gr::poly_utils::fold_eval_k(fiber_points, basis, folding_alpha);
   });
 }
 
 bool VerifyExplicitFiber(
     const Domain& parent_domain, std::uint64_t child_index,
     std::uint64_t child_domain_size, std::uint64_t fold_factor,
-    const std::vector<std::pair<std::uint64_t, swgr::algebra::GRElem>>& indexed_parent,
-    const swgr::algebra::GRElem& folding_alpha,
-    const swgr::algebra::GRElem& child_value) {
+    const std::vector<std::pair<std::uint64_t, stir_whir_gr::algebra::GRElem>>& indexed_parent,
+    const stir_whir_gr::algebra::GRElem& folding_alpha,
+    const stir_whir_gr::algebra::GRElem& child_value) {
   const auto& ctx = parent_domain.context();
   try {
     return ctx.with_ntl_context([&]() -> bool {
-      std::vector<swgr::algebra::GRElem> fiber_points;
-      std::vector<swgr::algebra::GRElem> fiber_values;
+      std::vector<stir_whir_gr::algebra::GRElem> fiber_points;
+      std::vector<stir_whir_gr::algebra::GRElem> fiber_values;
       fiber_points.reserve(static_cast<std::size_t>(fold_factor));
       fiber_values.reserve(static_cast<std::size_t>(fold_factor));
       for (std::uint64_t offset = 0; offset < fold_factor; ++offset) {
@@ -128,7 +128,7 @@ bool VerifyExplicitFiber(
         fiber_points.push_back(parent_domain.element(parent_index));
         fiber_values.push_back(*value_ptr);
       }
-      return swgr::poly_utils::fold_eval_k(fiber_points, fiber_values,
+      return stir_whir_gr::poly_utils::fold_eval_k(fiber_points, fiber_values,
                                            folding_alpha) == child_value;
     });
   } catch (...) {
@@ -138,17 +138,17 @@ bool VerifyExplicitFiber(
 
 bool VerifyVirtualFirstRoundFiber(
     const FriParameters& params, const FriCommitment& commitment,
-    const std::vector<std::pair<std::uint64_t, swgr::algebra::GRElem>>& indexed_f,
+    const std::vector<std::pair<std::uint64_t, stir_whir_gr::algebra::GRElem>>& indexed_f,
     std::uint64_t child_index, std::uint64_t child_domain_size,
-    const swgr::algebra::GRElem& alpha, const swgr::algebra::GRElem& value,
-    const swgr::algebra::GRElem& folding_alpha,
-    const swgr::algebra::GRElem& child_value) {
+    const stir_whir_gr::algebra::GRElem& alpha, const stir_whir_gr::algebra::GRElem& value,
+    const stir_whir_gr::algebra::GRElem& folding_alpha,
+    const stir_whir_gr::algebra::GRElem& child_value) {
   const auto& domain = commitment.domain;
   const auto& ctx = domain.context();
   try {
     return ctx.with_ntl_context([&]() -> bool {
-      std::vector<swgr::algebra::GRElem> fiber_points;
-      std::vector<swgr::algebra::GRElem> derived_values;
+      std::vector<stir_whir_gr::algebra::GRElem> fiber_points;
+      std::vector<stir_whir_gr::algebra::GRElem> derived_values;
       fiber_points.reserve(static_cast<std::size_t>(params.fold_factor));
       derived_values.reserve(static_cast<std::size_t>(params.fold_factor));
 
@@ -187,11 +187,11 @@ bool VerifyVirtualFirstRoundFiber(
       }
 
       if (!saw_alpha) {
-        return swgr::poly_utils::fold_eval_k(fiber_points, derived_values,
+        return stir_whir_gr::poly_utils::fold_eval_k(fiber_points, derived_values,
                                              folding_alpha) == child_value;
       }
 
-      const auto known_fold = swgr::poly_utils::fold_eval_k(
+      const auto known_fold = stir_whir_gr::poly_utils::fold_eval_k(
           fiber_points, derived_values, folding_alpha);
       const auto alpha_weight =
           BasisWeight(fiber_points, alpha_offset, folding_alpha, ctx);
@@ -214,15 +214,15 @@ bool VerifyVirtualFirstRoundFiber(
 
 bool VerifyZeroFoldVirtualQuotient(
     const FriCommitment& commitment,
-    const std::vector<swgr::algebra::GRElem>& committed_oracle,
-    const swgr::algebra::GRElem& alpha, const swgr::algebra::GRElem& value,
+    const std::vector<stir_whir_gr::algebra::GRElem>& committed_oracle,
+    const stir_whir_gr::algebra::GRElem& alpha, const stir_whir_gr::algebra::GRElem& value,
     std::uint64_t reduced_degree_bound) {
   const auto& domain = commitment.domain;
   const auto& ctx = domain.context();
   try {
     return ctx.with_ntl_context([&]() -> bool {
-      std::vector<swgr::algebra::GRElem> quotient_points;
-      std::vector<swgr::algebra::GRElem> quotient_values;
+      std::vector<stir_whir_gr::algebra::GRElem> quotient_points;
+      std::vector<stir_whir_gr::algebra::GRElem> quotient_values;
       quotient_points.reserve(domain.size());
       quotient_values.reserve(domain.size());
 
@@ -255,7 +255,7 @@ bool VerifyZeroFoldVirtualQuotient(
         return reduced_degree_bound == 0;
       }
 
-      const auto quotient_polynomial = swgr::poly_utils::interpolate_for_gr_wrapper(
+      const auto quotient_polynomial = stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(
           ctx, quotient_points, quotient_values);
       if (quotient_polynomial.degree() > reduced_degree_bound) {
         return false;
@@ -283,11 +283,11 @@ bool VerifyZeroFoldVirtualQuotient(
 FriVerifier::FriVerifier(FriParameters params) : params_(std::move(params)) {}
 
 bool FriVerifier::verify(const FriCommitment& commitment,
-                         const swgr::algebra::GRElem& alpha,
-                         const swgr::algebra::GRElem& value,
+                         const stir_whir_gr::algebra::GRElem& alpha,
+                         const stir_whir_gr::algebra::GRElem& value,
                          const FriOpening& opening,
-                         swgr::ProofStatistics* stats) const {
-  swgr::ProofStatistics local_stats;
+                         stir_whir_gr::ProofStatistics* stats) const {
+  stir_whir_gr::ProofStatistics local_stats;
   const auto verify_start = std::chrono::steady_clock::now();
   try {
     if (!validate(params_, commitment) ||
@@ -343,11 +343,11 @@ bool FriVerifier::verify(const FriCommitment& commitment,
       return false;
     }
 
-    std::vector<swgr::algebra::GRElem> folding_betas;
+    std::vector<stir_whir_gr::algebra::GRElem> folding_betas;
     folding_betas.reserve(total_rounds);
     std::vector<Domain> oracle_domains;
     oracle_domains.reserve(total_rounds);
-    swgr::crypto::Transcript transcript(params_.hash_profile);
+    stir_whir_gr::crypto::Transcript transcript(params_.hash_profile);
     transcript.absorb_bytes(commitment.oracle_root);
     AbsorbEvaluationClaim(transcript, ctx, alpha, value);
 
@@ -379,7 +379,7 @@ bool FriVerifier::verify(const FriCommitment& commitment,
       final_degree_bound /= params_.fold_factor;
     }
     const bool final_degree_ok = ctx.with_ntl_context([&]() -> bool {
-      const auto final_polynomial = swgr::poly_utils::rs_interpolate(
+      const auto final_polynomial = stir_whir_gr::poly_utils::rs_interpolate(
           oracle_domains.back(), opening.proof.final_oracle);
       return final_polynomial.degree() <= final_degree_bound;
     });
@@ -408,24 +408,24 @@ bool FriVerifier::verify(const FriCommitment& commitment,
 
       const auto verify_parent_start = std::chrono::steady_clock::now();
       if (round.parent_oracle_proof.queried_indices != expected_parent_indices ||
-          !swgr::crypto::MerkleTree::verify(params_.hash_profile, parent_domain.size(),
+          !stir_whir_gr::crypto::MerkleTree::verify(params_.hash_profile, parent_domain.size(),
                                            parent_root, round.parent_oracle_proof)) {
         return false;
       }
       local_stats.verifier_merkle_ms += ElapsedMilliseconds(
           verify_parent_start, std::chrono::steady_clock::now());
 
-      std::vector<std::pair<std::uint64_t, swgr::algebra::GRElem>> indexed_parent;
+      std::vector<std::pair<std::uint64_t, stir_whir_gr::algebra::GRElem>> indexed_parent;
       if (!DecodeSingletonValues(ctx, round.parent_oracle_proof, &indexed_parent)) {
         return false;
       }
 
-      std::vector<std::pair<std::uint64_t, swgr::algebra::GRElem>> indexed_child;
+      std::vector<std::pair<std::uint64_t, stir_whir_gr::algebra::GRElem>> indexed_child;
       if (round_index + 1U < total_rounds) {
         const auto expected_child_indices = UniqueSorted(round_queries);
         const auto verify_child_start = std::chrono::steady_clock::now();
         if (round.child_oracle_proof.queried_indices != expected_child_indices ||
-            !swgr::crypto::MerkleTree::verify(
+            !stir_whir_gr::crypto::MerkleTree::verify(
                 params_.hash_profile, child_domain.size(),
                 opening.proof.oracle_roots[round_index],
                 round.child_oracle_proof)) {
@@ -444,7 +444,7 @@ bool FriVerifier::verify(const FriCommitment& commitment,
 
       const auto round_algebra_start = std::chrono::steady_clock::now();
       for (const auto child_index : round_queries) {
-        const swgr::algebra::GRElem* child_value_ptr = nullptr;
+        const stir_whir_gr::algebra::GRElem* child_value_ptr = nullptr;
         if (round_index + 1U < total_rounds) {
           child_value_ptr = LookupIndexedValue(indexed_child, child_index);
         } else {
@@ -486,4 +486,4 @@ bool FriVerifier::verify(const FriCommitment& commitment,
   }
 }
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri

@@ -1,5 +1,5 @@
-#ifndef SWGR_POLY_UTILS_QUOTIENT_HPP_
-#define SWGR_POLY_UTILS_QUOTIENT_HPP_
+#ifndef STIR_WHIR_GR_POLY_UTILS_QUOTIENT_HPP_
+#define STIR_WHIR_GR_POLY_UTILS_QUOTIENT_HPP_
 
 #include <utility>
 #include <vector>
@@ -7,7 +7,7 @@
 #include "algebra/gr_context.hpp"
 #include "poly_utils/polynomial.hpp"
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 
 Polynomial answer_polynomial(
     const algebra::GRContext& ctx,
@@ -41,6 +41,6 @@ algebra::GRElem quotient_eval_with_hint(
     const algebra::GRElem& denominator_inverse_hint,
     const algebra::GRElem& answer_eval);
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils
 
-#endif  // SWGR_POLY_UTILS_QUOTIENT_HPP_
+#endif  // STIR_WHIR_GR_POLY_UTILS_QUOTIENT_HPP_

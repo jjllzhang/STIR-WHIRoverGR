@@ -1,5 +1,5 @@
-#ifndef SWGR_FRI_COMMON_HPP_
-#define SWGR_FRI_COMMON_HPP_
+#ifndef STIR_WHIR_GR_FRI_COMMON_HPP_
+#define STIR_WHIR_GR_FRI_COMMON_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -13,7 +13,7 @@
 #include "ldt.hpp"
 #include "poly_utils/polynomial.hpp"
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 
 struct FriInstance {
   Domain domain;
@@ -24,25 +24,25 @@ struct FriCommitment {
   Domain domain;
   std::uint64_t degree_bound = 0;
   std::vector<std::uint8_t> oracle_root;
-  swgr::ProofStatistics stats;
+  stir_whir_gr::ProofStatistics stats;
 };
 
 struct FriOpeningClaim {
-  swgr::algebra::GRElem alpha;
-  swgr::algebra::GRElem value;
+  stir_whir_gr::algebra::GRElem alpha;
+  stir_whir_gr::algebra::GRElem value;
 };
 
 struct FriRoundProof {
-  swgr::crypto::MerkleProof parent_oracle_proof;
-  swgr::crypto::MerkleProof child_oracle_proof;
+  stir_whir_gr::crypto::MerkleProof parent_oracle_proof;
+  stir_whir_gr::crypto::MerkleProof child_oracle_proof;
 };
 
 struct FriProof {
   std::vector<FriRoundProof> rounds;
   std::vector<std::vector<std::uint8_t>> oracle_roots;
-  std::vector<swgr::algebra::GRElem> final_oracle;
-  std::vector<swgr::algebra::GRElem> revealed_committed_oracle;
-  swgr::ProofStatistics stats;
+  std::vector<stir_whir_gr::algebra::GRElem> final_oracle;
+  std::vector<stir_whir_gr::algebra::GRElem> revealed_committed_oracle;
+  stir_whir_gr::ProofStatistics stats;
 };
 
 struct FriOpening {
@@ -53,11 +53,11 @@ struct FriOpening {
 std::uint64_t serialized_message_bytes(const FriCommitment& commitment);
 
 std::uint64_t serialized_message_bytes(
-    const swgr::algebra::GRContext& ctx, const FriProof& proof);
+    const stir_whir_gr::algebra::GRContext& ctx, const FriProof& proof);
 
 // Counts only the prover reply bytes for the opening message: value plus proof.
 std::uint64_t serialized_message_bytes(
-    const swgr::algebra::GRContext& ctx, const FriOpening& opening);
+    const stir_whir_gr::algebra::GRContext& ctx, const FriOpening& opening);
 
 std::size_t folding_round_count(const FriInstance& instance,
                                 std::uint64_t fold_factor,
@@ -80,46 +80,46 @@ bool commitment_domain_supported(const FriCommitment& commitment);
 // The theorem-facing PCS path accepts verifier challenges `alpha <- T` across
 // the full Teichmuller set.
 bool opening_point_valid(const FriCommitment& commitment,
-                         const swgr::algebra::GRElem& alpha);
+                         const stir_whir_gr::algebra::GRElem& alpha);
 
 std::vector<std::uint64_t> query_schedule(
     std::size_t folding_rounds, const std::vector<std::uint64_t>& configured);
 
 std::vector<std::uint8_t> commit_oracle(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals);
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals);
 
 std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size);
 
 std::vector<std::uint8_t> serialize_oracle_bundle(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size, std::uint64_t bundle_index);
 
-std::vector<swgr::algebra::GRElem> deserialize_oracle_bundle(
-    const swgr::algebra::GRContext& ctx, std::span<const std::uint8_t> bytes);
+std::vector<stir_whir_gr::algebra::GRElem> deserialize_oracle_bundle(
+    const stir_whir_gr::algebra::GRContext& ctx, std::span<const std::uint8_t> bytes);
 
-swgr::crypto::MerkleTree build_oracle_tree(
-    swgr::HashProfile profile, const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+stir_whir_gr::crypto::MerkleTree build_oracle_tree(
+    stir_whir_gr::HashProfile profile, const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size);
 
-swgr::algebra::GRElem derive_round_challenge(
-    const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_round_challenge(
+    const stir_whir_gr::algebra::GRContext& ctx,
     const std::vector<std::uint8_t>& oracle_commitment,
     std::uint64_t round_index);
 
-swgr::algebra::GRElem derive_round_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_round_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label);
 
 // Paper-facing FRI folding challenges are sampled from the maximal
 // Teichmuller exceptional set `T`, not from the ambient ring.
-swgr::algebra::GRElem derive_fri_folding_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_fri_folding_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label);
 
 std::vector<std::uint64_t> derive_query_positions(
@@ -128,13 +128,13 @@ std::vector<std::uint64_t> derive_query_positions(
     std::uint64_t query_count);
 
 std::vector<std::uint64_t> derive_query_positions(
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t query_count);
 
 std::vector<std::uint64_t> derive_unique_query_positions(
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t query_count);
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri
 
-#endif  // SWGR_FRI_COMMON_HPP_
+#endif  // STIR_WHIR_GR_FRI_COMMON_HPP_

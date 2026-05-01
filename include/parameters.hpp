@@ -1,10 +1,10 @@
-#ifndef SWGR_PARAMETERS_HPP_
-#define SWGR_PARAMETERS_HPP_
+#ifndef STIR_WHIR_GR_PARAMETERS_HPP_
+#define STIR_WHIR_GR_PARAMETERS_HPP_
 
 #include <cstdint>
 #include <string>
 
-namespace swgr {
+namespace stir_whir_gr {
 
 enum class SecurityMode {
   ConjectureCapacity,
@@ -24,6 +24,6 @@ struct WorkloadParameters {
 std::string to_string(SecurityMode mode);
 std::string to_string(HashProfile profile);
 
-}  // namespace swgr
+}  // namespace stir_whir_gr
 
-#endif  // SWGR_PARAMETERS_HPP_
+#endif  // STIR_WHIR_GR_PARAMETERS_HPP_

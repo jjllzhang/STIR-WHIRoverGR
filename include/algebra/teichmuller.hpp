@@ -1,5 +1,5 @@
-#ifndef SWGR_ALGEBRA_TEICHMULLER_HPP_
-#define SWGR_ALGEBRA_TEICHMULLER_HPP_
+#ifndef STIR_WHIR_GR_ALGEBRA_TEICHMULLER_HPP_
+#define STIR_WHIR_GR_ALGEBRA_TEICHMULLER_HPP_
 
 #include <NTL/ZZ.h>
 
@@ -8,7 +8,7 @@
 
 #include "algebra/gr_context.hpp"
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 
 GRElem teichmuller_generator(const GRContext& ctx);
 
@@ -35,6 +35,6 @@ GRElem teichmuller_subgroup_generator(const GRContext& ctx,
 std::vector<GRElem> generate_teichmuller_subgroup(const GRContext& ctx,
                                                   std::uint64_t size);
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra
 
-#endif  // SWGR_ALGEBRA_TEICHMULLER_HPP_
+#endif  // STIR_WHIR_GR_ALGEBRA_TEICHMULLER_HPP_

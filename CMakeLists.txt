@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 
 project(STIRWhirOverGR VERSION 0.1.0 LANGUAGES C CXX ASM)
 
-option(SWGR_BUILD_TESTS "Build unit tests" ON)
-option(SWGR_BUILD_BENCH "Build benchmark entrypoints" ON)
-option(SWGR_USE_OPENMP "Enable optional OpenMP acceleration" ON)
+option(STIR_WHIR_GR_BUILD_TESTS "Build unit tests" ON)
+option(STIR_WHIR_GR_BUILD_BENCH "Build benchmark entrypoints" ON)
+option(STIR_WHIR_GR_USE_OPENMP "Enable optional OpenMP acceleration" ON)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -12,11 +12,11 @@ find_library(NTL_LIBRARY NAMES ntl REQUIRED)
 find_library(GMP_LIBRARY NAMES gmp REQUIRED)
 find_library(M_LIBRARY NAMES m)
 
-set(SWGR_OPENMP_ENABLED OFF)
-if(SWGR_USE_OPENMP)
+set(STIR_WHIR_GR_OPENMP_ENABLED OFF)
+if(STIR_WHIR_GR_USE_OPENMP)
   find_package(OpenMP QUIET COMPONENTS CXX)
   if(OpenMP_CXX_FOUND)
-    set(SWGR_OPENMP_ENABLED ON)
+    set(STIR_WHIR_GR_OPENMP_ENABLED ON)
   endif()
 endif()
 
@@ -67,8 +67,8 @@ set(STIR_OVER_GR_SOURCES
     src/whir/verifier.cpp)
 
 add_library(galoisring_backend STATIC ${GALOIS_RING_BACKEND_SOURCES})
-add_library(swgr::galoisring_backend ALIAS galoisring_backend)
-add_library(swgr::galoisring ALIAS galoisring_backend)
+add_library(stir_whir_gr::galoisring_backend ALIAS galoisring_backend)
+add_library(stir_whir_gr::galoisring ALIAS galoisring_backend)
 
 target_include_directories(
     galoisring_backend
@@ -88,38 +88,38 @@ if(M_LIBRARY)
   target_link_libraries(galoisring_backend PUBLIC ${M_LIBRARY})
 endif()
 
-set(SWGR_BLAKE3_SOURCES
+set(STIR_WHIR_GR_BLAKE3_SOURCES
     third_party/blake3/blake3.c
     third_party/blake3/blake3_dispatch.c
     third_party/blake3/blake3_portable.c)
 
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|X86_64|amd64|AMD64)$" AND UNIX AND
    (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang"))
-  list(APPEND SWGR_BLAKE3_SOURCES
+  list(APPEND STIR_WHIR_GR_BLAKE3_SOURCES
        third_party/blake3/blake3_avx2_x86-64_unix.S
        third_party/blake3/blake3_avx512_x86-64_unix.S
        third_party/blake3/blake3_sse2_x86-64_unix.S
        third_party/blake3/blake3_sse41_x86-64_unix.S)
 endif()
 
-add_library(swgr_blake3 STATIC ${SWGR_BLAKE3_SOURCES})
-add_library(swgr::blake3 ALIAS swgr_blake3)
-target_include_directories(swgr_blake3 PUBLIC
+add_library(stir_whir_gr_blake3 STATIC ${STIR_WHIR_GR_BLAKE3_SOURCES})
+add_library(stir_whir_gr::blake3 ALIAS stir_whir_gr_blake3)
+target_include_directories(stir_whir_gr_blake3 PUBLIC
                            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/blake3)
-target_compile_features(swgr_blake3 PUBLIC c_std_99)
+target_compile_features(stir_whir_gr_blake3 PUBLIC c_std_99)
 
 if(NOT (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|X86_64|amd64|AMD64)$" AND UNIX AND
         (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID MATCHES "Clang")))
-  target_compile_definitions(swgr_blake3 PRIVATE BLAKE3_USE_NEON=0
-                                                 BLAKE3_NO_SSE2
-                                                 BLAKE3_NO_SSE41
-                                                 BLAKE3_NO_AVX2
-                                                 BLAKE3_NO_AVX512)
+  target_compile_definitions(stir_whir_gr_blake3 PRIVATE BLAKE3_USE_NEON=0
+                                                         BLAKE3_NO_SSE2
+                                                         BLAKE3_NO_SSE41
+                                                         BLAKE3_NO_AVX2
+                                                         BLAKE3_NO_AVX512)
 endif()
 
 add_library(stir_over_gr STATIC ${STIR_OVER_GR_SOURCES})
-add_library(swgr::stir_over_gr ALIAS stir_over_gr)
-add_library(swgr::swgr ALIAS stir_over_gr)
+add_library(stir_whir_gr::stir_over_gr ALIAS stir_over_gr)
+add_library(stir_whir_gr::stir_whir_gr ALIAS stir_over_gr)
 
 target_include_directories(
     stir_over_gr
@@ -134,14 +134,14 @@ else()
   target_compile_options(stir_over_gr PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-target_link_libraries(stir_over_gr PUBLIC galoisring_backend swgr_blake3)
+target_link_libraries(stir_over_gr PUBLIC galoisring_backend stir_whir_gr_blake3)
 
-if(SWGR_OPENMP_ENABLED)
-  target_compile_definitions(stir_over_gr PUBLIC SWGR_HAS_OPENMP=1)
+if(STIR_WHIR_GR_OPENMP_ENABLED)
+  target_compile_definitions(stir_over_gr PUBLIC STIR_WHIR_GR_HAS_OPENMP=1)
   target_link_libraries(stir_over_gr PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-if(SWGR_BUILD_TESTS)
+if(STIR_WHIR_GR_BUILD_TESTS)
   enable_testing()
 
   add_executable(test_gr_basic tests/test_gr_basic.cpp)
@@ -216,7 +216,7 @@ if(SWGR_BUILD_TESTS)
   add_test(NAME test_soundness_configurator COMMAND $<TARGET_FILE:test_soundness_configurator>)
 endif()
 
-if(SWGR_BUILD_BENCH)
+if(STIR_WHIR_GR_BUILD_BENCH)
   add_executable(bench_time bench/bench_time.cpp)
   target_link_libraries(bench_time PRIVATE stir_over_gr)
   add_executable(bench_stir_query_solver bench/bench_stir_query_solver.cpp)

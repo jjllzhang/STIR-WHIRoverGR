@@ -13,7 +13,7 @@
 
 using NTL::power;
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
 std::uint64_t CheckedPow3(std::uint64_t exponent, const char* label) {
@@ -194,4 +194,4 @@ algebra::GRElem evaluate_virtual_fold_query_from_leaf_payloads(
   });
 }
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir

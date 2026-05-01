@@ -12,22 +12,22 @@ void TestManualQueryValidationRejectsZero() {
   testutil::PrintInfo(
       "soundness configurator rejects zero entries in manual schedules");
 
-  CHECK(swgr::soundness::validate_manual_queries({2, 1}));
-  CHECK(!swgr::soundness::validate_manual_queries({2, 0}));
+  CHECK(stir_whir_gr::soundness::validate_manual_queries({2, 1}));
+  CHECK(!stir_whir_gr::soundness::validate_manual_queries({2, 0}));
 }
 
 void TestAutoHeuristicMatchesCurrentRoundShape() {
   testutil::PrintInfo(
       "soundness configurator keeps the current conjecture-capacity round shape");
 
-  CHECK_EQ(swgr::soundness::auto_query_count_for_round(
-               swgr::SecurityMode::ConjectureCapacity, 64, 0, 1.0, 0U),
+  CHECK_EQ(stir_whir_gr::soundness::auto_query_count_for_round(
+               stir_whir_gr::SecurityMode::ConjectureCapacity, 64, 0, 1.0, 0U),
            std::uint64_t{2});
-  CHECK_EQ(swgr::soundness::auto_query_count_for_round(
-               swgr::SecurityMode::ConjectureCapacity, 64, 0, 1.0, 1U),
+  CHECK_EQ(stir_whir_gr::soundness::auto_query_count_for_round(
+               stir_whir_gr::SecurityMode::ConjectureCapacity, 64, 0, 1.0, 1U),
            std::uint64_t{1});
-  CHECK_EQ(swgr::soundness::auto_query_count_for_round(
-               swgr::SecurityMode::Conservative, 128, 22, 1.0, 0U),
+  CHECK_EQ(stir_whir_gr::soundness::auto_query_count_for_round(
+               stir_whir_gr::SecurityMode::Conservative, 128, 22, 1.0, 0U),
            std::uint64_t{3});
 }
 
@@ -35,8 +35,8 @@ void TestEngineeringHeuristicResultCarriesPolicyAndCaveat() {
   testutil::PrintInfo(
       "soundness configurator reports engineering metadata and caveats");
 
-  const auto result = swgr::soundness::engineering_heuristic_result(
-      swgr::SecurityMode::Conservative, 128, 22, true, 1.0);
+  const auto result = stir_whir_gr::soundness::engineering_heuristic_result(
+      stir_whir_gr::SecurityMode::Conservative, 128, 22, true, 1.0);
 
   CHECK_EQ(result.model, std::string("engineering-heuristic-v1"));
   CHECK_EQ(result.scope, std::string("engineering_metadata_non_paper"));

@@ -2,7 +2,7 @@
 
 This directory contains the repository's public benchmark entrypoints and
 workload presets. Current benchmark binaries are built by CMake when
-`SWGR_BUILD_BENCH=ON`. Helper scripts live in `scripts/bench/`.
+`STIR_WHIR_GR_BUILD_BENCH=ON`. Helper scripts live in `scripts/bench/`.
 
 ## Binaries
 

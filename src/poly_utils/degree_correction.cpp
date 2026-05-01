@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 namespace {
 
 std::vector<algebra::GRElem> Trim(std::vector<algebra::GRElem> coefficients) {
@@ -136,4 +136,4 @@ Polynomial degree_correction_polynomial(
   return Multiply(ctx, poly, scaling);
 }
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils

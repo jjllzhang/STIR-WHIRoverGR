@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
 class ByteSink {
@@ -25,23 +25,23 @@ class ByteSink {
 };
 
 template <typename Sink>
-void SerializeRingElement(Sink& sink, const swgr::algebra::GRContext& ctx,
-                          const swgr::algebra::GRElem& value) {
-  swgr::SerializeBytes(sink, ctx.serialize(value));
+void SerializeRingElement(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
+                          const stir_whir_gr::algebra::GRElem& value) {
+  stir_whir_gr::SerializeBytes(sink, ctx.serialize(value));
 }
 
 template <typename Sink>
-void SerializeMerkleProof(Sink& sink, const swgr::crypto::MerkleProof& proof) {
-  swgr::SerializeUint64Vector(sink, proof.queried_indices);
-  swgr::SerializeByteVector(sink, proof.leaf_payloads);
-  swgr::SerializeByteVector(sink, proof.sibling_hashes);
+void SerializeMerkleProof(Sink& sink, const stir_whir_gr::crypto::MerkleProof& proof) {
+  stir_whir_gr::SerializeUint64Vector(sink, proof.queried_indices);
+  stir_whir_gr::SerializeByteVector(sink, proof.leaf_payloads);
+  stir_whir_gr::SerializeByteVector(sink, proof.sibling_hashes);
 }
 
 template <typename Sink>
 void SerializeSumcheckPolynomial(
-    Sink& sink, const swgr::algebra::GRContext& ctx,
+    Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
     const WhirSumcheckPolynomial& polynomial) {
-  swgr::SerializeUint64(
+  stir_whir_gr::SerializeUint64(
       sink, static_cast<std::uint64_t>(polynomial.coefficients.size()));
   for (const auto& coefficient : polynomial.coefficients) {
     SerializeRingElement(sink, ctx, coefficient);
@@ -49,17 +49,17 @@ void SerializeSumcheckPolynomial(
 }
 
 template <typename Sink>
-void SerializeWhirProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
+void SerializeWhirProofBody(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
                             const WhirProof& proof) {
-  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(proof.rounds.size()));
+  stir_whir_gr::SerializeUint64(sink, static_cast<std::uint64_t>(proof.rounds.size()));
   for (const auto& round : proof.rounds) {
-    swgr::SerializeUint64(
+    stir_whir_gr::SerializeUint64(
         sink,
         static_cast<std::uint64_t>(round.sumcheck_polynomials.size()));
     for (const auto& polynomial : round.sumcheck_polynomials) {
       SerializeSumcheckPolynomial(sink, ctx, polynomial);
     }
-    swgr::SerializeBytes(sink, round.g_root);
+    stir_whir_gr::SerializeBytes(sink, round.g_root);
     SerializeMerkleProof(sink, round.virtual_fold_openings);
   }
   SerializeRingElement(sink, ctx, proof.final_constant);
@@ -69,29 +69,29 @@ void SerializeWhirProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
 template <typename Sink>
 void SerializePublicParameters(Sink& sink, const WhirPublicParameters& pp) {
   const auto& ctx = *pp.ctx;
-  swgr::SerializeUint64(sink, pp.variable_count);
-  swgr::SerializeUint64(sink, pp.initial_domain.size());
+  stir_whir_gr::SerializeUint64(sink, pp.variable_count);
+  stir_whir_gr::SerializeUint64(sink, pp.initial_domain.size());
   SerializeRingElement(sink, ctx, pp.initial_domain.offset());
   SerializeRingElement(sink, ctx, pp.initial_domain.root());
   SerializeRingElement(sink, ctx, pp.omega);
-  swgr::SerializeUint64(sink, pp.lambda_target);
-  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(pp.hash_profile));
-  swgr::SerializeUint64Vector(sink, pp.layer_widths);
-  swgr::SerializeUint64Vector(sink, pp.shift_repetitions);
-  swgr::SerializeUint64(sink, pp.final_repetitions);
-  swgr::SerializeUint64Vector(sink, pp.degree_bounds);
+  stir_whir_gr::SerializeUint64(sink, pp.lambda_target);
+  stir_whir_gr::SerializeUint64(sink, static_cast<std::uint64_t>(pp.hash_profile));
+  stir_whir_gr::SerializeUint64Vector(sink, pp.layer_widths);
+  stir_whir_gr::SerializeUint64Vector(sink, pp.shift_repetitions);
+  stir_whir_gr::SerializeUint64(sink, pp.final_repetitions);
+  stir_whir_gr::SerializeUint64Vector(sink, pp.degree_bounds);
 }
 
 template <typename Sink>
-void SerializeRingVector(Sink& sink, const swgr::algebra::GRContext& ctx,
-                         std::span<const swgr::algebra::GRElem> values) {
-  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+void SerializeRingVector(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
+                         std::span<const stir_whir_gr::algebra::GRElem> values) {
+  stir_whir_gr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
   for (const auto& value : values) {
     SerializeRingElement(sink, ctx, value);
   }
 }
 
-bool MerkleProofShapeValid(const swgr::crypto::MerkleProof& proof) {
+bool MerkleProofShapeValid(const stir_whir_gr::crypto::MerkleProof& proof) {
   return !proof.queried_indices.empty() &&
          proof.queried_indices.size() == proof.leaf_payloads.size();
 }
@@ -114,21 +114,21 @@ std::string indexed_label(std::string_view prefix, std::uint64_t round,
 }
 
 std::uint64_t serialized_message_bytes(const WhirCommitment& commitment) {
-  swgr::CountingSink sink;
-  swgr::SerializeBytes(sink, commitment.oracle_root);
+  stir_whir_gr::CountingSink sink;
+  stir_whir_gr::SerializeBytes(sink, commitment.oracle_root);
   return sink.size();
 }
 
 std::uint64_t serialized_message_bytes(
-    const swgr::algebra::GRContext& ctx, const WhirProof& proof) {
-  swgr::CountingSink sink;
+    const stir_whir_gr::algebra::GRContext& ctx, const WhirProof& proof) {
+  stir_whir_gr::CountingSink sink;
   SerializeWhirProofBody(sink, ctx, proof);
   return sink.size();
 }
 
 std::uint64_t serialized_message_bytes(
-    const swgr::algebra::GRContext& ctx, const WhirOpening& opening) {
-  swgr::CountingSink sink;
+    const stir_whir_gr::algebra::GRContext& ctx, const WhirOpening& opening) {
+  stir_whir_gr::CountingSink sink;
   SerializeRingElement(sink, ctx, opening.value);
   SerializeWhirProofBody(sink, ctx, opening.proof);
   return sink.size();
@@ -152,7 +152,7 @@ bool proof_shape_valid(const WhirProof& proof) {
   return true;
 }
 
-void absorb_public_parameters(swgr::crypto::Transcript& transcript,
+void absorb_public_parameters(stir_whir_gr::crypto::Transcript& transcript,
                               const WhirPublicParameters& pp) {
   ByteSink sink;
   SerializePublicParameters(sink, pp);
@@ -160,10 +160,10 @@ void absorb_public_parameters(swgr::crypto::Transcript& transcript,
                                   sink.bytes());
 }
 
-void absorb_opening_preamble(swgr::crypto::Transcript& transcript,
+void absorb_opening_preamble(stir_whir_gr::crypto::Transcript& transcript,
                              const WhirCommitment& commitment,
-                             std::span<const swgr::algebra::GRElem> point,
-                             const swgr::algebra::GRElem& value) {
+                             std::span<const stir_whir_gr::algebra::GRElem> point,
+                             const stir_whir_gr::algebra::GRElem& value) {
   const auto& ctx = *commitment.public_params.ctx;
   absorb_public_parameters(transcript, commitment.public_params);
   transcript.absorb_labeled_bytes(kTranscriptLabelCommitment,
@@ -180,8 +180,8 @@ void absorb_opening_preamble(swgr::crypto::Transcript& transcript,
                                   value_sink.bytes());
 }
 
-void absorb_sumcheck_polynomial(swgr::crypto::Transcript& transcript,
-                                const swgr::algebra::GRContext& ctx,
+void absorb_sumcheck_polynomial(stir_whir_gr::crypto::Transcript& transcript,
+                                const stir_whir_gr::algebra::GRContext& ctx,
                                 std::string_view label,
                                 const WhirSumcheckPolynomial& polynomial) {
   ByteSink sink;
@@ -190,7 +190,7 @@ void absorb_sumcheck_polynomial(swgr::crypto::Transcript& transcript,
 }
 
 std::vector<std::uint64_t> derive_unique_positions(
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t query_count) {
   if (modulus == 0 || query_count == 0) {
     return {};
@@ -212,8 +212,8 @@ std::vector<std::uint64_t> derive_unique_positions(
 }
 
 std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals) {
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals) {
   return ctx.with_ntl_context([&] {
     std::vector<std::vector<std::uint8_t>> leaves;
     leaves.reserve(oracle_evals.size());
@@ -224,11 +224,11 @@ std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
   });
 }
 
-swgr::crypto::MerkleTree build_oracle_tree(
-    swgr::HashProfile profile, const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals) {
-  return swgr::crypto::MerkleTree(profile,
+stir_whir_gr::crypto::MerkleTree build_oracle_tree(
+    stir_whir_gr::HashProfile profile, const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals) {
+  return stir_whir_gr::crypto::MerkleTree(profile,
                                   build_oracle_leaves(ctx, oracle_evals));
 }
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir

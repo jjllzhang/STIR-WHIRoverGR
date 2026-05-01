@@ -10,11 +10,11 @@
 #include "crypto/hash.hpp"
 #include "crypto/merkle_tree/proof_planner.hpp"
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 namespace {
 
-constexpr char kLeafDomain[] = "swgr.merkle.leaf.v1";
-constexpr char kNodeDomain[] = "swgr.merkle.node.v1";
+constexpr char kLeafDomain[] = "stir_whir_gr.merkle.leaf.v1";
+constexpr char kNodeDomain[] = "stir_whir_gr.merkle.node.v1";
 constexpr std::size_t kParallelMerkleThreshold = 128;
 
 struct VerifyParentJob {
@@ -73,7 +73,7 @@ MerkleTree::MerkleTree(std::vector<std::vector<std::uint8_t>> leaves,
       NextPowerOfTwo(static_cast<std::uint64_t>(leaves_.size())));
   levels_.push_back(std::vector<std::vector<std::uint8_t>>(padded_leaf_count));
   auto& leaf_level = levels_.back();
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #pragma omp parallel for if(leaves_.size() >= kParallelMerkleThreshold) schedule(static)
 #endif
   for (std::ptrdiff_t i = 0; i < static_cast<std::ptrdiff_t>(leaves_.size()); ++i) {
@@ -87,7 +87,7 @@ MerkleTree::MerkleTree(std::vector<std::vector<std::uint8_t>> leaves,
   while (levels_.back().size() > 1U) {
     const auto& current = levels_.back();
     std::vector<std::vector<std::uint8_t>> next(current.size() / 2U);
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #pragma omp parallel for if(next.size() >= kParallelMerkleThreshold) schedule(static)
 #endif
     for (std::ptrdiff_t i = 0; i < static_cast<std::ptrdiff_t>(next.size()); ++i) {
@@ -157,7 +157,7 @@ bool MerkleTree::verify(const std::vector<std::uint8_t>& root,
 
   std::vector<std::pair<std::uint64_t, std::vector<std::uint8_t>>> current(
       proof.queried_indices.size());
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #pragma omp parallel for if(proof.queried_indices.size() >= kParallelMerkleThreshold) schedule(static)
 #endif
   for (std::ptrdiff_t i = 0;
@@ -221,7 +221,7 @@ bool MerkleTree::verify(const std::vector<std::uint8_t>& root,
     for (std::size_t i = 0; i < jobs.size(); ++i) {
       parents[i].first = jobs[i].parent_index;
     }
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #pragma omp parallel for if(jobs.size() >= kParallelMerkleThreshold) schedule(static)
 #endif
     for (std::ptrdiff_t i = 0; i < static_cast<std::ptrdiff_t>(jobs.size()); ++i) {
@@ -236,4 +236,4 @@ bool MerkleTree::verify(const std::vector<std::uint8_t>& root,
          current.front().second == root;
 }
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto

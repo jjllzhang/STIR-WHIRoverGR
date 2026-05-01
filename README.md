@@ -135,8 +135,8 @@ Development build:
 
 ```bash
 cmake -S . -B build \
-  -DSWGR_BUILD_TESTS=ON \
-  -DSWGR_BUILD_BENCH=ON
+  -DSTIR_WHIR_GR_BUILD_TESTS=ON \
+  -DSTIR_WHIR_GR_BUILD_BENCH=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
@@ -146,8 +146,8 @@ Release build for performance measurements:
 ```bash
 cmake -S . -B build-release \
   -DCMAKE_BUILD_TYPE=Release \
-  -DSWGR_BUILD_TESTS=ON \
-  -DSWGR_BUILD_BENCH=ON
+  -DSTIR_WHIR_GR_BUILD_TESTS=ON \
+  -DSTIR_WHIR_GR_BUILD_BENCH=ON
 cmake --build build-release -j
 ctest --test-dir build-release --output-on-failure
 ```
@@ -155,7 +155,7 @@ ctest --test-dir build-release --output-on-failure
 Disable OpenMP explicitly if needed:
 
 ```bash
-cmake -S . -B build -DSWGR_USE_OPENMP=OFF
+cmake -S . -B build -DSTIR_WHIR_GR_USE_OPENMP=OFF
 ```
 
 ## Quick Validation
@@ -282,7 +282,7 @@ Main targets:
 
 - `galoisring_backend`: vendored Galois-ring backend static library
 - `stir_over_gr`: main project static library
-- aliases: `swgr::galoisring_backend`, `swgr::stir_over_gr`, `swgr::swgr`
+- aliases: `stir_whir_gr::galoisring_backend`, `stir_whir_gr::stir_over_gr`, `stir_whir_gr::stir_whir_gr`
 - `bench_time`: end-to-end timing benchmark for FRI, STIR, and `whir_gr_ud`
 - focused WHIR tests: `test_whir`, `test_whir_multiquadratic`, `test_whir_constraint`, `test_whir_folding`, `test_whir_soundness`, `test_whir_roundtrip`
 

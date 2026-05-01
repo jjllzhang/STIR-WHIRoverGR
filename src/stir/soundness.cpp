@@ -13,7 +13,7 @@
 #include "soundness/configurator.hpp"
 #include "stir/common.hpp"
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 namespace {
 
 struct QueryBounds {
@@ -120,14 +120,14 @@ std::uint64_t ResolveFinalQueryCount(const StirParameters& params,
                                      std::size_t round_count) {
   if (!params.query_repetitions.empty()) {
     const auto schedule =
-        swgr::fri::query_schedule(round_count + 1U, params.query_repetitions);
+        stir_whir_gr::fri::query_schedule(round_count + 1U, params.query_repetitions);
     return std::min(schedule.back(), final_domain_size);
   }
 
   const double rho = static_cast<double>(final_degree_bound + 1U) /
                      static_cast<double>(final_domain_size);
   return std::min(
-      swgr::soundness::auto_query_count_for_round(
+      stir_whir_gr::soundness::auto_query_count_for_round(
           params.sec_mode, params.lambda_target, params.pow_bits, rho,
           round_count),
       final_domain_size);
@@ -169,7 +169,7 @@ std::optional<QuerySolveContext> BuildQuerySolveContext(
   QuerySolveContext context;
   context.round_count = folding_round_count(instance, params);
   context.teich_size =
-      swgr::algebra::teichmuller_set_size(instance.domain.context());
+      stir_whir_gr::algebra::teichmuller_set_size(instance.domain.context());
 
   Domain current_domain = instance.domain;
   std::uint64_t current_degree_bound = instance.claimed_degree;
@@ -310,7 +310,7 @@ StirTheoremSoundnessAnalysis analyze_theorem_soundness(
     return analysis;
   }
 
-  const auto teich_size = swgr::algebra::teichmuller_set_size(instance.domain.context());
+  const auto teich_size = stir_whir_gr::algebra::teichmuller_set_size(instance.domain.context());
   const auto schedule = resolve_query_schedule_metadata(params, instance);
   const std::size_t round_count = folding_round_count(instance, params);
   if (schedule.size() != round_count) {
@@ -544,4 +544,4 @@ StirTheoremQuerySolveResult solve_min_query_schedule_for_lambda(
   return result;
 }
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir

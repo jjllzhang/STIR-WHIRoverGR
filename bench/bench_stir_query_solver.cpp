@@ -18,11 +18,11 @@ struct Options {
   std::uint64_t d = 81;
   std::uint64_t lambda_target = 128;
   std::uint64_t pow_bits = 0;
-  swgr::SecurityMode sec_mode = swgr::SecurityMode::ConjectureCapacity;
-  swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
+  stir_whir_gr::SecurityMode sec_mode = stir_whir_gr::SecurityMode::ConjectureCapacity;
+  stir_whir_gr::HashProfile hash_profile = stir_whir_gr::HashProfile::STIR_NATIVE;
   std::uint64_t stop_degree = 9;
   std::uint64_t ood_samples = 2;
-  swgr::bench::OutputFormat format = swgr::bench::OutputFormat::Text;
+  stir_whir_gr::bench::OutputFormat format = stir_whir_gr::bench::OutputFormat::Text;
 };
 
 std::string Usage(const char* argv0) {
@@ -49,29 +49,29 @@ Options ParseOptions(int argc, char** argv) {
     }
     const std::string value(argv[++i]);
     if (key == "--p") {
-      options.p = swgr::bench::ParseUint64(key, value);
+      options.p = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--k-exp") {
-      options.k_exp = swgr::bench::ParseUint64(key, value);
+      options.k_exp = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--r") {
-      options.r = swgr::bench::ParseUint64(key, value);
+      options.r = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--n") {
-      options.n = swgr::bench::ParseUint64(key, value);
+      options.n = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--d") {
-      options.d = swgr::bench::ParseUint64(key, value);
+      options.d = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--lambda") {
-      options.lambda_target = swgr::bench::ParseUint64(key, value);
+      options.lambda_target = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--pow-bits") {
-      options.pow_bits = swgr::bench::ParseUint64(key, value);
+      options.pow_bits = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--sec-mode") {
-      options.sec_mode = swgr::bench::ParseSecurityMode(value);
+      options.sec_mode = stir_whir_gr::bench::ParseSecurityMode(value);
     } else if (key == "--hash-profile") {
-      options.hash_profile = swgr::bench::ParseHashProfile(value);
+      options.hash_profile = stir_whir_gr::bench::ParseHashProfile(value);
     } else if (key == "--stop-degree") {
-      options.stop_degree = swgr::bench::ParseUint64(key, value);
+      options.stop_degree = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--ood-samples") {
-      options.ood_samples = swgr::bench::ParseUint64(key, value);
+      options.ood_samples = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--format") {
-      options.format = swgr::bench::ParseOutputFormat(value);
+      options.format = stir_whir_gr::bench::ParseOutputFormat(value);
     } else {
       throw std::invalid_argument("unknown option: " + key);
     }
@@ -83,10 +83,10 @@ Options ParseOptions(int argc, char** argv) {
 }
 
 void PrintText(const Options& options,
-               const swgr::stir::StirTheoremQuerySolveResult& result) {
+               const stir_whir_gr::stir::StirTheoremQuerySolveResult& result) {
   std::cout << "protocol=stir9to3\n";
   std::cout << "ring="
-            << swgr::bench::RingString(options.p, options.k_exp, options.r)
+            << stir_whir_gr::bench::RingString(options.p, options.k_exp, options.r)
             << "\n";
   std::cout << "n=" << options.n << "\n";
   std::cout << "d=" << options.d << "\n";
@@ -111,12 +111,12 @@ void PrintText(const Options& options,
 }
 
 void PrintJson(const Options& options,
-               const swgr::stir::StirTheoremQuerySolveResult& result) {
+               const stir_whir_gr::stir::StirTheoremQuerySolveResult& result) {
   std::cout << "{\n";
   std::cout << "  \"protocol\": \"stir9to3\",\n";
   std::cout << "  \"ring\": \""
-            << swgr::bench::JsonEscape(
-                   swgr::bench::RingString(options.p, options.k_exp, options.r))
+            << stir_whir_gr::bench::JsonEscape(
+                   stir_whir_gr::bench::RingString(options.p, options.k_exp, options.r))
             << "\",\n";
   std::cout << "  \"n\": " << options.n << ",\n";
   std::cout << "  \"d\": " << options.d << ",\n";
@@ -138,7 +138,7 @@ void PrintJson(const Options& options,
     if (i != 0) {
       std::cout << ", ";
     }
-    std::cout << "\"" << swgr::bench::JsonEscape(result.notes[i]) << "\"";
+    std::cout << "\"" << stir_whir_gr::bench::JsonEscape(result.notes[i]) << "\"";
   }
   std::cout << "],\n";
   std::cout << "  \"assumptions\": [";
@@ -147,7 +147,7 @@ void PrintJson(const Options& options,
       std::cout << ", ";
     }
     std::cout << "\""
-              << swgr::bench::JsonEscape(result.analysis.assumptions[i]) << "\"";
+              << stir_whir_gr::bench::JsonEscape(result.analysis.assumptions[i]) << "\"";
   }
   std::cout << "]\n";
   std::cout << "}\n";
@@ -158,14 +158,14 @@ void PrintJson(const Options& options,
 int main(int argc, char** argv) {
   try {
     const auto options = ParseOptions(argc, argv);
-    auto ctx = std::make_shared<swgr::algebra::GRContext>(swgr::algebra::GRConfig{
+    auto ctx = std::make_shared<stir_whir_gr::algebra::GRContext>(stir_whir_gr::algebra::GRConfig{
         .p = options.p,
         .k_exp = options.k_exp,
         .r = options.r,
     });
     (void)ctx->teich_generator();
 
-    swgr::stir::StirParameters params;
+    stir_whir_gr::stir::StirParameters params;
     params.virtual_fold_factor = 9;
     params.shift_power = 3;
     params.ood_samples = options.ood_samples;
@@ -174,19 +174,19 @@ int main(int argc, char** argv) {
     params.pow_bits = options.pow_bits;
     params.sec_mode = options.sec_mode;
     params.hash_profile = options.hash_profile;
-    params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGr;
-    params.challenge_sampling = swgr::stir::StirChallengeSampling::TeichmullerT;
+    params.protocol_mode = stir_whir_gr::stir::StirProtocolMode::TheoremGr;
+    params.challenge_sampling = stir_whir_gr::stir::StirChallengeSampling::TeichmullerT;
     params.ood_sampling =
-        swgr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
+        stir_whir_gr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
 
-    const swgr::stir::StirInstance instance{
-        .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
+    const stir_whir_gr::stir::StirInstance instance{
+        .domain = stir_whir_gr::Domain::teichmuller_subgroup(ctx, options.n),
         .claimed_degree = options.d,
     };
     const auto result =
-        swgr::stir::solve_min_query_schedule_for_lambda(params, instance);
+        stir_whir_gr::stir::solve_min_query_schedule_for_lambda(params, instance);
 
-    if (options.format == swgr::bench::OutputFormat::Json) {
+    if (options.format == stir_whir_gr::bench::OutputFormat::Json) {
       PrintJson(options, result);
     } else {
       PrintText(options, result);

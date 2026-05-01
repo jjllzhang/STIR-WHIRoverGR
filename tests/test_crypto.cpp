@@ -17,8 +17,8 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
 
 std::uint64_t NextPowerOfTwo(std::uint64_t value) {
   std::uint64_t power = 1;
@@ -50,8 +50,8 @@ void TestTranscriptIsDeterministicAndDomainSeparated() {
       "transcript stays deterministic and changes when absorbed bytes change");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  swgr::crypto::Transcript lhs(swgr::HashProfile::STIR_NATIVE);
-  swgr::crypto::Transcript rhs(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript lhs(stir_whir_gr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript rhs(stir_whir_gr::HashProfile::STIR_NATIVE);
   lhs.absorb_bytes(std::vector<std::uint8_t>{1, 2, 3, 4});
   rhs.absorb_bytes(std::vector<std::uint8_t>{1, 2, 3, 4});
 
@@ -60,7 +60,7 @@ void TestTranscriptIsDeterministicAndDomainSeparated() {
   CHECK(lhs_ring == rhs_ring);
   CHECK_EQ(lhs.challenge_index("query", 17), rhs.challenge_index("query", 17));
 
-  swgr::crypto::Transcript different(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript different(stir_whir_gr::HashProfile::STIR_NATIVE);
   different.absorb_bytes(std::vector<std::uint8_t>{1, 2, 3, 9});
   CHECK(!(different.challenge_ring(ctx, "alpha") == lhs_ring));
 }
@@ -72,15 +72,15 @@ void TestTranscriptLabeledAbsorbSeparatesEqualPayloads() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const std::vector<std::uint8_t> payload{4, 3, 2, 1};
 
-  swgr::crypto::Transcript lhs(swgr::HashProfile::STIR_NATIVE);
-  swgr::crypto::Transcript rhs(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript lhs(stir_whir_gr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript rhs(stir_whir_gr::HashProfile::STIR_NATIVE);
   lhs.absorb_labeled_bytes("label.a", payload);
   rhs.absorb_labeled_bytes("label.a", payload);
   CHECK(lhs.challenge_ring(ctx, "alpha") == rhs.challenge_ring(ctx, "alpha"));
 
-  swgr::crypto::Transcript different_label(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript different_label(stir_whir_gr::HashProfile::STIR_NATIVE);
   different_label.absorb_labeled_bytes("label.b", payload);
-  swgr::crypto::Transcript baseline(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript baseline(stir_whir_gr::HashProfile::STIR_NATIVE);
   baseline.absorb_labeled_bytes("label.a", payload);
   CHECK(!(different_label.challenge_ring(ctx, "alpha") ==
           baseline.challenge_ring(ctx, "alpha")));
@@ -91,8 +91,8 @@ void TestTranscriptTeichmullerChallengeIsDeterministicAndInT() {
       "transcript teichmuller challenges stay deterministic and inside T");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  swgr::crypto::Transcript lhs(swgr::HashProfile::STIR_NATIVE);
-  swgr::crypto::Transcript rhs(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript lhs(stir_whir_gr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript rhs(stir_whir_gr::HashProfile::STIR_NATIVE);
   lhs.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 6});
   rhs.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 6});
 
@@ -101,12 +101,12 @@ void TestTranscriptTeichmullerChallengeIsDeterministicAndInT() {
     const auto lhs_beta = lhs.challenge_teichmuller(ctx, label);
     const auto rhs_beta = rhs.challenge_teichmuller(ctx, label);
     CHECK(lhs_beta == rhs_beta);
-    CHECK(swgr::algebra::is_teichmuller_element(ctx, lhs_beta));
+    CHECK(stir_whir_gr::algebra::is_teichmuller_element(ctx, lhs_beta));
   }
 
-  swgr::crypto::Transcript different(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript different(stir_whir_gr::HashProfile::STIR_NATIVE);
   different.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 5});
-  swgr::crypto::Transcript baseline(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript baseline(stir_whir_gr::HashProfile::STIR_NATIVE);
   baseline.absorb_bytes(std::vector<std::uint8_t>{9, 8, 7, 6});
   CHECK(!(different.challenge_teichmuller(ctx, "beta:0") ==
           baseline.challenge_teichmuller(ctx, "beta:0")));
@@ -118,15 +118,15 @@ void TestHashBackendIsBlake3Only() {
 
   const std::vector<std::uint8_t> payload = {1, 2, 3, 4, 5, 6, 7, 8};
   const auto blake3 =
-      swgr::crypto::hash_bytes(swgr::crypto::HashBackend::Blake3, payload);
+      stir_whir_gr::crypto::hash_bytes(stir_whir_gr::crypto::HashBackend::Blake3, payload);
   const auto blake3_again =
-      swgr::crypto::hash_bytes(swgr::crypto::HashBackend::Blake3, payload);
+      stir_whir_gr::crypto::hash_bytes(stir_whir_gr::crypto::HashBackend::Blake3, payload);
   const auto different =
-      swgr::crypto::hash_bytes(swgr::crypto::HashBackend::Blake3,
+      stir_whir_gr::crypto::hash_bytes(stir_whir_gr::crypto::HashBackend::Blake3,
                                std::vector<std::uint8_t>{1, 2, 3, 4, 5, 6, 7, 9});
 
-  CHECK_EQ(swgr::crypto::selected_hash_backend(),
-           swgr::crypto::HashBackend::Blake3);
+  CHECK_EQ(stir_whir_gr::crypto::selected_hash_backend(),
+           stir_whir_gr::crypto::HashBackend::Blake3);
   CHECK_EQ(blake3.size(), std::size_t{32});
   CHECK_EQ(blake3, blake3_again);
   CHECK(blake3 != different);
@@ -138,22 +138,22 @@ void TestMerkleOpenVerifyAndRejectTamper() {
 
   std::vector<std::vector<std::uint8_t>> leaves = {
       {0x10, 0x11}, {0x20, 0x21}, {0x30, 0x31}, {0x40, 0x41}};
-  const swgr::crypto::MerkleTree tree(swgr::HashProfile::STIR_NATIVE, leaves);
+  const stir_whir_gr::crypto::MerkleTree tree(stir_whir_gr::HashProfile::STIR_NATIVE, leaves);
   const auto proof = tree.open({2, 0, 2});
 
   CHECK_EQ(proof.queried_indices.size(), std::size_t{2});
-  CHECK(swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+  CHECK(stir_whir_gr::crypto::MerkleTree::verify(stir_whir_gr::HashProfile::STIR_NATIVE,
                                          leaves.size(), tree.root(), proof));
 
   auto tampered_payload = proof;
   tampered_payload.leaf_payloads[0][0] ^= 0x01U;
-  CHECK(!swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+  CHECK(!stir_whir_gr::crypto::MerkleTree::verify(stir_whir_gr::HashProfile::STIR_NATIVE,
                                           leaves.size(), tree.root(),
                                           tampered_payload));
 
   auto tampered_sibling = proof;
   tampered_sibling.sibling_hashes[0][0] ^= 0x01U;
-  CHECK(!swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+  CHECK(!stir_whir_gr::crypto::MerkleTree::verify(stir_whir_gr::HashProfile::STIR_NATIVE,
                                           leaves.size(), tree.root(),
                                           tampered_sibling));
 }
@@ -163,7 +163,7 @@ void TestProofPlannerMatchesUniqueQueriesAndUpperBound() {
       "proof planner counts deduped leaves and stays under non-pruned upper bound");
 
   const std::vector<std::uint64_t> queries = {4, 1, 4, 3, 1};
-  const auto plan = swgr::crypto::plan_pruned_multiproof(
+  const auto plan = stir_whir_gr::crypto::plan_pruned_multiproof(
       5, queries, /*leaf_payload_bytes=*/18, /*digest_bytes=*/32);
   const std::uint64_t unique_queries =
       static_cast<std::uint64_t>(UniqueCount(queries));
@@ -182,9 +182,9 @@ void TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount() {
   std::vector<std::vector<std::uint8_t>> leaves = {
       {0x10, 0x11}, {0x20, 0x21}, {0x30, 0x31}, {0x40, 0x41}, {0x50, 0x51}};
   const std::vector<std::uint64_t> queries = {4, 1, 4};
-  const swgr::crypto::MerkleTree tree(swgr::HashProfile::STIR_NATIVE, leaves);
+  const stir_whir_gr::crypto::MerkleTree tree(stir_whir_gr::HashProfile::STIR_NATIVE, leaves);
   const auto proof = tree.open(queries);
-  const auto plan = swgr::crypto::plan_pruned_multiproof(
+  const auto plan = stir_whir_gr::crypto::plan_pruned_multiproof(
       leaves.size(), queries, /*leaf_payload_bytes=*/2, /*digest_bytes=*/32);
 
   CHECK_EQ(proof.queried_indices.size(), UniqueCount(queries));
@@ -192,7 +192,7 @@ void TestMerkleOpenVerifyOnNonPowerOfTwoLeafCount() {
            static_cast<std::size_t>(plan.opened_leaf_count));
   CHECK_EQ(proof.sibling_hashes.size(),
            static_cast<std::size_t>(plan.unique_sibling_count));
-  CHECK(swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+  CHECK(stir_whir_gr::crypto::MerkleTree::verify(stir_whir_gr::HashProfile::STIR_NATIVE,
                                          leaves.size(), tree.root(), proof));
 }
 
@@ -218,15 +218,15 @@ void TestMerkleVerifyLargeMultiproofStillPasses() {
                       static_cast<std::uint64_t>(kLeafCount));
   }
 
-  const swgr::crypto::MerkleTree tree(swgr::HashProfile::STIR_NATIVE, leaves);
+  const stir_whir_gr::crypto::MerkleTree tree(stir_whir_gr::HashProfile::STIR_NATIVE, leaves);
   const auto proof = tree.open(queries);
   CHECK(proof.queried_indices.size() >= 128U);
-  CHECK(swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+  CHECK(stir_whir_gr::crypto::MerkleTree::verify(stir_whir_gr::HashProfile::STIR_NATIVE,
                                          leaves.size(), tree.root(), proof));
 
   auto tampered = proof;
   tampered.sibling_hashes.back().back() ^= 0x5AU;
-  CHECK(!swgr::crypto::MerkleTree::verify(swgr::HashProfile::STIR_NATIVE,
+  CHECK(!stir_whir_gr::crypto::MerkleTree::verify(stir_whir_gr::HashProfile::STIR_NATIVE,
                                           leaves.size(), tree.root(), tampered));
 }
 

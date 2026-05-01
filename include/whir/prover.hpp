@@ -1,5 +1,5 @@
-#ifndef SWGR_WHIR_PROVER_HPP_
-#define SWGR_WHIR_PROVER_HPP_
+#ifndef STIR_WHIR_GR_WHIR_PROVER_HPP_
+#define STIR_WHIR_GR_WHIR_PROVER_HPP_
 
 #include <span>
 
@@ -7,7 +7,7 @@
 #include "whir/multiquadratic.hpp"
 #include "whir/parameters.hpp"
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 
 class WhirProver {
  public:
@@ -22,12 +22,12 @@ class WhirProver {
 
   WhirOpening open(const WhirCommitment& commitment,
                    const WhirCommitmentState& state,
-                   std::span<const swgr::algebra::GRElem> point) const;
+                   std::span<const stir_whir_gr::algebra::GRElem> point) const;
 
  private:
   WhirParameters params_;
 };
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir
 
-#endif  // SWGR_WHIR_PROVER_HPP_
+#endif  // STIR_WHIR_GR_WHIR_PROVER_HPP_

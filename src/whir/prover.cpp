@@ -12,7 +12,7 @@
 #include "whir/constraint.hpp"
 #include "whir/folding.hpp"
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
 double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
@@ -22,10 +22,10 @@ double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
       .count();
 }
 
-std::vector<swgr::algebra::GRElem> EncodeOracle(
-    const swgr::algebra::GRContext& ctx, const Domain& domain,
+std::vector<stir_whir_gr::algebra::GRElem> EncodeOracle(
+    const stir_whir_gr::algebra::GRContext& ctx, const Domain& domain,
     const MultiQuadraticPolynomial& polynomial) {
-  std::vector<swgr::algebra::GRElem> oracle;
+  std::vector<stir_whir_gr::algebra::GRElem> oracle;
   oracle.reserve(static_cast<std::size_t>(domain.size()));
   for (std::uint64_t index = 0; index < domain.size(); ++index) {
     oracle.push_back(polynomial.evaluate_pow(ctx, domain.element(index)));
@@ -33,7 +33,7 @@ std::vector<swgr::algebra::GRElem> EncodeOracle(
   return oracle;
 }
 
-std::vector<swgr::algebra::GRElem> EncodeInitialOracle(
+std::vector<stir_whir_gr::algebra::GRElem> EncodeInitialOracle(
     const WhirPublicParameters& pp,
     const MultiQuadraticPolynomial& polynomial) {
   return EncodeOracle(*pp.ctx, pp.initial_domain, polynomial);
@@ -111,7 +111,7 @@ WhirCommitment WhirProver::commit(
 
 WhirOpening WhirProver::open(
     const WhirCommitment& commitment, const WhirCommitmentState& state,
-    std::span<const swgr::algebra::GRElem> point) const {
+    std::span<const stir_whir_gr::algebra::GRElem> point) const {
   if (!validate(params_, commitment)) {
     throw std::invalid_argument(
         "whir::WhirProver::open received invalid commitment");
@@ -163,7 +163,7 @@ WhirOpening WhirProver::open(
   opening.value = current_polynomial.evaluate(ctx, point);
   opening.proof.rounds.reserve(pp.layer_widths.size());
 
-  swgr::crypto::Transcript transcript(pp.hash_profile);
+  stir_whir_gr::crypto::Transcript transcript(pp.hash_profile);
   timer_start = std::chrono::steady_clock::now();
   absorb_opening_preamble(transcript, commitment, point, opening.value);
   transcript_ms +=
@@ -171,7 +171,7 @@ WhirOpening WhirProver::open(
 
   WhirConstraint constraint(pp.ternary_grid);
   constraint.add_shift_term(ctx.one(),
-                            std::vector<swgr::algebra::GRElem>(point.begin(),
+                            std::vector<stir_whir_gr::algebra::GRElem>(point.begin(),
                                                                 point.end()));
   auto sigma = opening.value;
 
@@ -180,7 +180,7 @@ WhirOpening WhirProver::open(
     WhirRoundProof round;
     round.sumcheck_polynomials.reserve(static_cast<std::size_t>(width));
 
-    std::vector<swgr::algebra::GRElem> alphas;
+    std::vector<stir_whir_gr::algebra::GRElem> alphas;
     alphas.reserve(static_cast<std::size_t>(width));
     for (std::uint64_t j = 0; j < width; ++j) {
       timer_start = std::chrono::steady_clock::now();
@@ -240,8 +240,8 @@ WhirOpening WhirProver::open(
     parent_indices.reserve(shift_positions.size() *
                            static_cast<std::size_t>(pow3_checked(width)));
     const Domain shift_domain = current_domain.pow_map(pow3_checked(width));
-    std::vector<std::vector<swgr::algebra::GRElem>> shift_points;
-    std::vector<swgr::algebra::GRElem> shift_values;
+    std::vector<std::vector<stir_whir_gr::algebra::GRElem>> shift_points;
+    std::vector<stir_whir_gr::algebra::GRElem> shift_values;
     shift_points.reserve(shift_positions.size());
     shift_values.reserve(shift_positions.size());
     for (const auto shift_index : shift_positions) {
@@ -286,7 +286,7 @@ WhirOpening WhirProver::open(
   }
 
   opening.proof.final_constant = ctx.with_ntl_context([&] {
-    const std::vector<swgr::algebra::GRElem> empty_point;
+    const std::vector<stir_whir_gr::algebra::GRElem> empty_point;
     return current_polynomial.evaluate(ctx, empty_point);
   });
   timer_start = std::chrono::steady_clock::now();
@@ -318,4 +318,4 @@ WhirOpening WhirProver::open(
   return opening;
 }
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir

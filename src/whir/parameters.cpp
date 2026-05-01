@@ -6,11 +6,11 @@
 #include <cstdint>
 #include <limits>
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
-bool SameRing(const swgr::algebra::GRContext& lhs,
-              const swgr::algebra::GRContext& rhs) {
+bool SameRing(const stir_whir_gr::algebra::GRContext& lhs,
+              const stir_whir_gr::algebra::GRContext& rhs) {
   const auto& lhs_cfg = lhs.config();
   const auto& rhs_cfg = rhs.config();
   return lhs_cfg.p == rhs_cfg.p && lhs_cfg.k_exp == rhs_cfg.k_exp &&
@@ -109,4 +109,4 @@ bool validate(const WhirParameters& params, const WhirCommitment& commitment) {
          !commitment.oracle_root.empty();
 }
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir

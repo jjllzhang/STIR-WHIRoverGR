@@ -1,5 +1,5 @@
-#ifndef SWGR_CRYPTO_HASH_HPP_
-#define SWGR_CRYPTO_HASH_HPP_
+#ifndef STIR_WHIR_GR_CRYPTO_HASH_HPP_
+#define STIR_WHIR_GR_CRYPTO_HASH_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +9,7 @@
 
 #include "parameters.hpp"
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 
 enum class HashBackend {
   Blake3,
@@ -38,6 +38,6 @@ std::vector<std::uint8_t> hash_bytes(HashProfile profile,
 std::vector<std::uint8_t> hash_bytes(HashProfile profile,
                                      const std::vector<std::uint8_t>& data);
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto
 
-#endif  // SWGR_CRYPTO_HASH_HPP_
+#endif  // STIR_WHIR_GR_CRYPTO_HASH_HPP_

@@ -1,12 +1,12 @@
-#ifndef SWGR_POLY_UTILS_POLYNOMIAL_HPP_
-#define SWGR_POLY_UTILS_POLYNOMIAL_HPP_
+#ifndef STIR_WHIR_GR_POLY_UTILS_POLYNOMIAL_HPP_
+#define STIR_WHIR_GR_POLY_UTILS_POLYNOMIAL_HPP_
 
 #include <cstddef>
 #include <vector>
 
 #include "algebra/gr_context.hpp"
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 
 class Polynomial {
  public:
@@ -28,6 +28,6 @@ class Polynomial {
   std::vector<algebra::GRElem> coefficients_;
 };
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils
 
-#endif  // SWGR_POLY_UTILS_POLYNOMIAL_HPP_
+#endif  // STIR_WHIR_GR_POLY_UTILS_POLYNOMIAL_HPP_

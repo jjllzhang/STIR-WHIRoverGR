@@ -18,12 +18,12 @@
 #include "poly_utils/polynomial.hpp"
 #include "tests/test_common.hpp"
 
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::algebra::deserialize_ring_element;
-using swgr::algebra::serialize_ring_element;
-using swgr::poly_utils::Polynomial;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::algebra::deserialize_ring_element;
+using stir_whir_gr::algebra::serialize_ring_element;
+using stir_whir_gr::poly_utils::Polynomial;
 
 int g_failures = 0;
 
@@ -180,7 +180,7 @@ void TestInterpolationRejectsNonExceptionalPointSet() {
 
   bool threw = false;
   try {
-    (void)swgr::poly_utils::interpolate_for_gr_wrapper(ctx, points, values);
+    (void)stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(ctx, points, values);
   } catch (const std::invalid_argument& ex) {
     threw = true;
     CHECK(std::string(ex.what()).find("exceptional point set") !=
@@ -199,15 +199,15 @@ void TestPolynomialDegreeAndInterpolation() {
   const Polynomial poly(coeffs);
   CHECK_EQ(poly.degree(), std::size_t{0});
 
-  CHECK(swgr::algebra::teichmuller_subgroup_size_supported(ctx, 3));
-  const swgr::Domain domain = swgr::Domain::teichmuller_subgroup(ctx, 3);
+  CHECK(stir_whir_gr::algebra::teichmuller_subgroup_size_supported(ctx, 3));
+  const stir_whir_gr::Domain domain = stir_whir_gr::Domain::teichmuller_subgroup(ctx, 3);
 
   const auto poly2_coeffs = ctx.with_ntl_context([&] {
     return std::vector<GRElem>{ctx.one(), domain.root(), ctx.one()};
   });
   const Polynomial poly2(poly2_coeffs);
-  const auto evals = swgr::poly_utils::rs_encode(domain, poly2);
-  const Polynomial recovered = swgr::poly_utils::rs_interpolate(domain, evals);
+  const auto evals = stir_whir_gr::poly_utils::rs_encode(domain, poly2);
+  const Polynomial recovered = stir_whir_gr::poly_utils::rs_interpolate(domain, evals);
 
   CHECK_EQ(recovered.coefficients().size(), poly2.coefficients().size());
   for (std::size_t i = 0; i < recovered.coefficients().size(); ++i) {

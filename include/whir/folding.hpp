@@ -1,5 +1,5 @@
-#ifndef SWGR_WHIR_FOLDING_HPP_
-#define SWGR_WHIR_FOLDING_HPP_
+#ifndef STIR_WHIR_GR_WHIR_FOLDING_HPP_
+#define STIR_WHIR_GR_WHIR_FOLDING_HPP_
 
 #include <cstdint>
 #include <span>
@@ -8,7 +8,7 @@
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 
 std::vector<algebra::GRElem> repeated_ternary_fold_table(
     const Domain& domain, const std::vector<algebra::GRElem>& evals,
@@ -30,6 +30,6 @@ algebra::GRElem evaluate_virtual_fold_query_from_leaf_payloads(
     std::span<const std::vector<std::uint8_t>> leaf_payloads,
     std::span<const algebra::GRElem> alphas);
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir
 
-#endif  // SWGR_WHIR_FOLDING_HPP_
+#endif  // STIR_WHIR_GR_WHIR_FOLDING_HPP_

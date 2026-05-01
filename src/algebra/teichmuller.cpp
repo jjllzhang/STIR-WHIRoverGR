@@ -18,7 +18,7 @@ using NTL::NumBits;
 using NTL::power;
 using NTL::set;
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 namespace {
 
 constexpr std::uint64_t kFallbackSeed = 0xC0DEC0FFEE12345ULL;
@@ -239,4 +239,4 @@ std::vector<GRElem> generate_teichmuller_subgroup(const GRContext& ctx,
   });
 }
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra

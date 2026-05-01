@@ -1,5 +1,5 @@
-#ifndef SWGR_ALGEBRA_GR_SERIALIZATION_HPP_
-#define SWGR_ALGEBRA_GR_SERIALIZATION_HPP_
+#ifndef STIR_WHIR_GR_ALGEBRA_GR_SERIALIZATION_HPP_
+#define STIR_WHIR_GR_ALGEBRA_GR_SERIALIZATION_HPP_
 
 #include <cstdint>
 #include <span>
@@ -7,7 +7,7 @@
 
 #include "algebra/gr_context.hpp"
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 
 std::vector<std::uint8_t> serialize_ring_element(const GRContext& ctx,
                                                  const GRElem& x);
@@ -15,6 +15,6 @@ std::vector<std::uint8_t> serialize_ring_element(const GRContext& ctx,
 GRElem deserialize_ring_element(const GRContext& ctx,
                                 std::span<const std::uint8_t> bytes);
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra
 
-#endif  // SWGR_ALGEBRA_GR_SERIALIZATION_HPP_
+#endif  // STIR_WHIR_GR_ALGEBRA_GR_SERIALIZATION_HPP_

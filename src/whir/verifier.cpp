@@ -12,7 +12,7 @@
 #include "whir/constraint.hpp"
 #include "whir/folding.hpp"
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
 double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
@@ -29,12 +29,12 @@ std::vector<std::uint64_t> SortedUnique(std::vector<std::uint64_t> values) {
 }
 
 bool SameQueries(std::vector<std::uint64_t> expected,
-                 const swgr::crypto::MerkleProof& proof) {
+                 const stir_whir_gr::crypto::MerkleProof& proof) {
   return SortedUnique(std::move(expected)) == proof.queried_indices;
 }
 
 std::vector<std::vector<std::uint8_t>> PayloadsForIndices(
-    const swgr::crypto::MerkleProof& proof,
+    const stir_whir_gr::crypto::MerkleProof& proof,
     const std::vector<std::uint64_t>& indices) {
   std::vector<std::vector<std::uint8_t>> payloads;
   payloads.reserve(indices.size());
@@ -57,9 +57,9 @@ std::vector<std::vector<std::uint8_t>> PayloadsForIndices(
 WhirVerifier::WhirVerifier(WhirParameters params) : params_(std::move(params)) {}
 
 bool WhirVerifier::verify(const WhirCommitment& commitment,
-                          std::span<const swgr::algebra::GRElem> point,
+                          std::span<const stir_whir_gr::algebra::GRElem> point,
                           const WhirOpening& opening,
-                          swgr::ProofStatistics* stats) const {
+                          stir_whir_gr::ProofStatistics* stats) const {
   const auto verify_start = std::chrono::steady_clock::now();
   if (!validate(params_, commitment) ||
       point.size() !=
@@ -80,14 +80,14 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
   double algebra_ms = 0.0;
   auto timer_start = std::chrono::steady_clock::now();
 
-  swgr::crypto::Transcript transcript(pp.hash_profile);
+  stir_whir_gr::crypto::Transcript transcript(pp.hash_profile);
   absorb_opening_preamble(transcript, commitment, point, opening.value);
   transcript_ms +=
       ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 
   WhirConstraint constraint(pp.ternary_grid);
   constraint.add_shift_term(ctx.one(),
-                            std::vector<swgr::algebra::GRElem>(point.begin(),
+                            std::vector<stir_whir_gr::algebra::GRElem>(point.begin(),
                                                                 point.end()));
   auto sigma = opening.value;
   auto current_domain = pp.initial_domain;
@@ -102,7 +102,7 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
       return false;
     }
 
-    std::vector<swgr::algebra::GRElem> alphas;
+    std::vector<stir_whir_gr::algebra::GRElem> alphas;
     alphas.reserve(static_cast<std::size_t>(width));
     for (std::uint64_t j = 0; j < width; ++j) {
       const auto& h = round.sumcheck_polynomials[static_cast<std::size_t>(j)];
@@ -169,7 +169,7 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
       return false;
     }
     timer_start = std::chrono::steady_clock::now();
-    const bool merkle_ok = swgr::crypto::MerkleTree::verify(
+    const bool merkle_ok = stir_whir_gr::crypto::MerkleTree::verify(
         pp.hash_profile, static_cast<std::size_t>(current_domain.size()),
         current_root, round.virtual_fold_openings);
     merkle_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
@@ -226,7 +226,7 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
 
   timer_start = std::chrono::steady_clock::now();
   const auto final_ok = ctx.with_ntl_context([&] {
-    const std::vector<swgr::algebra::GRElem> empty_point;
+    const std::vector<stir_whir_gr::algebra::GRElem> empty_point;
     return constraint.evaluate_W(ctx, opening.proof.final_constant,
                                  empty_point) == sigma;
   });
@@ -252,7 +252,7 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
     return false;
   }
   timer_start = std::chrono::steady_clock::now();
-  const bool final_merkle_ok = swgr::crypto::MerkleTree::verify(
+  const bool final_merkle_ok = stir_whir_gr::crypto::MerkleTree::verify(
       pp.hash_profile, static_cast<std::size_t>(current_domain.size()),
       current_root, opening.proof.final_openings);
   merkle_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
@@ -281,4 +281,4 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
   return true;
 }
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir

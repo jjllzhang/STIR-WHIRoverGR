@@ -35,7 +35,7 @@ using NTL::rep;
 using NTL::set;
 using NTL::to_ZZ;
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 namespace {
 
 long CheckedLong(std::uint64_t value, const char* label) {
@@ -326,4 +326,4 @@ void GRContext::ensure_teich_generator_initialized() const {
   });
 }
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra

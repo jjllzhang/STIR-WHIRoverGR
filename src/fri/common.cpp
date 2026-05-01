@@ -13,7 +13,7 @@
 #include "algebra/teichmuller.hpp"
 #include "crypto/merkle_tree/merkle_tree.hpp"
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 namespace {
 
 constexpr std::uint64_t kFnvOffset = 1469598103934665603ULL;
@@ -59,43 +59,43 @@ void append_bytes(std::vector<std::uint8_t>& dst,
 }
 
 template <typename Sink>
-void SerializeRingElement(Sink& sink, const swgr::algebra::GRContext& ctx,
-                          const swgr::algebra::GRElem& value) {
-  swgr::SerializeBytes(sink, ctx.serialize(value));
+void SerializeRingElement(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
+                          const stir_whir_gr::algebra::GRElem& value) {
+  stir_whir_gr::SerializeBytes(sink, ctx.serialize(value));
 }
 
 template <typename Sink>
-void SerializeRingVector(Sink& sink, const swgr::algebra::GRContext& ctx,
-                         std::span<const swgr::algebra::GRElem> values) {
-  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+void SerializeRingVector(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
+                         std::span<const stir_whir_gr::algebra::GRElem> values) {
+  stir_whir_gr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
   for (const auto& value : values) {
     SerializeRingElement(sink, ctx, value);
   }
 }
 
 template <typename Sink>
-void SerializeMerkleProof(Sink& sink, const swgr::crypto::MerkleProof& proof) {
-  swgr::SerializeUint64Vector(sink, proof.queried_indices);
-  swgr::SerializeByteVector(sink, proof.leaf_payloads);
-  swgr::SerializeByteVector(sink, proof.sibling_hashes);
+void SerializeMerkleProof(Sink& sink, const stir_whir_gr::crypto::MerkleProof& proof) {
+  stir_whir_gr::SerializeUint64Vector(sink, proof.queried_indices);
+  stir_whir_gr::SerializeByteVector(sink, proof.leaf_payloads);
+  stir_whir_gr::SerializeByteVector(sink, proof.sibling_hashes);
 }
 
 template <typename Sink>
-void SerializeFriProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
+void SerializeFriProofBody(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
                            const FriProof& proof) {
-  swgr::SerializeUint64(sink,
+  stir_whir_gr::SerializeUint64(sink,
                         static_cast<std::uint64_t>(proof.rounds.size()));
   for (const auto& round : proof.rounds) {
     SerializeMerkleProof(sink, round.parent_oracle_proof);
     SerializeMerkleProof(sink, round.child_oracle_proof);
   }
-  swgr::SerializeByteVector(sink, proof.oracle_roots);
+  stir_whir_gr::SerializeByteVector(sink, proof.oracle_roots);
   SerializeRingVector(sink, ctx, proof.final_oracle);
   SerializeRingVector(sink, ctx, proof.revealed_committed_oracle);
 }
 
 void append_serialized_in_current_ntl_context(
-    const swgr::algebra::GRContext& ctx, const swgr::algebra::GRElem& value,
+    const stir_whir_gr::algebra::GRContext& ctx, const stir_whir_gr::algebra::GRElem& value,
     std::vector<std::uint8_t>& out) {
   const std::size_t width = ctx.coeff_bytes();
   const long r = CheckedLong(ctx.config().r, "r");
@@ -116,8 +116,8 @@ void append_serialized_in_current_ntl_context(
 }
 
 std::vector<std::uint8_t> bundle_payload(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size, std::uint64_t bundle_index) {
   if (bundle_size == 0) {
     throw std::invalid_argument("bundle_payload requires bundle_size > 0");
@@ -163,21 +163,21 @@ std::vector<std::uint8_t> expand_seed(std::uint64_t seed,
 }  // namespace
 
 std::uint64_t serialized_message_bytes(const FriCommitment& commitment) {
-  swgr::CountingSink sink;
-  swgr::SerializeBytes(sink, commitment.oracle_root);
+  stir_whir_gr::CountingSink sink;
+  stir_whir_gr::SerializeBytes(sink, commitment.oracle_root);
   return sink.size();
 }
 
-std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
+std::uint64_t serialized_message_bytes(const stir_whir_gr::algebra::GRContext& ctx,
                                        const FriProof& proof) {
-  swgr::CountingSink sink;
+  stir_whir_gr::CountingSink sink;
   SerializeFriProofBody(sink, ctx, proof);
   return sink.size();
 }
 
-std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
+std::uint64_t serialized_message_bytes(const stir_whir_gr::algebra::GRContext& ctx,
                                        const FriOpening& opening) {
-  swgr::CountingSink sink;
+  stir_whir_gr::CountingSink sink;
   SerializeRingElement(sink, ctx, opening.claim.value);
   SerializeFriProofBody(sink, ctx, opening.proof);
   return sink.size();
@@ -221,10 +221,10 @@ bool commitment_domain_supported(const FriCommitment& commitment) {
 }
 
 bool opening_point_valid(const FriCommitment& commitment,
-                         const swgr::algebra::GRElem& alpha) {
+                         const stir_whir_gr::algebra::GRElem& alpha) {
   const auto& ctx = commitment.domain.context();
   if (!commitment_domain_supported(commitment) ||
-      !swgr::algebra::is_teichmuller_element(ctx, alpha)) {
+      !stir_whir_gr::algebra::is_teichmuller_element(ctx, alpha)) {
     return false;
   }
   return true;
@@ -243,8 +243,8 @@ std::vector<std::uint64_t> query_schedule(
 }
 
 std::vector<std::uint8_t> commit_oracle(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals) {
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals) {
   std::vector<std::uint8_t> bytes;
   bytes.reserve(oracle_evals.size() * ctx.elem_bytes());
   for (const auto& value : oracle_evals) {
@@ -258,8 +258,8 @@ std::vector<std::uint8_t> commit_oracle(
 }
 
 std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size) {
   if (bundle_size == 0) {
     throw std::invalid_argument("build_oracle_leaves requires bundle_size > 0");
@@ -285,22 +285,22 @@ std::vector<std::vector<std::uint8_t>> build_oracle_leaves(
 }
 
 std::vector<std::uint8_t> serialize_oracle_bundle(
-    const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size, std::uint64_t bundle_index) {
   return ctx.with_ntl_context(
       [&] { return bundle_payload(ctx, oracle_evals, bundle_size, bundle_index); });
 }
 
-std::vector<swgr::algebra::GRElem> deserialize_oracle_bundle(
-    const swgr::algebra::GRContext& ctx, std::span<const std::uint8_t> bytes) {
+std::vector<stir_whir_gr::algebra::GRElem> deserialize_oracle_bundle(
+    const stir_whir_gr::algebra::GRContext& ctx, std::span<const std::uint8_t> bytes) {
   const std::size_t elem_bytes = ctx.elem_bytes();
   if (elem_bytes == 0 || bytes.size() % elem_bytes != 0) {
     throw std::invalid_argument(
         "deserialize_oracle_bundle requires a whole-number element payload");
   }
 
-  std::vector<swgr::algebra::GRElem> values;
+  std::vector<stir_whir_gr::algebra::GRElem> values;
   values.reserve(bytes.size() / elem_bytes);
   for (std::size_t offset = 0; offset < bytes.size(); offset += elem_bytes) {
     values.push_back(
@@ -309,16 +309,16 @@ std::vector<swgr::algebra::GRElem> deserialize_oracle_bundle(
   return values;
 }
 
-swgr::crypto::MerkleTree build_oracle_tree(
-    swgr::HashProfile profile, const swgr::algebra::GRContext& ctx,
-    const std::vector<swgr::algebra::GRElem>& oracle_evals,
+stir_whir_gr::crypto::MerkleTree build_oracle_tree(
+    stir_whir_gr::HashProfile profile, const stir_whir_gr::algebra::GRContext& ctx,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle_evals,
     std::uint64_t bundle_size) {
-  return swgr::crypto::MerkleTree(
+  return stir_whir_gr::crypto::MerkleTree(
       profile, build_oracle_leaves(ctx, oracle_evals, bundle_size));
 }
 
-swgr::algebra::GRElem derive_round_challenge(
-    const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_round_challenge(
+    const stir_whir_gr::algebra::GRContext& ctx,
     const std::vector<std::uint8_t>& oracle_commitment,
     std::uint64_t round_index) {
   auto seed_bytes = oracle_commitment;
@@ -328,14 +328,14 @@ swgr::algebra::GRElem derive_round_challenge(
   return ctx.deserialize(expand_seed(seed, ctx.elem_bytes()));
 }
 
-swgr::algebra::GRElem derive_round_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_round_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label) {
   return transcript.challenge_ring(ctx, label);
 }
 
-swgr::algebra::GRElem derive_fri_folding_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_fri_folding_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label) {
   return transcript.challenge_teichmuller(ctx, label);
 }
@@ -363,7 +363,7 @@ std::vector<std::uint64_t> derive_query_positions(
 }
 
 std::vector<std::uint64_t> derive_query_positions(
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t query_count) {
   if (modulus == 0 || query_count == 0) {
     return {};
@@ -379,7 +379,7 @@ std::vector<std::uint64_t> derive_query_positions(
 }
 
 std::vector<std::uint64_t> derive_unique_query_positions(
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t query_count) {
   if (modulus == 0 || query_count == 0) {
     return {};
@@ -400,4 +400,4 @@ std::vector<std::uint64_t> derive_unique_query_positions(
   return positions;
 }
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri

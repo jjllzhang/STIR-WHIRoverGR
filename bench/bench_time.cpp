@@ -15,7 +15,7 @@
 
 #include <NTL/ZZ_pE.h>
 
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #include <omp.h>
 #endif
 
@@ -57,22 +57,22 @@ struct TimeBenchOptions {
   std::optional<std::uint64_t> fri_repetitions;
   std::uint64_t lambda_target = 128;
   std::uint64_t pow_bits = 0;
-  swgr::SecurityMode sec_mode = swgr::SecurityMode::ConjectureCapacity;
-  swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
+  stir_whir_gr::SecurityMode sec_mode = stir_whir_gr::SecurityMode::ConjectureCapacity;
+  stir_whir_gr::HashProfile hash_profile = stir_whir_gr::HashProfile::STIR_NATIVE;
   std::uint64_t stop_degree = 9;
   std::uint64_t ood_samples = 2;
   std::vector<std::uint64_t> queries;
   bool stir_query_theorem_auto = false;
   std::uint64_t whir_m = 3;
   std::uint64_t whir_bmax = 1;
-  swgr::whir::WhirRational whir_rho0{1, 3};
+  stir_whir_gr::whir::WhirRational whir_rho0{1, 3};
   WhirPolynomialKind whir_polynomial_kind = WhirPolynomialKind::MultiQuadratic;
   std::optional<std::uint64_t> whir_fixed_r;
   std::optional<std::uint64_t> whir_repetitions;
   std::uint64_t threads = 1;
   std::uint64_t warmup = 1;
   std::uint64_t reps = 3;
-  swgr::bench::OutputFormat format = swgr::bench::OutputFormat::Csv;
+  stir_whir_gr::bench::OutputFormat format = stir_whir_gr::bench::OutputFormat::Csv;
 };
 
 struct TimeBenchRow {
@@ -130,7 +130,7 @@ struct ResolvedFriSoundness {
   std::uint64_t repetition_count = 0;
   std::uint64_t lambda_target = 0;
   bool explicit_repetition_override = false;
-  std::optional<swgr::fri::StandaloneFriSoundnessAnalysis> theorem_analysis;
+  std::optional<stir_whir_gr::fri::StandaloneFriSoundnessAnalysis> theorem_analysis;
 };
 
 double SafeMean(double total, std::uint64_t reps) {
@@ -172,7 +172,7 @@ FriSoundnessMode ParseFriSoundnessMode(const std::string& value) {
 }
 
 WhirPolynomialKind ParseWhirPolynomialKind(const std::string& value) {
-  const std::string lowered = swgr::bench::ToLowerCopy(value);
+  const std::string lowered = stir_whir_gr::bench::ToLowerCopy(value);
   if (lowered == "multiquadratic" || lowered == "multi_quadratic") {
     return WhirPolynomialKind::MultiQuadratic;
   }
@@ -185,24 +185,24 @@ WhirPolynomialKind ParseWhirPolynomialKind(const std::string& value) {
 }
 
 std::string DeltaRatioString(
-    const swgr::fri::StandaloneFriSoundnessAnalysis& analysis) {
+    const stir_whir_gr::fri::StandaloneFriSoundnessAnalysis& analysis) {
   return std::to_string(analysis.delta_numerator) + "/" +
          std::to_string(analysis.delta_denominator);
 }
 
-swgr::whir::WhirRational ParseWhirRational(std::string_view flag_name,
+stir_whir_gr::whir::WhirRational ParseWhirRational(std::string_view flag_name,
                                            std::string_view raw_value) {
   const std::string owned(raw_value);
   const std::size_t slash = owned.find('/');
   if (slash == std::string::npos) {
-    return swgr::whir::WhirRational{
-        swgr::bench::ParseUint64(flag_name, owned), 1};
+    return stir_whir_gr::whir::WhirRational{
+        stir_whir_gr::bench::ParseUint64(flag_name, owned), 1};
   }
   const auto numerator =
-      swgr::bench::ParseUint64(flag_name, owned.substr(0, slash));
+      stir_whir_gr::bench::ParseUint64(flag_name, owned.substr(0, slash));
   const auto denominator =
-      swgr::bench::ParseUint64(flag_name, owned.substr(slash + 1));
-  return swgr::whir::WhirRational{numerator, denominator};
+      stir_whir_gr::bench::ParseUint64(flag_name, owned.substr(slash + 1));
+  return stir_whir_gr::whir::WhirRational{numerator, denominator};
 }
 
 ResolvedFriSoundness ResolveFriSoundness(const TimeBenchOptions& options,
@@ -221,8 +221,8 @@ ResolvedFriSoundness ResolveFriSoundness(const TimeBenchOptions& options,
     return resolved;
   }
 
-  const auto analysis = swgr::fri::analyze_standalone_soundness(
-      swgr::fri::StandaloneFriSoundnessInputs{
+  const auto analysis = stir_whir_gr::fri::analyze_standalone_soundness(
+      stir_whir_gr::fri::StandaloneFriSoundnessInputs{
           .base_prime = options.p,
           .ring_extension_degree = options.r,
           .domain_size = options.n,
@@ -256,7 +256,7 @@ ResolvedFriSoundness ResolveFriSoundness(const TimeBenchOptions& options,
 }
 
 void ApplyThreadControl(std::uint64_t requested_threads) {
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
   int requested = std::numeric_limits<int>::max();
   if (requested_threads <=
       static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
@@ -324,14 +324,14 @@ void FillFriSoundnessMetadata(TimeBenchRow& row,
 }
 
 void FillStirTheoremSoundnessMetadata(
-    TimeBenchRow& row, const swgr::stir::StirTheoremSoundnessAnalysis& analysis,
-    swgr::SecurityMode sec_mode, std::uint64_t lambda_target,
+    TimeBenchRow& row, const stir_whir_gr::stir::StirTheoremSoundnessAnalysis& analysis,
+    stir_whir_gr::SecurityMode sec_mode, std::uint64_t lambda_target,
     std::uint64_t pow_bits, std::string_view query_policy) {
   row.soundness_mode = "theorem_gr";
   row.fri_repetitions = 0;
   row.lambda_target = lambda_target;
   row.pow_bits = pow_bits;
-  row.sec_mode = swgr::to_string(sec_mode);
+  row.sec_mode = stir_whir_gr::to_string(sec_mode);
   row.soundness_model = "epsilon_rbr_stir_gr_half_gap_unique_ood";
   row.soundness_scope = "theorem_gr_existing_z2ksnark_half_gap_results";
   row.query_policy = std::string(query_policy);
@@ -461,62 +461,62 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
     }
 
     if (key == "--protocol") {
-      options.protocols = swgr::bench::ParseProtocols(value);
+      options.protocols = stir_whir_gr::bench::ParseProtocols(value);
     } else if (key == "--p") {
-      options.p = swgr::bench::ParseUint64(key, value);
+      options.p = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--k-exp") {
-      options.k_exp = swgr::bench::ParseUint64(key, value);
+      options.k_exp = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--r") {
-      options.r = swgr::bench::ParseUint64(key, value);
+      options.r = stir_whir_gr::bench::ParseUint64(key, value);
       options.r_was_set = true;
     } else if (key == "--n") {
-      options.n = swgr::bench::ParseUint64(key, value);
+      options.n = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--d") {
-      options.d = swgr::bench::ParseUint64(key, value);
+      options.d = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--fri-soundness-mode") {
       options.fri_soundness_mode = ParseFriSoundnessMode(value);
     } else if (key == "--fri-repetitions") {
-      options.fri_repetitions = swgr::bench::ParseUint64(key, value);
+      options.fri_repetitions = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--lambda") {
-      options.lambda_target = swgr::bench::ParseUint64(key, value);
+      options.lambda_target = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--pow-bits") {
-      options.pow_bits = swgr::bench::ParseUint64(key, value);
+      options.pow_bits = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--sec-mode") {
-      options.sec_mode = swgr::bench::ParseSecurityMode(value);
+      options.sec_mode = stir_whir_gr::bench::ParseSecurityMode(value);
     } else if (key == "--hash-profile") {
-      options.hash_profile = swgr::bench::ParseHashProfile(value);
+      options.hash_profile = stir_whir_gr::bench::ParseHashProfile(value);
     } else if (key == "--stop-degree") {
-      options.stop_degree = swgr::bench::ParseUint64(key, value);
+      options.stop_degree = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--ood-samples") {
-      options.ood_samples = swgr::bench::ParseUint64(key, value);
+      options.ood_samples = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--queries") {
-      if (swgr::bench::ToLowerCopy(value) == "theorem_auto") {
+      if (stir_whir_gr::bench::ToLowerCopy(value) == "theorem_auto") {
         options.stir_query_theorem_auto = true;
         options.queries.clear();
       } else {
-        options.queries = swgr::bench::ParseQueries(value);
+        options.queries = stir_whir_gr::bench::ParseQueries(value);
         options.stir_query_theorem_auto = false;
       }
     } else if (key == "--whir-m") {
-      options.whir_m = swgr::bench::ParseUint64(key, value);
+      options.whir_m = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--whir-bmax") {
-      options.whir_bmax = swgr::bench::ParseUint64(key, value);
+      options.whir_bmax = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--whir-rho0") {
       options.whir_rho0 = ParseWhirRational(key, value);
     } else if (key == "--whir-r" || key == "--whir-fixed-r") {
-      options.whir_fixed_r = swgr::bench::ParseUint64(key, value);
+      options.whir_fixed_r = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--whir-polynomial") {
       options.whir_polynomial_kind = ParseWhirPolynomialKind(value);
     } else if (key == "--whir-repetitions") {
-      options.whir_repetitions = swgr::bench::ParseUint64(key, value);
+      options.whir_repetitions = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--threads") {
-      options.threads = swgr::bench::ParseUint64(key, value);
+      options.threads = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--warmup") {
-      options.warmup = swgr::bench::ParseUint64(key, value);
+      options.warmup = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--reps") {
-      options.reps = swgr::bench::ParseUint64(key, value);
+      options.reps = stir_whir_gr::bench::ParseUint64(key, value);
     } else if (key == "--format") {
-      options.format = swgr::bench::ParseOutputFormat(value);
+      options.format = stir_whir_gr::bench::ParseOutputFormat(value);
     } else {
       throw std::invalid_argument("unknown option: " + key);
     }
@@ -558,11 +558,11 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
   return options;
 }
 
-swgr::poly_utils::Polynomial SamplePolynomial(
-    const swgr::algebra::GRContext& ctx, const swgr::Domain& domain,
+stir_whir_gr::poly_utils::Polynomial SamplePolynomial(
+    const stir_whir_gr::algebra::GRContext& ctx, const stir_whir_gr::Domain& domain,
     std::size_t coefficient_count) {
   return ctx.with_ntl_context([&] {
-    std::vector<swgr::algebra::GRElem> coefficients;
+    std::vector<stir_whir_gr::algebra::GRElem> coefficients;
     coefficients.reserve(coefficient_count);
 
     auto root_power = ctx.one();
@@ -571,53 +571,53 @@ swgr::poly_utils::Polynomial SamplePolynomial(
       root_power *= domain.root();
     }
     coefficients.back() += ctx.one();
-    return swgr::poly_utils::Polynomial(std::move(coefficients));
+    return stir_whir_gr::poly_utils::Polynomial(std::move(coefficients));
   });
 }
 
-swgr::whir::MultiQuadraticPolynomial SampleWhirPolynomial(
-    const swgr::algebra::GRContext& ctx, std::uint64_t variable_count) {
+stir_whir_gr::whir::MultiQuadraticPolynomial SampleWhirPolynomial(
+    const stir_whir_gr::algebra::GRContext& ctx, std::uint64_t variable_count) {
   return ctx.with_ntl_context([&] {
-    std::vector<swgr::algebra::GRElem> coefficients;
+    std::vector<stir_whir_gr::algebra::GRElem> coefficients;
     coefficients.reserve(
-        static_cast<std::size_t>(swgr::whir::pow3_checked(variable_count)));
+        static_cast<std::size_t>(stir_whir_gr::whir::pow3_checked(variable_count)));
     auto current = ctx.one();
     const auto twist = ctx.teich_generator();
-    for (std::uint64_t i = 0; i < swgr::whir::pow3_checked(variable_count);
+    for (std::uint64_t i = 0; i < stir_whir_gr::whir::pow3_checked(variable_count);
          ++i) {
       coefficients.push_back(current + ctx.one());
       current *= twist;
     }
     coefficients.back() += ctx.one();
-    return swgr::whir::MultiQuadraticPolynomial(variable_count,
+    return stir_whir_gr::whir::MultiQuadraticPolynomial(variable_count,
                                                 std::move(coefficients));
   });
 }
 
-swgr::whir::MultilinearPolynomial SampleWhirMultilinearPolynomial(
-    const swgr::algebra::GRContext& ctx, std::uint64_t variable_count) {
+stir_whir_gr::whir::MultilinearPolynomial SampleWhirMultilinearPolynomial(
+    const stir_whir_gr::algebra::GRContext& ctx, std::uint64_t variable_count) {
   return ctx.with_ntl_context([&] {
-    std::vector<swgr::algebra::GRElem> coefficients;
+    std::vector<stir_whir_gr::algebra::GRElem> coefficients;
     coefficients.reserve(
-        static_cast<std::size_t>(swgr::whir::pow2_checked(variable_count)));
+        static_cast<std::size_t>(stir_whir_gr::whir::pow2_checked(variable_count)));
     auto current = ctx.one();
     const auto twist = ctx.teich_generator();
-    for (std::uint64_t i = 0; i < swgr::whir::pow2_checked(variable_count);
+    for (std::uint64_t i = 0; i < stir_whir_gr::whir::pow2_checked(variable_count);
          ++i) {
       coefficients.push_back(current + ctx.one());
       current *= twist;
     }
     coefficients.back() += ctx.one();
-    return swgr::whir::MultilinearPolynomial(variable_count,
+    return stir_whir_gr::whir::MultilinearPolynomial(variable_count,
                                              std::move(coefficients));
   });
 }
 
-std::vector<swgr::algebra::GRElem> SampleWhirOpenPoint(
-    const swgr::algebra::GRContext& ctx, const swgr::Domain& domain,
+std::vector<stir_whir_gr::algebra::GRElem> SampleWhirOpenPoint(
+    const stir_whir_gr::algebra::GRContext& ctx, const stir_whir_gr::Domain& domain,
     std::uint64_t variable_count) {
   return ctx.with_ntl_context([&] {
-    std::vector<swgr::algebra::GRElem> point;
+    std::vector<stir_whir_gr::algebra::GRElem> point;
     point.reserve(static_cast<std::size_t>(variable_count));
     for (std::uint64_t i = 0; i < variable_count; ++i) {
       point.push_back(ctx.one() + domain.element(i % domain.size()));
@@ -626,8 +626,8 @@ std::vector<swgr::algebra::GRElem> SampleWhirOpenPoint(
   });
 }
 
-void AddRunStats(TimeBenchRow& row, const swgr::ProofStatistics& prover_stats,
-                 const swgr::ProofStatistics& verifier_stats) {
+void AddRunStats(TimeBenchRow& row, const stir_whir_gr::ProofStatistics& prover_stats,
+                 const stir_whir_gr::ProofStatistics& verifier_stats) {
   row.commit_ms += prover_stats.commit_ms;
   row.prove_query_phase_ms += prover_stats.prove_query_phase_ms;
   row.prover_total_ms += prover_stats.prover_total_ms;
@@ -826,20 +826,20 @@ void PrintRowsCsv(const std::vector<TimeBenchRow>& rows) {
          "profile_verify_algebra_mean_ms,profile_verify_accounted_mean_ms,"
          "profile_verify_unaccounted_mean_ms\n";
   for (const auto& row : rows) {
-    std::cout << swgr::bench::CsvEscape(row.protocol) << ","
-              << swgr::bench::CsvEscape(row.ring) << "," << row.n << ","
-              << row.d << "," << swgr::bench::CsvEscape(row.rho) << ","
-              << swgr::bench::CsvEscape(row.soundness_mode) << ","
+    std::cout << stir_whir_gr::bench::CsvEscape(row.protocol) << ","
+              << stir_whir_gr::bench::CsvEscape(row.ring) << "," << row.n << ","
+              << row.d << "," << stir_whir_gr::bench::CsvEscape(row.rho) << ","
+              << stir_whir_gr::bench::CsvEscape(row.soundness_mode) << ","
               << row.fri_repetitions << "," << row.lambda_target << ","
               << row.pow_bits << ","
-              << swgr::bench::CsvEscape(row.sec_mode) << ","
-              << swgr::bench::CsvEscape(row.hash_profile) << ","
-              << swgr::bench::CsvEscape(row.soundness_model) << ","
-              << swgr::bench::CsvEscape(row.soundness_scope) << ","
-              << swgr::bench::CsvEscape(row.query_policy) << ","
-              << swgr::bench::CsvEscape(row.pow_policy) << ","
+              << stir_whir_gr::bench::CsvEscape(row.sec_mode) << ","
+              << stir_whir_gr::bench::CsvEscape(row.hash_profile) << ","
+              << stir_whir_gr::bench::CsvEscape(row.soundness_model) << ","
+              << stir_whir_gr::bench::CsvEscape(row.soundness_scope) << ","
+              << stir_whir_gr::bench::CsvEscape(row.query_policy) << ","
+              << stir_whir_gr::bench::CsvEscape(row.pow_policy) << ","
               << row.effective_security_bits << ","
-              << swgr::bench::CsvEscape(row.soundness_notes) << ","
+              << stir_whir_gr::bench::CsvEscape(row.soundness_notes) << ","
               << row.fold << "," << row.shift_power << "," << row.stop_degree
               << ","
               << row.ood_samples << "," << row.threads << "," << row.warmup
@@ -905,34 +905,34 @@ void PrintRowsJson(const std::vector<TimeBenchRow>& rows) {
     const auto& row = rows[row_index];
     std::cout << "  {\n";
     std::cout << "    \"protocol\": \""
-              << swgr::bench::JsonEscape(row.protocol) << "\",\n";
-    std::cout << "    \"ring\": \"" << swgr::bench::JsonEscape(row.ring)
+              << stir_whir_gr::bench::JsonEscape(row.protocol) << "\",\n";
+    std::cout << "    \"ring\": \"" << stir_whir_gr::bench::JsonEscape(row.ring)
               << "\",\n";
     std::cout << "    \"n\": " << row.n << ",\n";
     std::cout << "    \"d\": " << row.d << ",\n";
-    std::cout << "    \"rho\": \"" << swgr::bench::JsonEscape(row.rho)
+    std::cout << "    \"rho\": \"" << stir_whir_gr::bench::JsonEscape(row.rho)
               << "\",\n";
     std::cout << "    \"soundness_mode\": \""
-              << swgr::bench::JsonEscape(row.soundness_mode) << "\",\n";
+              << stir_whir_gr::bench::JsonEscape(row.soundness_mode) << "\",\n";
     std::cout << "    \"fri_repetitions\": " << row.fri_repetitions << ",\n";
     std::cout << "    \"lambda_target\": " << row.lambda_target << ",\n";
     std::cout << "    \"pow_bits\": " << row.pow_bits << ",\n";
-    std::cout << "    \"sec_mode\": \"" << swgr::bench::JsonEscape(row.sec_mode)
+    std::cout << "    \"sec_mode\": \"" << stir_whir_gr::bench::JsonEscape(row.sec_mode)
               << "\",\n";
     std::cout << "    \"hash_profile\": \""
-              << swgr::bench::JsonEscape(row.hash_profile) << "\",\n";
+              << stir_whir_gr::bench::JsonEscape(row.hash_profile) << "\",\n";
     std::cout << "    \"soundness_model\": \""
-              << swgr::bench::JsonEscape(row.soundness_model) << "\",\n";
+              << stir_whir_gr::bench::JsonEscape(row.soundness_model) << "\",\n";
     std::cout << "    \"soundness_scope\": \""
-              << swgr::bench::JsonEscape(row.soundness_scope) << "\",\n";
+              << stir_whir_gr::bench::JsonEscape(row.soundness_scope) << "\",\n";
     std::cout << "    \"query_policy\": \""
-              << swgr::bench::JsonEscape(row.query_policy) << "\",\n";
+              << stir_whir_gr::bench::JsonEscape(row.query_policy) << "\",\n";
     std::cout << "    \"pow_policy\": \""
-              << swgr::bench::JsonEscape(row.pow_policy) << "\",\n";
+              << stir_whir_gr::bench::JsonEscape(row.pow_policy) << "\",\n";
     std::cout << "    \"effective_security_bits\": "
               << row.effective_security_bits << ",\n";
     std::cout << "    \"soundness_notes\": \""
-              << swgr::bench::JsonEscape(row.soundness_notes) << "\",\n";
+              << stir_whir_gr::bench::JsonEscape(row.soundness_notes) << "\",\n";
     std::cout << "    \"fold\": " << row.fold << ",\n";
     std::cout << "    \"shift_power\": " << row.shift_power << ",\n";
     std::cout << "    \"stop_degree\": " << row.stop_degree << ",\n";
@@ -1055,15 +1055,15 @@ void PrintRowsJson(const std::vector<TimeBenchRow>& rows) {
 }
 
 void PrintRows(const std::vector<TimeBenchRow>& rows,
-               swgr::bench::OutputFormat format) {
+               stir_whir_gr::bench::OutputFormat format) {
   switch (format) {
-    case swgr::bench::OutputFormat::Text:
+    case stir_whir_gr::bench::OutputFormat::Text:
       PrintRowsText(rows);
       return;
-    case swgr::bench::OutputFormat::Csv:
+    case stir_whir_gr::bench::OutputFormat::Csv:
       PrintRowsCsv(rows);
       return;
-    case swgr::bench::OutputFormat::Json:
+    case stir_whir_gr::bench::OutputFormat::Json:
       PrintRowsJson(rows);
       return;
   }
@@ -1071,7 +1071,7 @@ void PrintRows(const std::vector<TimeBenchRow>& rows,
 
 void PrintQueryWarnings(
     std::string_view protocol,
-    const std::vector<swgr::stir::RoundQueryScheduleMetadata>& metadata) {
+    const std::vector<stir_whir_gr::stir::RoundQueryScheduleMetadata>& metadata) {
   for (std::size_t round_index = 0; round_index < metadata.size(); ++round_index) {
     const auto& round = metadata[round_index];
     if (!round.cap_applied) {
@@ -1091,11 +1091,11 @@ TimeBenchRow RunBenchLoop(const TimeBenchOptions& options, std::string protocol,
                           std::uint64_t ood_samples, RunMeasured&& run_measured) {
   TimeBenchRow row;
   row.protocol = std::move(protocol);
-  row.ring = swgr::bench::RingString(options.p, options.k_exp, options.r);
+  row.ring = stir_whir_gr::bench::RingString(options.p, options.k_exp, options.r);
   row.n = options.n;
   row.d = options.d;
-  row.rho = swgr::bench::ReducedRatioString(options.d, options.n);
-  row.hash_profile = swgr::to_string(options.hash_profile);
+  row.rho = stir_whir_gr::bench::ReducedRatioString(options.d, options.n);
+  row.hash_profile = stir_whir_gr::to_string(options.hash_profile);
   row.fold = fold;
   row.shift_power = shift_power;
   row.stop_degree = options.stop_degree;
@@ -1115,24 +1115,24 @@ TimeBenchRow RunBenchLoop(const TimeBenchOptions& options, std::string protocol,
 }
 
 TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
-                        const std::shared_ptr<const swgr::algebra::GRContext>& ctx,
+                        const std::shared_ptr<const stir_whir_gr::algebra::GRContext>& ctx,
                         std::uint64_t fold_factor) {
   const auto resolved_soundness = ResolveFriSoundness(options, fold_factor);
 
-  swgr::fri::FriParameters params;
+  stir_whir_gr::fri::FriParameters params;
   params.fold_factor = fold_factor;
   params.stop_degree = options.stop_degree;
   params.repetition_count = resolved_soundness.repetition_count;
   params.hash_profile = options.hash_profile;
 
-  const swgr::fri::FriInstance instance{
-      .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
+  const stir_whir_gr::fri::FriInstance instance{
+      .domain = stir_whir_gr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
   const auto polynomial =
       SamplePolynomial(*ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
 
   auto row = RunBenchLoop(options, fold_factor == 3 ? "fri3" : "fri9", fold_factor,
                           0, 0, [&](TimeBenchRow* current_row) {
@@ -1144,7 +1144,7 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
                             prover.open(commitment, polynomial, ctx->zero());
                         const double prover_total_ms = ElapsedMilliseconds(
                             prover_start, std::chrono::steady_clock::now());
-                        swgr::ProofStatistics verify_stats;
+                        stir_whir_gr::ProofStatistics verify_stats;
                         if (!verifier.verify(commitment, opening.claim.alpha,
                                              opening.claim.value, opening,
                                              &verify_stats)) {
@@ -1164,8 +1164,8 @@ TimeBenchRow MakeFriRow(const TimeBenchOptions& options,
 }
 
 TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
-                         const std::shared_ptr<const swgr::algebra::GRContext>& ctx) {
-  swgr::stir::StirParameters params;
+                         const std::shared_ptr<const stir_whir_gr::algebra::GRContext>& ctx) {
+  stir_whir_gr::stir::StirParameters params;
   params.virtual_fold_factor = 9;
   params.shift_power = 3;
   params.ood_samples = options.ood_samples;
@@ -1175,35 +1175,35 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
   params.pow_bits = options.pow_bits;
   params.sec_mode = options.sec_mode;
   params.hash_profile = options.hash_profile;
-  params.protocol_mode = swgr::stir::StirProtocolMode::TheoremGr;
-  params.challenge_sampling = swgr::stir::StirChallengeSampling::TeichmullerT;
+  params.protocol_mode = stir_whir_gr::stir::StirProtocolMode::TheoremGr;
+  params.challenge_sampling = stir_whir_gr::stir::StirChallengeSampling::TeichmullerT;
   params.ood_sampling =
-      swgr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
+      stir_whir_gr::stir::StirOodSamplingMode::TheoremExceptionalComplementUnique;
 
-  const swgr::stir::StirInstance instance{
-      .domain = swgr::Domain::teichmuller_subgroup(ctx, options.n),
+  const stir_whir_gr::stir::StirInstance instance{
+      .domain = stir_whir_gr::Domain::teichmuller_subgroup(ctx, options.n),
       .claimed_degree = options.d,
   };
   std::string query_policy = "auto_live_schedule";
   if (options.stir_query_theorem_auto) {
     const auto solved =
-        swgr::stir::solve_min_query_schedule_for_lambda(params, instance);
+        stir_whir_gr::stir::solve_min_query_schedule_for_lambda(params, instance);
     params.query_repetitions = solved.query_schedule;
     query_policy = "theorem_auto_solved_schedule";
   } else if (!options.queries.empty()) {
     query_policy = "manual_live_schedule";
   }
   PrintQueryWarnings("stir9to3",
-                     swgr::stir::resolve_query_schedule_metadata(params, instance));
+                     stir_whir_gr::stir::resolve_query_schedule_metadata(params, instance));
   const auto polynomial =
       SamplePolynomial(*ctx, instance.domain, static_cast<std::size_t>(options.d + 1));
-  const swgr::stir::StirProver prover(params);
-  const swgr::stir::StirVerifier verifier(params);
+  const stir_whir_gr::stir::StirProver prover(params);
+  const stir_whir_gr::stir::StirVerifier verifier(params);
 
   auto row = RunBenchLoop(options, "stir9to3", 9, 3, options.ood_samples,
                           [&](TimeBenchRow* row) {
                             const auto proof = prover.prove(instance, polynomial);
-                            swgr::ProofStatistics verify_stats;
+                            stir_whir_gr::ProofStatistics verify_stats;
                             if (!verifier.verify(instance, proof, &verify_stats)) {
                               throw std::runtime_error(
                                   "stir verifier rejected honest proof");
@@ -1214,7 +1214,7 @@ TimeBenchRow MakeStirRow(const TimeBenchOptions& options,
                                   proof.stats.verifier_hashes;
                             }
                           });
-  const auto analysis = swgr::stir::analyze_theorem_soundness(params, instance);
+  const auto analysis = stir_whir_gr::stir::analyze_theorem_soundness(params, instance);
   FillStirTheoremSoundnessMetadata(row, analysis, options.sec_mode,
                                    options.lambda_target, options.pow_bits,
                                    query_policy);
@@ -1235,8 +1235,8 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
     throw std::invalid_argument("WHIR fixed r must be non-zero");
   }
 
-  auto selection = swgr::whir::select_whir_unique_decoding_parameters(
-      swgr::whir::WhirUniqueDecodingInputs{
+  auto selection = stir_whir_gr::whir::select_whir_unique_decoding_parameters(
+      stir_whir_gr::whir::WhirUniqueDecodingInputs{
           .lambda_target = options.lambda_target,
           .ring_exponent = options.k_exp,
           .variable_count = options.whir_m,
@@ -1250,12 +1250,12 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
                                 JoinNotes(selection.notes));
   }
 
-  auto ctx = std::make_shared<swgr::algebra::GRContext>(swgr::algebra::GRConfig{
+  auto ctx = std::make_shared<stir_whir_gr::algebra::GRContext>(stir_whir_gr::algebra::GRConfig{
       .p = 2,
       .k_exp = options.k_exp,
       .r = selection.selected_r,
   });
-  const swgr::Domain domain = swgr::Domain::teichmuller_subgroup(
+  const stir_whir_gr::Domain domain = stir_whir_gr::Domain::teichmuller_subgroup(
       ctx, selection.public_params.initial_domain_size);
   const auto pp = ctx->with_ntl_context([&] {
     const auto omega = NTL::power(
@@ -1268,7 +1268,7 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
                 *options.whir_repetitions);
       final_repetitions = *options.whir_repetitions;
     }
-    return swgr::whir::WhirPublicParameters{
+    return stir_whir_gr::whir::WhirPublicParameters{
         .ctx = ctx,
         .initial_domain = domain,
         .variable_count = options.whir_m,
@@ -1284,26 +1284,26 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
     };
   });
 
-  swgr::whir::WhirParameters params;
+  stir_whir_gr::whir::WhirParameters params;
   params.lambda_target = options.lambda_target;
   params.hash_profile = options.hash_profile;
   const auto multiquadratic_polynomial =
       options.whir_polynomial_kind == WhirPolynomialKind::MultiQuadratic
-          ? std::optional<swgr::whir::MultiQuadraticPolynomial>(
+          ? std::optional<stir_whir_gr::whir::MultiQuadraticPolynomial>(
                 SampleWhirPolynomial(*ctx, options.whir_m))
           : std::nullopt;
   const auto multilinear_polynomial =
       options.whir_polynomial_kind == WhirPolynomialKind::Multilinear
-          ? std::optional<swgr::whir::MultilinearPolynomial>(
+          ? std::optional<stir_whir_gr::whir::MultilinearPolynomial>(
                 SampleWhirMultilinearPolynomial(*ctx, options.whir_m))
           : std::nullopt;
   const auto point = SampleWhirOpenPoint(*ctx, pp.initial_domain, options.whir_m);
-  const swgr::whir::WhirProver prover(params);
-  const swgr::whir::WhirVerifier verifier(params);
+  const stir_whir_gr::whir::WhirProver prover(params);
+  const stir_whir_gr::whir::WhirVerifier verifier(params);
 
   auto row = RunBenchLoop(options, "whir_gr_ud", 3, 3, 0,
                           [&](TimeBenchRow* current_row) {
-                            swgr::whir::WhirCommitmentState state;
+                            stir_whir_gr::whir::WhirCommitmentState state;
                             const auto commitment =
                                 multilinear_polynomial.has_value()
                                     ? prover.commit(pp, *multilinear_polynomial,
@@ -1313,7 +1313,7 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
                                                     &state);
                             const auto opening =
                                 prover.open(commitment, state, point);
-                            swgr::ProofStatistics verify_stats;
+                            stir_whir_gr::ProofStatistics verify_stats;
                             if (!verifier.verify(commitment, point, opening,
                                                  &verify_stats)) {
                               throw std::runtime_error(
@@ -1334,11 +1334,11 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
                             }
                           });
 
-  const std::uint64_t code_dimension = swgr::whir::pow3_checked(options.whir_m);
-  row.ring = swgr::bench::RingString(2, options.k_exp, selection.selected_r);
+  const std::uint64_t code_dimension = stir_whir_gr::whir::pow3_checked(options.whir_m);
+  row.ring = stir_whir_gr::bench::RingString(2, options.k_exp, selection.selected_r);
   row.n = pp.initial_domain.size();
   row.d = code_dimension;
-  row.rho = swgr::bench::ReducedRatioString(code_dimension, row.n);
+  row.rho = stir_whir_gr::bench::ReducedRatioString(code_dimension, row.n);
   row.soundness_mode = "theorem_whir_gr_unique_decoding";
   row.fri_repetitions = 0;
   row.lambda_target = options.lambda_target;
@@ -1361,7 +1361,7 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
     notes.push_back("polynomial_family=multilinear_embedded_in_ternary_"
                     "multi_quadratic_code");
     notes.push_back("multilinear_coefficient_count=" +
-                    std::to_string(swgr::whir::pow2_checked(options.whir_m)));
+                    std::to_string(stir_whir_gr::whir::pow2_checked(options.whir_m)));
     notes.push_back("soundness_dimension_remains_3^m=" +
                     std::to_string(code_dimension));
   } else {
@@ -1379,14 +1379,14 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
 
 int main(int argc, char** argv) {
   try {
-    if (swgr::bench::WantsHelp(argc, argv)) {
+    if (stir_whir_gr::bench::WantsHelp(argc, argv)) {
       std::cout << TimeBenchUsage(argv[0]);
       return 0;
     }
 
     const auto options = ParseTimeBenchOptions(argc, argv);
     ApplyThreadControl(options.threads);
-    auto ctx = std::make_shared<swgr::algebra::GRContext>(swgr::algebra::GRConfig{
+    auto ctx = std::make_shared<stir_whir_gr::algebra::GRContext>(stir_whir_gr::algebra::GRConfig{
         .p = options.p,
         .k_exp = options.k_exp,
         .r = options.r,

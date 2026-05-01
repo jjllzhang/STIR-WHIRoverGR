@@ -21,11 +21,11 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::Domain;
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::poly_utils::Polynomial;
+using stir_whir_gr::Domain;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::poly_utils::Polynomial;
 
 std::vector<GRElem> NaiveRSEncode(const Domain& domain, const Polynomial& poly) {
   const auto points = domain.elements();
@@ -108,7 +108,7 @@ Polynomial MakeSparsePolynomial(const GRContext& ctx, std::size_t term_count,
 }
 
 void CheckFftMatchesRSEncode(const Domain& domain, const Polynomial& poly) {
-  const auto fft_evals = swgr::poly_utils::fft3(domain, poly);
+  const auto fft_evals = stir_whir_gr::poly_utils::fft3(domain, poly);
   const auto expected = NaiveRSEncode(domain, poly);
 
   CHECK_EQ(fft_evals.size(), expected.size());
@@ -118,8 +118,8 @@ void CheckFftMatchesRSEncode(const Domain& domain, const Polynomial& poly) {
 }
 
 void CheckInverseRoundtrip(const Domain& domain, const Polynomial& poly) {
-  const auto evals = swgr::poly_utils::fft3(domain, poly);
-  const auto recovered = swgr::poly_utils::inverse_fft3(domain, evals);
+  const auto evals = stir_whir_gr::poly_utils::fft3(domain, poly);
+  const auto recovered = stir_whir_gr::poly_utils::inverse_fft3(domain, evals);
 
   CHECK_EQ(recovered.size(), static_cast<std::size_t>(domain.size()));
   for (std::size_t i = 0; i < poly.coefficients().size(); ++i) {
@@ -132,9 +132,9 @@ void CheckInverseRoundtrip(const Domain& domain, const Polynomial& poly) {
 
 void CheckInverseMatchesInterpolation(const Domain& domain,
                                       const Polynomial& poly) {
-  const auto evals = swgr::poly_utils::fft3(domain, poly);
-  const auto recovered = swgr::poly_utils::inverse_fft3(domain, evals);
-  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+  const auto evals = stir_whir_gr::poly_utils::fft3(domain, poly);
+  const auto recovered = stir_whir_gr::poly_utils::inverse_fft3(domain, evals);
+  const auto expected_poly = stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(
       domain.context(), domain.elements(), evals);
   std::vector<GRElem> expected = expected_poly.coefficients();
   expected.resize(static_cast<std::size_t>(domain.size()),
@@ -148,8 +148,8 @@ void CheckInverseMatchesInterpolation(const Domain& domain,
 
 void CheckInverseMatchesInterpolation(
     const Domain& domain, const std::vector<GRElem>& evals) {
-  const auto recovered = swgr::poly_utils::inverse_fft3(domain, evals);
-  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+  const auto recovered = stir_whir_gr::poly_utils::inverse_fft3(domain, evals);
+  const auto expected_poly = stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(
       domain.context(), domain.elements(), evals);
   std::vector<GRElem> expected = expected_poly.coefficients();
   expected.resize(static_cast<std::size_t>(domain.size()),
@@ -165,20 +165,20 @@ void CheckRepeatedCallsStable(const Domain& domain, const Polynomial& poly,
                               const std::vector<GRElem>& evals,
                               std::size_t repeat_count) {
   const auto expected_evals = NaiveRSEncode(domain, poly);
-  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+  const auto expected_poly = stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(
       domain.context(), domain.elements(), evals);
   std::vector<GRElem> expected_coeffs = expected_poly.coefficients();
   expected_coeffs.resize(static_cast<std::size_t>(domain.size()),
                          domain.context().zero());
 
   for (std::size_t repeat = 0; repeat < repeat_count; ++repeat) {
-    const auto actual_evals = swgr::poly_utils::fft3(domain, poly);
+    const auto actual_evals = stir_whir_gr::poly_utils::fft3(domain, poly);
     CHECK_EQ(actual_evals.size(), expected_evals.size());
     for (std::size_t i = 0; i < actual_evals.size(); ++i) {
       CHECK_EQ(actual_evals[i], expected_evals[i]);
     }
 
-    const auto actual_coeffs = swgr::poly_utils::inverse_fft3(domain, evals);
+    const auto actual_coeffs = stir_whir_gr::poly_utils::inverse_fft3(domain, evals);
     CHECK_EQ(actual_coeffs.size(), expected_coeffs.size());
     for (std::size_t i = 0; i < actual_coeffs.size(); ++i) {
       CHECK_EQ(actual_coeffs[i], expected_coeffs[i]);
@@ -269,7 +269,7 @@ void TestFft3RejectsNonThreeSmoothDomain() {
 
   bool fft_threw = false;
   try {
-    (void)swgr::poly_utils::fft3(non_three_smooth, poly);
+    (void)stir_whir_gr::poly_utils::fft3(non_three_smooth, poly);
   } catch (const std::invalid_argument&) {
     fft_threw = true;
   }
@@ -277,7 +277,7 @@ void TestFft3RejectsNonThreeSmoothDomain() {
 
   bool ifft_threw = false;
   try {
-    (void)swgr::poly_utils::inverse_fft3(
+    (void)stir_whir_gr::poly_utils::inverse_fft3(
         non_three_smooth, std::vector<GRElem>(7, ctx.one()));
   } catch (const std::invalid_argument&) {
     ifft_threw = true;
@@ -389,7 +389,7 @@ void TestFft3PlanCachePublishIsSafeUnderConcurrentMiss() {
   const Polynomial poly = SampleRandomPolynomial(*shared_ctx, 127, rng);
   const auto evals = SampleRandomEvaluations(*shared_ctx, 243, rng);
   const auto expected_evals = NaiveRSEncode(subgroup243, poly);
-  const auto expected_poly = swgr::poly_utils::interpolate_for_gr_wrapper(
+  const auto expected_poly = stir_whir_gr::poly_utils::interpolate_for_gr_wrapper(
       subgroup243.context(), subgroup243.elements(), evals);
   std::vector<GRElem> expected_coeffs = expected_poly.coefficients();
   expected_coeffs.resize(static_cast<std::size_t>(subgroup243.size()),
@@ -417,15 +417,15 @@ void TestFft3PlanCachePublishIsSafeUnderConcurrentMiss() {
           const bool inverse_first = ((thread_index + iteration) % 2U) != 0U;
           if (inverse_first) {
             RequireVectorsEqual(
-                swgr::poly_utils::inverse_fft3(subgroup243, evals),
+                stir_whir_gr::poly_utils::inverse_fft3(subgroup243, evals),
                 expected_coeffs, "concurrent inverse_fft3");
-            RequireVectorsEqual(swgr::poly_utils::fft3(subgroup243, poly),
+            RequireVectorsEqual(stir_whir_gr::poly_utils::fft3(subgroup243, poly),
                                 expected_evals, "concurrent fft3");
           } else {
-            RequireVectorsEqual(swgr::poly_utils::fft3(subgroup243, poly),
+            RequireVectorsEqual(stir_whir_gr::poly_utils::fft3(subgroup243, poly),
                                 expected_evals, "concurrent fft3");
             RequireVectorsEqual(
-                swgr::poly_utils::inverse_fft3(subgroup243, evals),
+                stir_whir_gr::poly_utils::inverse_fft3(subgroup243, evals),
                 expected_coeffs, "concurrent inverse_fft3");
           }
         }

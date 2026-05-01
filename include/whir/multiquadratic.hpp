@@ -1,5 +1,5 @@
-#ifndef SWGR_WHIR_MULTIQUADRATIC_HPP_
-#define SWGR_WHIR_MULTIQUADRATIC_HPP_
+#ifndef STIR_WHIR_GR_WHIR_MULTIQUADRATIC_HPP_
+#define STIR_WHIR_GR_WHIR_MULTIQUADRATIC_HPP_
 
 #include <cstdint>
 #include <span>
@@ -8,7 +8,7 @@
 #include "algebra/gr_context.hpp"
 #include "poly_utils/polynomial.hpp"
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 
 std::uint64_t pow3_checked(std::uint64_t exponent);
 
@@ -70,6 +70,6 @@ class MultilinearPolynomial {
   std::vector<algebra::GRElem> coefficients_;
 };
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir
 
-#endif  // SWGR_WHIR_MULTIQUADRATIC_HPP_
+#endif  // STIR_WHIR_GR_WHIR_MULTIQUADRATIC_HPP_

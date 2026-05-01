@@ -29,13 +29,13 @@ template <typename Fn> void ExpectInvalidArgument(Fn fn) {
   CHECK(threw);
 }
 
-swgr::whir::WhirUniqueDecodingInputs SmallInputs() {
-  return swgr::whir::WhirUniqueDecodingInputs{
+stir_whir_gr::whir::WhirUniqueDecodingInputs SmallInputs() {
+  return stir_whir_gr::whir::WhirUniqueDecodingInputs{
       .lambda_target = 32,
       .ring_exponent = 16,
       .variable_count = 3,
       .max_layer_width = 1,
-      .rho0 = swgr::whir::WhirRational{1, 3},
+      .rho0 = stir_whir_gr::whir::WhirRational{1, 3},
   };
 }
 
@@ -43,14 +43,14 @@ void TestInvalidRatesReject() {
   testutil::PrintInfo("WHIR selector rejects invalid rho0");
 
   auto inputs = SmallInputs();
-  inputs.rho0 = swgr::whir::WhirRational{0, 1};
+  inputs.rho0 = stir_whir_gr::whir::WhirRational{0, 1};
   ExpectInvalidArgument(
-      [&] { swgr::whir::select_whir_unique_decoding_parameters(inputs); });
+      [&] { stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs); });
 
   inputs = SmallInputs();
-  inputs.rho0 = swgr::whir::WhirRational{1, 1};
+  inputs.rho0 = stir_whir_gr::whir::WhirRational{1, 1};
   ExpectInvalidArgument(
-      [&] { swgr::whir::select_whir_unique_decoding_parameters(inputs); });
+      [&] { stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs); });
 
 }
 
@@ -58,7 +58,7 @@ void TestSmallSmokeParamsAreAccepted() {
   testutil::PrintInfo("WHIR selector accepts small unique-decoding params");
 
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(SmallInputs());
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(SmallInputs());
 
   CHECK(selected.feasible);
   CHECK_EQ(selected.public_params.base_prime, std::uint64_t{2});
@@ -75,13 +75,13 @@ void TestSelectedN0DividesSelectedTeichmullerGroup() {
   testutil::PrintInfo("WHIR selected n0 divides 2^r - 1");
 
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(SmallInputs());
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(SmallInputs());
 
   CHECK(selected.rdom != 0);
   CHECK_EQ(selected.selected_r % selected.rdom, std::uint64_t{0});
-  CHECK(swgr::whir::domain_divides_teichmuller_group(
+  CHECK(stir_whir_gr::whir::domain_divides_teichmuller_group(
       selected.public_params.initial_domain_size, selected.selected_r));
-  CHECK_EQ(swgr::whir::multiplicative_order_mod_odd(
+  CHECK_EQ(stir_whir_gr::whir::multiplicative_order_mod_odd(
                selected.public_params.initial_domain_size, 2),
            selected.rdom);
 }
@@ -92,13 +92,13 @@ void TestFixedExtensionDegreeIsAccepted() {
   auto inputs = SmallInputs();
   inputs.fixed_extension_degree = 54;
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs);
 
   CHECK(selected.feasible);
   CHECK_EQ(selected.selected_r, std::uint64_t{54});
   CHECK_EQ(selected.public_params.extension_degree, std::uint64_t{54});
   CHECK_EQ(selected.public_params.initial_domain_size, std::uint64_t{81});
-  CHECK(swgr::whir::domain_divides_teichmuller_group(
+  CHECK(stir_whir_gr::whir::domain_divides_teichmuller_group(
       selected.public_params.initial_domain_size, selected.selected_r));
 }
 
@@ -109,7 +109,7 @@ void TestFixedExtensionDegreeCanRejectRing() {
   inputs.fixed_extension_degree = 55;
   inputs.max_n0_search_steps = 3;
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs);
 
   CHECK(!selected.feasible);
 }
@@ -121,7 +121,7 @@ void TestFixedExtensionGuardConflictRejects() {
   inputs.fixed_extension_degree = 54;
   inputs.max_extension_degree = 53;
   ExpectInvalidArgument(
-      [&] { swgr::whir::select_whir_unique_decoding_parameters(inputs); });
+      [&] { stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs); });
 }
 
 void TestRequiredDomainsDivideThroughRoundChain() {
@@ -131,7 +131,7 @@ void TestRequiredDomainsDivideThroughRoundChain() {
   inputs.variable_count = 4;
   inputs.max_layer_width = 2;
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs);
 
   CHECK(selected.feasible);
   CHECK_EQ(selected.required_3_adic_power, std::uint64_t{3});
@@ -154,7 +154,7 @@ void TestAlgebraicBoundIsBelowTarget() {
 
   const auto inputs = SmallInputs();
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs);
 
   CHECK(selected.feasible);
   CHECK(selected.algebraic_error_log2 <
@@ -170,7 +170,7 @@ void TestDomainGuardCanReportInfeasible() {
   auto inputs = SmallInputs();
   inputs.max_domain_size = 27;
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs);
 
   CHECK(!selected.feasible);
   bool saw_guard_note = false;
@@ -189,7 +189,7 @@ void TestExtensionGuardCanReportInfeasible() {
   inputs.max_extension_degree = 1;
   inputs.max_n0_search_steps = 2;
   const auto selected =
-      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+      stir_whir_gr::whir::select_whir_unique_decoding_parameters(inputs);
 
   CHECK(!selected.feasible);
   bool saw_guard_note = false;

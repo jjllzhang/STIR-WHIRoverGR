@@ -1,5 +1,5 @@
-#ifndef SWGR_CRYPTO_MERKLE_TREE_MERKLE_TREE_HPP_
-#define SWGR_CRYPTO_MERKLE_TREE_MERKLE_TREE_HPP_
+#ifndef STIR_WHIR_GR_CRYPTO_MERKLE_TREE_MERKLE_TREE_HPP_
+#define STIR_WHIR_GR_CRYPTO_MERKLE_TREE_MERKLE_TREE_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +8,7 @@
 
 #include "parameters.hpp"
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 
 struct MerkleProof {
   std::vector<std::uint64_t> queried_indices;
@@ -45,6 +45,6 @@ class MerkleTree {
   std::vector<std::uint8_t> root_;
 };
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto
 
-#endif  // SWGR_CRYPTO_MERKLE_TREE_MERKLE_TREE_HPP_
+#endif  // STIR_WHIR_GR_CRYPTO_MERKLE_TREE_MERKLE_TREE_HPP_

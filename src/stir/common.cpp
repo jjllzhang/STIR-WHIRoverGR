@@ -19,22 +19,22 @@
 using NTL::clear;
 using NTL::set;
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 namespace {
 
 constexpr std::uint64_t kOodTagOffset = 0x10000ULL;
 
 template <typename Sink>
-void SerializeRingElement(Sink& sink, const swgr::algebra::GRContext& ctx,
-                          const swgr::algebra::GRElem& value) {
-  swgr::SerializeBytes(sink, ctx.serialize(value));
+void SerializeRingElement(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
+                          const stir_whir_gr::algebra::GRElem& value) {
+  stir_whir_gr::SerializeBytes(sink, ctx.serialize(value));
 }
 
 template <typename Sink>
-void SerializePolynomial(Sink& sink, const swgr::algebra::GRContext& ctx,
-                         const swgr::poly_utils::Polynomial& polynomial) {
+void SerializePolynomial(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
+                         const stir_whir_gr::poly_utils::Polynomial& polynomial) {
   const auto& coefficients = polynomial.coefficients();
-  swgr::SerializeUint64(sink,
+  stir_whir_gr::SerializeUint64(sink,
                         static_cast<std::uint64_t>(coefficients.size()));
   for (const auto& coefficient : coefficients) {
     SerializeRingElement(sink, ctx, coefficient);
@@ -42,29 +42,29 @@ void SerializePolynomial(Sink& sink, const swgr::algebra::GRContext& ctx,
 }
 
 template <typename Sink>
-void SerializeMerkleProof(Sink& sink, const swgr::crypto::MerkleProof& proof) {
-  swgr::SerializeUint64Vector(sink, proof.queried_indices);
-  swgr::SerializeByteVector(sink, proof.leaf_payloads);
-  swgr::SerializeByteVector(sink, proof.sibling_hashes);
+void SerializeMerkleProof(Sink& sink, const stir_whir_gr::crypto::MerkleProof& proof) {
+  stir_whir_gr::SerializeUint64Vector(sink, proof.queried_indices);
+  stir_whir_gr::SerializeByteVector(sink, proof.leaf_payloads);
+  stir_whir_gr::SerializeByteVector(sink, proof.sibling_hashes);
 }
 
 template <typename Sink>
-void SerializeRingVector(Sink& sink, const swgr::algebra::GRContext& ctx,
-                         std::span<const swgr::algebra::GRElem> values) {
-  swgr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
+void SerializeRingVector(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
+                         std::span<const stir_whir_gr::algebra::GRElem> values) {
+  stir_whir_gr::SerializeUint64(sink, static_cast<std::uint64_t>(values.size()));
   for (const auto& value : values) {
     SerializeRingElement(sink, ctx, value);
   }
 }
 
 template <typename Sink>
-void SerializeStirProofBody(Sink& sink, const swgr::algebra::GRContext& ctx,
+void SerializeStirProofBody(Sink& sink, const stir_whir_gr::algebra::GRContext& ctx,
                             const StirProof& proof) {
-  swgr::SerializeBytes(sink, proof.initial_root);
-  swgr::SerializeUint64(sink,
+  stir_whir_gr::SerializeBytes(sink, proof.initial_root);
+  stir_whir_gr::SerializeUint64(sink,
                         static_cast<std::uint64_t>(proof.rounds.size()));
   for (const auto& round : proof.rounds) {
-    swgr::SerializeBytes(sink, round.g_root);
+    stir_whir_gr::SerializeBytes(sink, round.g_root);
     SerializeRingVector(sink, ctx, round.betas);
     SerializePolynomial(sink, ctx, round.ans_polynomial);
     SerializeMerkleProof(sink, round.queries_to_prev);
@@ -101,9 +101,9 @@ bool ExceptionalAgainst(const algebra::GRContext& ctx,
 }
 
 algebra::GRElem HornerEvaluate(
-    std::span<const swgr::algebra::GRElem> coefficients,
-    const swgr::algebra::GRElem& point) {
-  swgr::algebra::GRElem acc;
+    std::span<const stir_whir_gr::algebra::GRElem> coefficients,
+    const stir_whir_gr::algebra::GRElem& point) {
+  stir_whir_gr::algebra::GRElem acc;
   clear(acc);
   for (auto it = coefficients.rbegin(); it != coefficients.rend(); ++it) {
     acc *= point;
@@ -112,10 +112,10 @@ algebra::GRElem HornerEvaluate(
   return acc;
 }
 
-std::vector<swgr::algebra::GRElem> BatchHornerEvaluate(
-    std::span<const swgr::algebra::GRElem> coefficients,
-    std::span<const swgr::algebra::GRElem> points) {
-  std::vector<swgr::algebra::GRElem> values(points.size());
+std::vector<stir_whir_gr::algebra::GRElem> BatchHornerEvaluate(
+    std::span<const stir_whir_gr::algebra::GRElem> coefficients,
+    std::span<const stir_whir_gr::algebra::GRElem> points) {
+  std::vector<stir_whir_gr::algebra::GRElem> values(points.size());
   for (std::size_t point_index = 0; point_index < points.size();
        ++point_index) {
     values[point_index] = HornerEvaluate(coefficients, points[point_index]);
@@ -123,16 +123,16 @@ std::vector<swgr::algebra::GRElem> BatchHornerEvaluate(
   return values;
 }
 
-std::vector<swgr::algebra::GRElem> BatchScalingValues(
-    std::span<const swgr::algebra::GRElem> points,
-    const swgr::algebra::GRElem& comb_randomness, std::uint64_t gap) {
-  std::vector<swgr::algebra::GRElem> out(points.size());
+std::vector<stir_whir_gr::algebra::GRElem> BatchScalingValues(
+    std::span<const stir_whir_gr::algebra::GRElem> points,
+    const stir_whir_gr::algebra::GRElem& comb_randomness, std::uint64_t gap) {
+  std::vector<stir_whir_gr::algebra::GRElem> out(points.size());
   for (std::size_t point_index = 0; point_index < points.size();
        ++point_index) {
     const auto common_factor = points[point_index] * comb_randomness;
-    swgr::algebra::GRElem term;
+    stir_whir_gr::algebra::GRElem term;
     set(term);
-    swgr::algebra::GRElem total;
+    stir_whir_gr::algebra::GRElem total;
     clear(total);
     for (std::uint64_t exponent = 0; exponent <= gap; ++exponent) {
       total += term;
@@ -143,8 +143,8 @@ std::vector<swgr::algebra::GRElem> BatchScalingValues(
   return out;
 }
 
-std::vector<swgr::algebra::GRElem> EnumerateDomainPoints(const Domain& domain) {
-  std::vector<swgr::algebra::GRElem> points;
+std::vector<stir_whir_gr::algebra::GRElem> EnumerateDomainPoints(const Domain& domain) {
+  std::vector<stir_whir_gr::algebra::GRElem> points;
   points.reserve(static_cast<std::size_t>(domain.size()));
 
   auto current = domain.offset();
@@ -160,9 +160,9 @@ constexpr std::uint64_t kTheoremSamplerAttemptFactor = 64U;
 bool TheoremSafeComplementCandidate(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    std::span<const swgr::algebra::GRElem> excluded_points,
-    std::span<const swgr::algebra::GRElem> chosen_points,
-    const swgr::algebra::GRElem& candidate) {
+    std::span<const stir_whir_gr::algebra::GRElem> excluded_points,
+    std::span<const stir_whir_gr::algebra::GRElem> chosen_points,
+    const stir_whir_gr::algebra::GRElem& candidate) {
   const auto& ctx = input_domain.context();
   const auto input_points = input_domain.elements();
   const auto shift_points = shift_domain.elements();
@@ -181,19 +181,19 @@ bool TheoremSafeComplementCandidate(
          ExceptionalAgainst(ctx, candidate, chosen_points);
 }
 
-std::vector<swgr::algebra::GRElem> SampleTheoremSafeComplement(
+std::vector<stir_whir_gr::algebra::GRElem> SampleTheoremSafeComplement(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    std::span<const swgr::algebra::GRElem> excluded_points,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    std::span<const stir_whir_gr::algebra::GRElem> excluded_points,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t sample_count) {
   if (sample_count == 0) {
     return {};
   }
 
-  std::vector<swgr::algebra::GRElem> result;
+  std::vector<stir_whir_gr::algebra::GRElem> result;
   result.reserve(static_cast<std::size_t>(sample_count));
-  const auto teich_size = swgr::algebra::teichmuller_set_size(input_domain.context());
+  const auto teich_size = stir_whir_gr::algebra::teichmuller_set_size(input_domain.context());
   if (teich_size <= 1) {
     throw std::runtime_error("theorem sampler requires a non-empty T*");
   }
@@ -224,15 +224,15 @@ std::vector<swgr::algebra::GRElem> SampleTheoremSafeComplement(
 
 }  // namespace
 
-std::uint64_t serialized_message_bytes(const swgr::algebra::GRContext& ctx,
+std::uint64_t serialized_message_bytes(const stir_whir_gr::algebra::GRContext& ctx,
                                        const StirProof& proof) {
-  swgr::CountingSink sink;
+  stir_whir_gr::CountingSink sink;
   SerializeStirProofBody(sink, ctx, proof);
   return sink.size();
 }
 
 bool points_have_unit_differences(
-    const Domain& domain, std::span<const swgr::algebra::GRElem> points) {
+    const Domain& domain, std::span<const stir_whir_gr::algebra::GRElem> points) {
   const auto& ctx = domain.context();
   const auto domain_points = domain.elements();
   return ctx.with_ntl_context([&] {
@@ -260,14 +260,14 @@ bool domains_have_unit_differences(const Domain& lhs, const Domain& rhs) {
   return points_have_unit_differences(lhs, rhs_points);
 }
 
-swgr::algebra::GRElem derive_stir_folding_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_stir_folding_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label) {
   return transcript.challenge_teichmuller(ctx, label);
 }
 
-swgr::algebra::GRElem derive_stir_comb_challenge(
-    swgr::crypto::Transcript& transcript, const swgr::algebra::GRContext& ctx,
+stir_whir_gr::algebra::GRElem derive_stir_comb_challenge(
+    stir_whir_gr::crypto::Transcript& transcript, const stir_whir_gr::algebra::GRContext& ctx,
     std::string_view label) {
   return transcript.challenge_teichmuller(ctx, label);
 }
@@ -312,7 +312,7 @@ bool theorem_ood_pool_has_capacity(const Domain& input_domain,
     return true;
   }
 
-  const auto teich_size = swgr::algebra::teichmuller_set_size(input_domain.context());
+  const auto teich_size = stir_whir_gr::algebra::teichmuller_set_size(input_domain.context());
   if (teich_size <= 1) {
     return false;
   }
@@ -320,7 +320,7 @@ bool theorem_ood_pool_has_capacity(const Domain& input_domain,
   const auto input_points = input_domain.elements();
   const auto shift_points = shift_domain.elements();
   const auto folded_points = folded_domain.elements();
-  std::vector<swgr::algebra::GRElem> excluded_points;
+  std::vector<stir_whir_gr::algebra::GRElem> excluded_points;
   excluded_points.reserve(input_points.size() + shift_points.size() +
                           folded_points.size());
   for (const auto& point : input_points) {
@@ -348,7 +348,7 @@ bool theorem_ood_pool_has_capacity(const Domain& input_domain,
 bool theorem_shake_pool_has_capacity(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    std::span<const swgr::algebra::GRElem> quotient_points) {
+    std::span<const stir_whir_gr::algebra::GRElem> quotient_points) {
   const auto& ctx = input_domain.context();
   if (!domain_is_subset_of_teichmuller_units(input_domain) ||
       !domain_is_subset_of_teichmuller_units(shift_domain) ||
@@ -356,7 +356,7 @@ bool theorem_shake_pool_has_capacity(
     return false;
   }
   for (const auto& point : quotient_points) {
-    if (!swgr::algebra::is_teichmuller_element(ctx, point) ||
+    if (!stir_whir_gr::algebra::is_teichmuller_element(ctx, point) ||
         !ctx.is_unit(point)) {
       return false;
     }
@@ -365,7 +365,7 @@ bool theorem_shake_pool_has_capacity(
   const auto input_points = input_domain.elements();
   const auto shift_points = shift_domain.elements();
   const auto folded_points = folded_domain.elements();
-  std::vector<swgr::algebra::GRElem> excluded_points;
+  std::vector<stir_whir_gr::algebra::GRElem> excluded_points;
   excluded_points.reserve(input_points.size() + shift_points.size() +
                           folded_points.size() + quotient_points.size());
   for (const auto& point : input_points) {
@@ -389,7 +389,7 @@ bool theorem_shake_pool_has_capacity(
     }
   }
 
-  const auto teich_size = swgr::algebra::teichmuller_set_size(ctx);
+  const auto teich_size = stir_whir_gr::algebra::teichmuller_set_size(ctx);
   const auto available = teich_size - NTL::ZZ(1) -
                          ToZZ(static_cast<std::uint64_t>(excluded_points.size()),
                               "excluded theorem points");
@@ -435,7 +435,7 @@ std::vector<std::uint64_t> derive_unique_positions(
 
   const std::uint64_t capped_count = std::min(requested_count, modulus);
   auto positions =
-      swgr::fri::derive_query_positions(seed_material, round_tag, modulus,
+      stir_whir_gr::fri::derive_query_positions(seed_material, round_tag, modulus,
                                         capped_count);
   std::vector<std::uint64_t> unique_positions;
   unique_positions.reserve(static_cast<std::size_t>(capped_count));
@@ -458,13 +458,13 @@ std::vector<std::uint64_t> derive_unique_positions(
 }
 
 std::vector<std::uint64_t> derive_unique_positions(
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t modulus, std::uint64_t requested_count) {
-  return swgr::fri::derive_unique_query_positions(
+  return stir_whir_gr::fri::derive_unique_query_positions(
       transcript, label_prefix, modulus, requested_count);
 }
 
-std::vector<swgr::algebra::GRElem> derive_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
     const std::vector<std::uint8_t>& oracle_commitment, std::uint64_t round_tag,
@@ -481,7 +481,7 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
                               candidate_domain.size(), candidate_domain.size());
   const auto& ctx = candidate_domain.context();
 
-  std::vector<swgr::algebra::GRElem> result;
+  std::vector<stir_whir_gr::algebra::GRElem> result;
   result.reserve(static_cast<std::size_t>(sample_count));
   for (const auto index : seed_positions) {
     const auto candidate = candidate_domain.element(index);
@@ -503,10 +503,10 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
   throw std::runtime_error("derive_ood_points failed to find enough samples");
 }
 
-std::vector<swgr::algebra::GRElem> derive_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_ood_points(
     const StirParameters& params, const Domain& input_domain,
     const Domain& shift_domain, const Domain& folded_domain,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix,
     std::uint64_t sample_count) {
   if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_theorem_ood_points(input_domain, shift_domain, folded_domain,
@@ -516,9 +516,9 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
                            label_prefix, sample_count);
 }
 
-std::vector<swgr::algebra::GRElem> derive_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
-    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    const Domain& folded_domain, stir_whir_gr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count) {
   if (sample_count == 0) {
     return {};
@@ -529,7 +529,7 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
   const auto folded_points = folded_domain.elements();
   const auto& ctx = candidate_domain.context();
 
-  std::vector<swgr::algebra::GRElem> result;
+  std::vector<stir_whir_gr::algebra::GRElem> result;
   result.reserve(static_cast<std::size_t>(sample_count));
   for (std::uint64_t attempt = 0;
        result.size() < static_cast<std::size_t>(sample_count) &&
@@ -557,21 +557,21 @@ std::vector<swgr::algebra::GRElem> derive_ood_points(
   return result;
 }
 
-std::vector<swgr::algebra::GRElem> derive_theorem_ood_points(
+std::vector<stir_whir_gr::algebra::GRElem> derive_theorem_ood_points(
     const Domain& input_domain, const Domain& shift_domain,
-    const Domain& folded_domain, swgr::crypto::Transcript& transcript,
+    const Domain& folded_domain, stir_whir_gr::crypto::Transcript& transcript,
     std::string_view label_prefix, std::uint64_t sample_count) {
   return SampleTheoremSafeComplement(
       input_domain, shift_domain, folded_domain,
-      std::span<const swgr::algebra::GRElem>(), transcript, label_prefix,
+      std::span<const stir_whir_gr::algebra::GRElem>(), transcript, label_prefix,
       sample_count);
 }
 
-swgr::algebra::GRElem derive_shake_point(
+stir_whir_gr::algebra::GRElem derive_shake_point(
     const StirParameters& params, const Domain& input_domain,
     const Domain& shift_domain, const Domain& folded_domain,
-    const std::vector<swgr::algebra::GRElem>& quotient_points,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix) {
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_points,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix) {
   if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_theorem_shake_point(input_domain, shift_domain, folded_domain,
                                       quotient_points, transcript,
@@ -581,11 +581,11 @@ swgr::algebra::GRElem derive_shake_point(
                             quotient_points, transcript, label_prefix);
 }
 
-swgr::algebra::GRElem derive_shake_point(
+stir_whir_gr::algebra::GRElem derive_shake_point(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    const std::vector<swgr::algebra::GRElem>& quotient_points,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix) {
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_points,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix) {
   const Domain candidate_domain = input_domain.scale_offset(1);
   const auto shift_points = shift_domain.elements();
   const auto folded_points = folded_domain.elements();
@@ -610,11 +610,11 @@ swgr::algebra::GRElem derive_shake_point(
   throw std::runtime_error("derive_shake_point failed to find a valid sample");
 }
 
-swgr::algebra::GRElem derive_theorem_shake_point(
+stir_whir_gr::algebra::GRElem derive_theorem_shake_point(
     const Domain& input_domain, const Domain& shift_domain,
     const Domain& folded_domain,
-    const std::vector<swgr::algebra::GRElem>& quotient_points,
-    swgr::crypto::Transcript& transcript, std::string_view label_prefix) {
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_points,
+    stir_whir_gr::crypto::Transcript& transcript, std::string_view label_prefix) {
   return SampleTheoremSafeComplement(input_domain, shift_domain, folded_domain,
                                      quotient_points, transcript, label_prefix,
                                      1)
@@ -623,13 +623,13 @@ swgr::algebra::GRElem derive_theorem_shake_point(
 
 bool try_reuse_next_round_input_oracle(
     const Domain& domain,
-    const std::vector<swgr::algebra::GRElem>& shifted_oracle_evals,
-    const swgr::poly_utils::Polynomial& answer_polynomial,
-    const swgr::poly_utils::Polynomial& vanishing_polynomial,
-    const swgr::poly_utils::Polynomial& quotient_polynomial,
-    const swgr::algebra::GRElem& comb_randomness,
+    const std::vector<stir_whir_gr::algebra::GRElem>& shifted_oracle_evals,
+    const stir_whir_gr::poly_utils::Polynomial& answer_polynomial,
+    const stir_whir_gr::poly_utils::Polynomial& vanishing_polynomial,
+    const stir_whir_gr::poly_utils::Polynomial& quotient_polynomial,
+    const stir_whir_gr::algebra::GRElem& comb_randomness,
     std::uint64_t target_degree_bound, std::uint64_t current_degree_bound,
-    std::vector<swgr::algebra::GRElem>* next_oracle_evals) {
+    std::vector<stir_whir_gr::algebra::GRElem>* next_oracle_evals) {
   if (next_oracle_evals == nullptr) {
     throw std::invalid_argument(
         "try_reuse_next_round_input_oracle requires output storage");
@@ -654,7 +654,7 @@ bool try_reuse_next_round_input_oracle(
     const auto scaling_values =
         BatchScalingValues(points, comb_randomness, gap);
 
-    std::vector<swgr::algebra::GRElem> invertible_denominators;
+    std::vector<stir_whir_gr::algebra::GRElem> invertible_denominators;
     invertible_denominators.reserve(points.size());
     for (std::size_t point_index = 0; point_index < points.size();
          ++point_index) {
@@ -667,7 +667,7 @@ bool try_reuse_next_round_input_oracle(
       invertible_denominators.push_back(vanishing_values[point_index]);
     }
 
-    std::vector<swgr::algebra::GRElem> denominator_inverses;
+    std::vector<stir_whir_gr::algebra::GRElem> denominator_inverses;
     if (!invertible_denominators.empty()) {
       try {
         denominator_inverses = ctx.batch_inv(invertible_denominators);
@@ -680,7 +680,7 @@ bool try_reuse_next_round_input_oracle(
     std::size_t denominator_index = 0;
     for (std::size_t point_index = 0; point_index < points.size();
          ++point_index) {
-      swgr::algebra::GRElem quotient_value;
+      stir_whir_gr::algebra::GRElem quotient_value;
       if (vanishing_values[point_index] == 0) {
         quotient_value = HornerEvaluate(
             quotient_polynomial.coefficients(), points[point_index]);
@@ -696,4 +696,4 @@ bool try_reuse_next_round_input_oracle(
   });
 }
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir

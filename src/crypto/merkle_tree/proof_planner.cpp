@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 namespace {
 
 std::uint64_t NextPowerOfTwo(std::uint64_t x) {
@@ -93,4 +93,4 @@ ProofPlanStats plan_pruned_multiproof(
   return build_pruned_multiproof_plan(tree_leaf_count, queried_indices).stats;
 }
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto

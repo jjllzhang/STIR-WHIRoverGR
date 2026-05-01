@@ -16,7 +16,7 @@
 #include "poly_utils/quotient.hpp"
 #include "soundness/configurator.hpp"
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 namespace {
 
 std::uint64_t SaturatingSubtract(std::uint64_t lhs, std::uint64_t rhs) {
@@ -34,22 +34,22 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
   return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
-swgr::algebra::GRElem DeriveFoldingChallenge(
-    const StirParameters& params, swgr::crypto::Transcript& transcript,
-    const swgr::algebra::GRContext& ctx, std::string_view label) {
+stir_whir_gr::algebra::GRElem DeriveFoldingChallenge(
+    const StirParameters& params, stir_whir_gr::crypto::Transcript& transcript,
+    const stir_whir_gr::algebra::GRContext& ctx, std::string_view label) {
   if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_stir_folding_challenge(transcript, ctx, label);
   }
-  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+  return stir_whir_gr::fri::derive_round_challenge(transcript, ctx, label);
 }
 
-swgr::algebra::GRElem DeriveCombChallenge(
-    const StirParameters& params, swgr::crypto::Transcript& transcript,
-    const swgr::algebra::GRContext& ctx, std::string_view label) {
+stir_whir_gr::algebra::GRElem DeriveCombChallenge(
+    const StirParameters& params, stir_whir_gr::crypto::Transcript& transcript,
+    const stir_whir_gr::algebra::GRContext& ctx, std::string_view label) {
   if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_stir_comb_challenge(transcript, ctx, label);
   }
-  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+  return stir_whir_gr::fri::derive_round_challenge(transcript, ctx, label);
 }
 
 std::vector<std::uint64_t> SortedPositions(
@@ -66,77 +66,77 @@ std::uint64_t ResolveFinalQueryCount(const StirParameters& params,
                                      std::size_t round_count) {
   if (!params.query_repetitions.empty()) {
     const auto schedule =
-        swgr::fri::query_schedule(round_count + 1U, params.query_repetitions);
+        stir_whir_gr::fri::query_schedule(round_count + 1U, params.query_repetitions);
     return std::min(schedule.back(), final_domain_size);
   }
 
   const double rho = static_cast<double>(final_degree_bound + 1U) /
                      static_cast<double>(final_domain_size);
   return std::min(
-      swgr::soundness::auto_query_count_for_round(
+      stir_whir_gr::soundness::auto_query_count_for_round(
           params.sec_mode, params.lambda_target, params.pow_bits, rho,
           round_count),
       final_domain_size);
 }
 
-swgr::poly_utils::Polynomial AddPolynomials(
-    const swgr::algebra::GRContext& ctx,
-    const swgr::poly_utils::Polynomial& lhs,
-    const swgr::poly_utils::Polynomial& rhs) {
+stir_whir_gr::poly_utils::Polynomial AddPolynomials(
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const stir_whir_gr::poly_utils::Polynomial& lhs,
+    const stir_whir_gr::poly_utils::Polynomial& rhs) {
   return ctx.with_ntl_context([&] {
     const auto& lhs_coeffs = lhs.coefficients();
     const auto& rhs_coeffs = rhs.coefficients();
     const std::size_t out_size =
         std::max(lhs_coeffs.size(), rhs_coeffs.size());
-    std::vector<swgr::algebra::GRElem> coefficients(out_size, ctx.zero());
+    std::vector<stir_whir_gr::algebra::GRElem> coefficients(out_size, ctx.zero());
     for (std::size_t i = 0; i < lhs_coeffs.size(); ++i) {
       coefficients[i] += lhs_coeffs[i];
     }
     for (std::size_t i = 0; i < rhs_coeffs.size(); ++i) {
       coefficients[i] += rhs_coeffs[i];
     }
-    return swgr::poly_utils::Polynomial(std::move(coefficients));
+    return stir_whir_gr::poly_utils::Polynomial(std::move(coefficients));
   });
 }
 
-swgr::poly_utils::Polynomial SubtractConstant(
-    const swgr::algebra::GRContext& ctx,
-    const swgr::poly_utils::Polynomial& polynomial,
-    const swgr::algebra::GRElem& constant_term) {
+stir_whir_gr::poly_utils::Polynomial SubtractConstant(
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const stir_whir_gr::poly_utils::Polynomial& polynomial,
+    const stir_whir_gr::algebra::GRElem& constant_term) {
   return ctx.with_ntl_context([&] {
     auto coefficients = polynomial.coefficients();
     if (coefficients.empty()) {
       coefficients.push_back(ctx.zero());
     }
     coefficients.front() -= constant_term;
-    return swgr::poly_utils::Polynomial(std::move(coefficients));
+    return stir_whir_gr::poly_utils::Polynomial(std::move(coefficients));
   });
 }
 
-swgr::poly_utils::Polynomial DivideByLinearFactor(
-    const swgr::algebra::GRContext& ctx,
-    const swgr::poly_utils::Polynomial& numerator,
-    const swgr::algebra::GRElem& root) {
+stir_whir_gr::poly_utils::Polynomial DivideByLinearFactor(
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const stir_whir_gr::poly_utils::Polynomial& numerator,
+    const stir_whir_gr::algebra::GRElem& root) {
   return ctx.with_ntl_context([&] {
-    std::vector<swgr::algebra::GRElem> denominator(2U, ctx.zero());
+    std::vector<stir_whir_gr::algebra::GRElem> denominator(2U, ctx.zero());
     denominator.front() -= root;
     denominator.back() = ctx.one();
-    return swgr::poly_utils::quotient_polynomial(
-        ctx, numerator, swgr::poly_utils::Polynomial(std::move(denominator)));
+    return stir_whir_gr::poly_utils::quotient_polynomial(
+        ctx, numerator, stir_whir_gr::poly_utils::Polynomial(std::move(denominator)));
   });
 }
 
-swgr::poly_utils::Polynomial BuildShakePolynomial(
-    const swgr::algebra::GRContext& ctx,
-    const swgr::poly_utils::Polynomial& ans_polynomial,
-    const std::vector<swgr::algebra::GRElem>& points,
-    const std::vector<swgr::algebra::GRElem>& values) {
+stir_whir_gr::poly_utils::Polynomial BuildShakePolynomial(
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const stir_whir_gr::poly_utils::Polynomial& ans_polynomial,
+    const std::vector<stir_whir_gr::algebra::GRElem>& points,
+    const std::vector<stir_whir_gr::algebra::GRElem>& values) {
   if (points.size() != values.size()) {
     throw std::invalid_argument(
         "BuildShakePolynomial requires equal-sized point/value inputs");
   }
 
-  swgr::poly_utils::Polynomial accumulator;
+  stir_whir_gr::poly_utils::Polynomial accumulator;
   for (std::size_t i = 0; i < points.size(); ++i) {
     const auto numerator = SubtractConstant(ctx, ans_polynomial, values[i]);
     const auto term = DivideByLinearFactor(ctx, numerator, points[i]);
@@ -150,13 +150,13 @@ swgr::poly_utils::Polynomial BuildShakePolynomial(
 StirProver::StirProver(StirParameters params) : params_(std::move(params)) {}
 
 StirProof StirProver::prove(const StirInstance& instance,
-                            const swgr::poly_utils::Polynomial& polynomial) const {
+                            const stir_whir_gr::poly_utils::Polynomial& polynomial) const {
   return prove_with_witness(instance, polynomial).proof;
 }
 
 StirProofWithWitness StirProver::prove_with_witness(
     const StirInstance& instance,
-    const swgr::poly_utils::Polynomial& polynomial) const {
+    const stir_whir_gr::poly_utils::Polynomial& polynomial) const {
   if (!validate(params_, instance)) {
     throw std::invalid_argument(
         "stir::StirProver::prove received invalid STIR instance");
@@ -179,8 +179,8 @@ StirProofWithWitness StirProver::prove_with_witness(
 
   Domain current_domain = instance.domain;
   std::uint64_t current_degree_bound = instance.claimed_degree;
-  swgr::poly_utils::Polynomial current_polynomial = polynomial;
-  swgr::crypto::Transcript transcript(params_.hash_profile);
+  stir_whir_gr::poly_utils::Polynomial current_polynomial = polynomial;
+  stir_whir_gr::crypto::Transcript transcript(params_.hash_profile);
 
   const auto prover_start = std::chrono::steady_clock::now();
   double encode_ms = 0.0;
@@ -198,13 +198,13 @@ StirProofWithWitness StirProver::prove_with_witness(
 
   const auto initial_encode_start = std::chrono::steady_clock::now();
   auto current_actual_oracle =
-      swgr::poly_utils::rs_encode(current_domain, current_polynomial);
+      stir_whir_gr::poly_utils::rs_encode(current_domain, current_polynomial);
   encode_ms +=
       ElapsedMilliseconds(initial_encode_start, std::chrono::steady_clock::now());
 
   const auto initial_commit_start = std::chrono::steady_clock::now();
   auto current_actual_tree =
-      swgr::fri::build_oracle_tree(params_.hash_profile, ctx, current_actual_oracle,
+      stir_whir_gr::fri::build_oracle_tree(params_.hash_profile, ctx, current_actual_oracle,
                                    params_.virtual_fold_factor);
   merkle_ms +=
       ElapsedMilliseconds(initial_commit_start, std::chrono::steady_clock::now());
@@ -232,35 +232,35 @@ StirProofWithWitness StirProver::prove_with_witness(
     StirRoundWitness round_witness;
     round_witness.input_polynomial = current_polynomial;
 
-    std::vector<swgr::algebra::GRElem> current_function_oracle;
+    std::vector<stir_whir_gr::algebra::GRElem> current_function_oracle;
     const auto encode_start = std::chrono::steady_clock::now();
     if (round_index == 0U) {
       current_function_oracle = current_actual_oracle;
     } else {
       current_function_oracle =
-          swgr::poly_utils::rs_encode(current_domain, current_polynomial);
+          stir_whir_gr::poly_utils::rs_encode(current_domain, current_polynomial);
     }
     encode_ms += ElapsedMilliseconds(encode_start, std::chrono::steady_clock::now());
 
     const auto fold_start = std::chrono::steady_clock::now();
-    const auto folded_table = swgr::poly_utils::fold_table_k(
+    const auto folded_table = stir_whir_gr::poly_utils::fold_table_k(
         current_domain, current_function_oracle, params_.virtual_fold_factor,
         current_folding_alpha);
     fold_ms += ElapsedMilliseconds(fold_start, std::chrono::steady_clock::now());
 
     const auto interpolate_start = std::chrono::steady_clock::now();
     round_witness.folded_polynomial =
-        swgr::poly_utils::rs_interpolate(folded_domain, folded_table);
+        stir_whir_gr::poly_utils::rs_interpolate(folded_domain, folded_table);
     interpolate_ms +=
         ElapsedMilliseconds(interpolate_start, std::chrono::steady_clock::now());
 
     const auto g_encode_start = std::chrono::steady_clock::now();
     round_witness.shifted_oracle_evals =
-        swgr::poly_utils::rs_encode(shift_domain, round_witness.folded_polynomial);
+        stir_whir_gr::poly_utils::rs_encode(shift_domain, round_witness.folded_polynomial);
     encode_ms += ElapsedMilliseconds(g_encode_start, std::chrono::steady_clock::now());
 
     const auto commit_start = std::chrono::steady_clock::now();
-    auto g_tree = swgr::fri::build_oracle_tree(
+    auto g_tree = stir_whir_gr::fri::build_oracle_tree(
         params_.hash_profile, ctx, round_witness.shifted_oracle_evals,
         params_.virtual_fold_factor);
     round.g_root = g_tree.root();
@@ -271,7 +271,7 @@ StirProofWithWitness StirProver::prove_with_witness(
     round.betas = derive_ood_points(
         params_, current_domain, shift_domain, folded_domain, transcript,
         RoundLabel("stir.ood", round_index), params_.ood_samples);
-    std::vector<swgr::algebra::GRElem> ood_points = round.betas;
+    std::vector<stir_whir_gr::algebra::GRElem> ood_points = round.betas;
     round.betas.clear();
     round.betas.reserve(ood_points.size());
     const auto ood_start = std::chrono::steady_clock::now();
@@ -288,8 +288,8 @@ StirProofWithWitness StirProver::prove_with_witness(
         transcript, RoundLabel("stir.query", round_index), folded_domain.size(),
         effective_query_count));
 
-    std::vector<swgr::algebra::GRElem> quotient_points = ood_points;
-    std::vector<swgr::algebra::GRElem> quotient_values = round.betas;
+    std::vector<stir_whir_gr::algebra::GRElem> quotient_points = ood_points;
+    std::vector<stir_whir_gr::algebra::GRElem> quotient_values = round.betas;
     quotient_points.reserve(quotient_points.size() + query_positions.size());
     quotient_values.reserve(quotient_values.size() + query_positions.size());
     for (const auto position : query_positions) {
@@ -314,17 +314,17 @@ StirProofWithWitness StirProver::prove_with_witness(
 
     const auto answer_start = std::chrono::steady_clock::now();
     round.ans_polynomial =
-        swgr::poly_utils::answer_polynomial(ctx, quotient_points, quotient_values);
+        stir_whir_gr::poly_utils::answer_polynomial(ctx, quotient_points, quotient_values);
     round.shake_polynomial = BuildShakePolynomial(
         ctx, round.ans_polynomial, quotient_points, quotient_values);
     round_witness.answer_polynomial = round.ans_polynomial;
     round_witness.vanishing_polynomial =
-        swgr::poly_utils::vanishing_polynomial(ctx, quotient_points);
+        stir_whir_gr::poly_utils::vanishing_polynomial(ctx, quotient_points);
     answer_ms += ElapsedMilliseconds(answer_start, std::chrono::steady_clock::now());
 
     const auto quotient_start = std::chrono::steady_clock::now();
     round_witness.quotient_polynomial =
-        swgr::poly_utils::quotient_polynomial_from_answers(
+        stir_whir_gr::poly_utils::quotient_polynomial_from_answers(
             ctx, round_witness.folded_polynomial, quotient_points,
             quotient_values);
     quotient_ms +=
@@ -334,7 +334,7 @@ StirProofWithWitness StirProver::prove_with_witness(
         SaturatingSubtract(next_degree_bound,
                            static_cast<std::uint64_t>(quotient_points.size()));
     const auto degree_correction_start = std::chrono::steady_clock::now();
-    round_witness.next_polynomial = swgr::poly_utils::degree_correction_polynomial(
+    round_witness.next_polynomial = stir_whir_gr::poly_utils::degree_correction_polynomial(
         ctx, round_witness.quotient_polynomial, next_degree_bound,
         quotient_degree_bound, comb_randomness);
     degree_correction_ms += ElapsedMilliseconds(
@@ -361,19 +361,19 @@ StirProofWithWitness StirProver::prove_with_witness(
 
   const auto final_encode_start = std::chrono::steady_clock::now();
   const auto final_function_oracle =
-      swgr::poly_utils::rs_encode(current_domain, current_polynomial);
+      stir_whir_gr::poly_utils::rs_encode(current_domain, current_polynomial);
   encode_ms +=
       ElapsedMilliseconds(final_encode_start, std::chrono::steady_clock::now());
 
   const auto final_fold_start = std::chrono::steady_clock::now();
-  const auto final_folded_table = swgr::poly_utils::fold_table_k(
+  const auto final_folded_table = stir_whir_gr::poly_utils::fold_table_k(
       current_domain, final_function_oracle, params_.virtual_fold_factor,
       current_folding_alpha);
   fold_ms += ElapsedMilliseconds(final_fold_start, std::chrono::steady_clock::now());
 
   const auto final_interpolate_start = std::chrono::steady_clock::now();
   proof.final_polynomial =
-      swgr::poly_utils::rs_interpolate(final_domain, final_folded_table);
+      stir_whir_gr::poly_utils::rs_interpolate(final_domain, final_folded_table);
   interpolate_ms += ElapsedMilliseconds(final_interpolate_start,
                                         std::chrono::steady_clock::now());
   if (proof.final_polynomial.degree() > final_degree_bound) {
@@ -422,4 +422,4 @@ StirProofWithWitness StirProver::prove_with_witness(
   return artifact;
 }
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir

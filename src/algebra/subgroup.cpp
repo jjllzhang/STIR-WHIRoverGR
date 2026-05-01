@@ -7,7 +7,7 @@
 
 using NTL::set;
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 namespace {
 
 long CheckedLong(std::uint64_t value) {
@@ -51,4 +51,4 @@ std::vector<GRElem> enumerate_cyclic_subgroup(const GRContext& ctx,
   return generate_cyclic_subgroup(ctx, root, size);
 }
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra

@@ -1,12 +1,12 @@
-#ifndef SWGR_ALGEBRA_SUBGROUP_HPP_
-#define SWGR_ALGEBRA_SUBGROUP_HPP_
+#ifndef STIR_WHIR_GR_ALGEBRA_SUBGROUP_HPP_
+#define STIR_WHIR_GR_ALGEBRA_SUBGROUP_HPP_
 
 #include <cstdint>
 #include <vector>
 
 #include "algebra/gr_context.hpp"
 
-namespace swgr::algebra {
+namespace stir_whir_gr::algebra {
 
 std::vector<GRElem> generate_cyclic_subgroup(const GRContext& ctx,
                                              const GRElem& root,
@@ -16,6 +16,6 @@ std::vector<GRElem> enumerate_cyclic_subgroup(const GRContext& ctx,
                                               const GRElem& root,
                                               std::uint64_t size);
 
-}  // namespace swgr::algebra
+}  // namespace stir_whir_gr::algebra
 
-#endif  // SWGR_ALGEBRA_SUBGROUP_HPP_
+#endif  // STIR_WHIR_GR_ALGEBRA_SUBGROUP_HPP_

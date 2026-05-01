@@ -1,5 +1,5 @@
-#ifndef SWGR_DOMAIN_HPP_
-#define SWGR_DOMAIN_HPP_
+#ifndef STIR_WHIR_GR_DOMAIN_HPP_
+#define STIR_WHIR_GR_DOMAIN_HPP_
 
 #include <cstdint>
 #include <memory>
@@ -8,7 +8,7 @@
 #include "algebra/teichmuller.hpp"
 #include "algebra/gr_context.hpp"
 
-namespace swgr {
+namespace stir_whir_gr {
 
 class Domain {
  public:
@@ -53,6 +53,6 @@ class Domain {
   std::uint64_t size_;
 };
 
-}  // namespace swgr
+}  // namespace stir_whir_gr
 
-#endif  // SWGR_DOMAIN_HPP_
+#endif  // STIR_WHIR_GR_DOMAIN_HPP_

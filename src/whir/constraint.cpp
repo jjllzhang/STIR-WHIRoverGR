@@ -14,7 +14,7 @@ using NTL::clear;
 using NTL::power;
 using NTL::set;
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
 constexpr std::size_t kSumcheckDegreePlusOne = 5U;
@@ -362,4 +362,4 @@ algebra::GRElem sumcheck_next_sigma(const algebra::GRContext &ctx,
   return evaluate_sumcheck_polynomial(ctx, polynomial, alpha);
 }
 
-}  // namespace swgr::whir
+}  // namespace stir_whir_gr::whir

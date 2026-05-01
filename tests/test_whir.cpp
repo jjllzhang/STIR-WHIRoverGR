@@ -18,9 +18,9 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
 
 GRElem SmallElement(std::uint64_t value) {
   GRElem out;
@@ -33,22 +33,22 @@ GRElem SmallElement(std::uint64_t value) {
   return out;
 }
 
-swgr::crypto::MerkleProof FakeMerkleProof() {
-  swgr::crypto::MerkleProof proof;
+stir_whir_gr::crypto::MerkleProof FakeMerkleProof() {
+  stir_whir_gr::crypto::MerkleProof proof;
   proof.queried_indices = {3};
   proof.leaf_payloads = {{0x10, 0x20, 0x30}};
   proof.sibling_hashes = {{0x01, 0x02, 0x03, 0x04}};
   return proof;
 }
 
-swgr::whir::WhirProof BuildWellShapedProof(const GRContext& ctx) {
+stir_whir_gr::whir::WhirProof BuildWellShapedProof(const GRContext& ctx) {
   return ctx.with_ntl_context([&] {
-    swgr::whir::WhirProof proof;
-    proof.rounds.push_back(swgr::whir::WhirRoundProof{
+    stir_whir_gr::whir::WhirProof proof;
+    proof.rounds.push_back(stir_whir_gr::whir::WhirRoundProof{
         .sumcheck_polynomials =
-            {swgr::whir::WhirSumcheckPolynomial{
+            {stir_whir_gr::whir::WhirSumcheckPolynomial{
                  .coefficients = {ctx.one(), ctx.zero()}},
-             swgr::whir::WhirSumcheckPolynomial{
+             stir_whir_gr::whir::WhirSumcheckPolynomial{
                  .coefficients = {ctx.one() + ctx.one()}}},
         .g_root = {0xa0, 0xa1, 0xa2},
         .virtual_fold_openings = FakeMerkleProof(),
@@ -59,13 +59,13 @@ swgr::whir::WhirProof BuildWellShapedProof(const GRContext& ctx) {
   });
 }
 
-swgr::whir::WhirPublicParameters BuildPublicParameters() {
+stir_whir_gr::whir::WhirPublicParameters BuildPublicParameters() {
   auto ctx =
       std::make_shared<GRContext>(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  const swgr::Domain domain = swgr::Domain::teichmuller_subgroup(ctx, 9);
+  const stir_whir_gr::Domain domain = stir_whir_gr::Domain::teichmuller_subgroup(ctx, 9);
   return ctx->with_ntl_context([&] {
     const GRElem omega = NTL::power(domain.root(), 3L);
-    return swgr::whir::WhirPublicParameters{
+    return stir_whir_gr::whir::WhirPublicParameters{
         .ctx = ctx,
         .initial_domain = domain,
         .variable_count = 1,
@@ -77,14 +77,14 @@ swgr::whir::WhirPublicParameters BuildPublicParameters() {
         .omega = omega,
         .ternary_grid = {ctx->one(), omega, omega * omega},
         .lambda_target = 128,
-        .hash_profile = swgr::HashProfile::WHIR_NATIVE,
+        .hash_profile = stir_whir_gr::HashProfile::WHIR_NATIVE,
     };
   });
 }
 
-swgr::whir::MultiQuadraticPolynomial BuildPolynomial(const GRContext& ctx) {
+stir_whir_gr::whir::MultiQuadraticPolynomial BuildPolynomial(const GRContext& ctx) {
   return ctx.with_ntl_context([&] {
-    return swgr::whir::MultiQuadraticPolynomial(
+    return stir_whir_gr::whir::MultiQuadraticPolynomial(
         1, std::vector<GRElem>{SmallElement(2), SmallElement(3),
                                SmallElement(5)});
   });
@@ -93,28 +93,28 @@ swgr::whir::MultiQuadraticPolynomial BuildPolynomial(const GRContext& ctx) {
 void TestIndexedLabelsAreStableAndSeparated() {
   testutil::PrintInfo("WHIR transcript labels are stable and round-indexed");
 
-  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelPublicParameters),
+  CHECK_EQ(std::string(stir_whir_gr::whir::kTranscriptLabelPublicParameters),
            std::string("whir.pp"));
-  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelCommitment),
+  CHECK_EQ(std::string(stir_whir_gr::whir::kTranscriptLabelCommitment),
            std::string("whir.commitment"));
-  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelOpenPoint),
+  CHECK_EQ(std::string(stir_whir_gr::whir::kTranscriptLabelOpenPoint),
            std::string("whir.open.point"));
-  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelOpenValue),
+  CHECK_EQ(std::string(stir_whir_gr::whir::kTranscriptLabelOpenValue),
            std::string("whir.open.value"));
-  CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelAlpha, 2),
+  CHECK_EQ(stir_whir_gr::whir::indexed_label(stir_whir_gr::whir::kTranscriptLabelAlpha, 2),
            std::string("whir.alpha:2"));
-  CHECK_EQ(swgr::whir::indexed_label(
-               swgr::whir::kTranscriptLabelSumcheckPolynomial, 2, 1),
+  CHECK_EQ(stir_whir_gr::whir::indexed_label(
+               stir_whir_gr::whir::kTranscriptLabelSumcheckPolynomial, 2, 1),
            std::string("whir.sumcheck.poly:2:1"));
-  CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelGRoot, 3),
+  CHECK_EQ(stir_whir_gr::whir::indexed_label(stir_whir_gr::whir::kTranscriptLabelGRoot, 3),
            std::string("whir.g_root:3"));
-  CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelShift, 4, 5),
+  CHECK_EQ(stir_whir_gr::whir::indexed_label(stir_whir_gr::whir::kTranscriptLabelShift, 4, 5),
            std::string("whir.shift:4:5"));
-  CHECK_EQ(swgr::whir::indexed_label(swgr::whir::kTranscriptLabelGamma, 0),
+  CHECK_EQ(stir_whir_gr::whir::indexed_label(stir_whir_gr::whir::kTranscriptLabelGamma, 0),
            std::string("whir.gamma:0"));
-  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelFinalConstant),
+  CHECK_EQ(std::string(stir_whir_gr::whir::kTranscriptLabelFinalConstant),
            std::string("whir.final.constant"));
-  CHECK_EQ(std::string(swgr::whir::kTranscriptLabelFinalQuery),
+  CHECK_EQ(std::string(stir_whir_gr::whir::kTranscriptLabelFinalQuery),
            std::string("whir.final.query"));
 }
 
@@ -124,14 +124,14 @@ void TestSerializedBytesAreDeterministic() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
   const auto proof = BuildWellShapedProof(ctx);
-  const auto lhs = swgr::whir::serialized_message_bytes(ctx, proof);
-  const auto rhs = swgr::whir::serialized_message_bytes(ctx, proof);
+  const auto lhs = stir_whir_gr::whir::serialized_message_bytes(ctx, proof);
+  const auto rhs = stir_whir_gr::whir::serialized_message_bytes(ctx, proof);
   const auto opening = ctx.with_ntl_context([&] {
-    return swgr::whir::WhirOpening{.value = ctx.one() + ctx.one(),
+    return stir_whir_gr::whir::WhirOpening{.value = ctx.one() + ctx.one(),
                                    .proof = proof};
   });
   const auto opening_bytes =
-      swgr::whir::serialized_message_bytes(ctx, opening);
+      stir_whir_gr::whir::serialized_message_bytes(ctx, opening);
 
   CHECK(lhs > 0);
   CHECK_EQ(lhs, rhs);
@@ -142,18 +142,18 @@ void TestProofShapeValidation() {
   testutil::PrintInfo("WHIR proof shape rejects incomplete proof envelopes");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
-  swgr::whir::WhirProof empty;
-  CHECK(!swgr::whir::proof_shape_valid(empty));
+  stir_whir_gr::whir::WhirProof empty;
+  CHECK(!stir_whir_gr::whir::proof_shape_valid(empty));
 
   auto missing_root = BuildWellShapedProof(ctx);
   missing_root.rounds[0].g_root.clear();
-  CHECK(!swgr::whir::proof_shape_valid(missing_root));
+  CHECK(!stir_whir_gr::whir::proof_shape_valid(missing_root));
 
   auto mismatched_merkle_payloads = BuildWellShapedProof(ctx);
   mismatched_merkle_payloads.final_openings.leaf_payloads.clear();
-  CHECK(!swgr::whir::proof_shape_valid(mismatched_merkle_payloads));
+  CHECK(!stir_whir_gr::whir::proof_shape_valid(mismatched_merkle_payloads));
 
-  CHECK(swgr::whir::proof_shape_valid(BuildWellShapedProof(ctx)));
+  CHECK(stir_whir_gr::whir::proof_shape_valid(BuildWellShapedProof(ctx)));
 }
 
 void TestCommitmentRootIsStableAndBindsTable() {
@@ -161,11 +161,11 @@ void TestCommitmentRootIsStableAndBindsTable() {
 
   const auto pp = BuildPublicParameters();
   const auto polynomial = BuildPolynomial(*pp.ctx);
-  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+  const stir_whir_gr::whir::WhirProver prover(stir_whir_gr::whir::WhirParameters{});
 
-  swgr::whir::WhirCommitmentState lhs_state;
+  stir_whir_gr::whir::WhirCommitmentState lhs_state;
   const auto lhs = prover.commit(pp, polynomial, &lhs_state);
-  swgr::whir::WhirCommitmentState rhs_state;
+  stir_whir_gr::whir::WhirCommitmentState rhs_state;
   const auto rhs = prover.commit(pp, polynomial, &rhs_state);
 
   CHECK_EQ(lhs.oracle_root, rhs.oracle_root);
@@ -180,7 +180,7 @@ void TestCommitmentRootIsStableAndBindsTable() {
     return 0;
   });
   const auto tampered_root =
-      swgr::whir::build_oracle_tree(pp.hash_profile, *pp.ctx, tampered_oracle)
+      stir_whir_gr::whir::build_oracle_tree(pp.hash_profile, *pp.ctx, tampered_oracle)
           .root();
   CHECK(tampered_root != lhs.oracle_root);
 }
@@ -190,15 +190,15 @@ void TestCommitRejectsInvalidShapesAndUnsupportedPrime() {
 
   auto pp = BuildPublicParameters();
   const auto polynomial = BuildPolynomial(*pp.ctx);
-  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
+  const stir_whir_gr::whir::WhirProver prover(stir_whir_gr::whir::WhirParameters{});
 
   bool wrong_m_threw = false;
   try {
     const auto wrong_m = pp.ctx->with_ntl_context([&] {
-      return swgr::whir::MultiQuadraticPolynomial(
+      return stir_whir_gr::whir::MultiQuadraticPolynomial(
           2, std::vector<GRElem>{pp.ctx->one()});
     });
-    swgr::whir::WhirCommitmentState state;
+    stir_whir_gr::whir::WhirCommitmentState state;
     (void)prover.commit(pp, wrong_m, &state);
   } catch (const std::invalid_argument&) {
     wrong_m_threw = true;
@@ -209,7 +209,7 @@ void TestCommitRejectsInvalidShapesAndUnsupportedPrime() {
       std::make_shared<GRContext>(GRConfig{.p = 3, .k_exp = 2, .r = 2});
   bool bad_prime_threw = false;
   try {
-    swgr::whir::WhirCommitmentState state;
+    stir_whir_gr::whir::WhirCommitmentState state;
     (void)prover.commit(pp, polynomial, &state);
   } catch (const std::invalid_argument&) {
     bad_prime_threw = true;
@@ -222,15 +222,15 @@ void TestOpenProducesWellShapedProof() {
 
   const auto pp = BuildPublicParameters();
   const auto polynomial = BuildPolynomial(*pp.ctx);
-  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
-  swgr::whir::WhirCommitmentState state;
+  const stir_whir_gr::whir::WhirProver prover(stir_whir_gr::whir::WhirParameters{});
+  stir_whir_gr::whir::WhirCommitmentState state;
   const auto commitment = prover.commit(pp, polynomial, &state);
   const auto point = pp.ctx->with_ntl_context(
       [&] { return std::vector<GRElem>{SmallElement(7)}; });
 
   const auto opening = prover.open(commitment, state, point);
   CHECK_EQ(opening.value, polynomial.evaluate(*pp.ctx, point));
-  CHECK(swgr::whir::proof_shape_valid(opening.proof));
+  CHECK(stir_whir_gr::whir::proof_shape_valid(opening.proof));
   CHECK_EQ(opening.proof.rounds.size(), std::size_t{1});
   CHECK_EQ(opening.proof.rounds[0].sumcheck_polynomials.size(),
            std::size_t{1});
@@ -245,8 +245,8 @@ void TestOpenRejectsMismatchedState() {
 
   const auto pp = BuildPublicParameters();
   const auto polynomial = BuildPolynomial(*pp.ctx);
-  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
-  swgr::whir::WhirCommitmentState state;
+  const stir_whir_gr::whir::WhirProver prover(stir_whir_gr::whir::WhirParameters{});
+  stir_whir_gr::whir::WhirCommitmentState state;
   const auto commitment = prover.commit(pp, polynomial, &state);
   const auto point = pp.ctx->with_ntl_context(
       [&] { return std::vector<GRElem>{SmallElement(7)}; });
@@ -266,15 +266,15 @@ void TestVerifyAcceptsRoundtripOpening() {
 
   const auto pp = BuildPublicParameters();
   const auto polynomial = BuildPolynomial(*pp.ctx);
-  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
-  const swgr::whir::WhirVerifier verifier(swgr::whir::WhirParameters{});
-  swgr::whir::WhirCommitmentState state;
+  const stir_whir_gr::whir::WhirProver prover(stir_whir_gr::whir::WhirParameters{});
+  const stir_whir_gr::whir::WhirVerifier verifier(stir_whir_gr::whir::WhirParameters{});
+  stir_whir_gr::whir::WhirCommitmentState state;
   const auto commitment = prover.commit(pp, polynomial, &state);
   const auto point = pp.ctx->with_ntl_context(
       [&] { return std::vector<GRElem>{SmallElement(7)}; });
   const auto opening = prover.open(commitment, state, point);
 
-  swgr::ProofStatistics stats;
+  stir_whir_gr::ProofStatistics stats;
   CHECK(verifier.verify(commitment, point, opening, &stats));
   CHECK(stats.serialized_bytes > 0);
 }
@@ -284,9 +284,9 @@ void TestVerifyRejectsTamperingAndReplay() {
 
   const auto pp = BuildPublicParameters();
   const auto polynomial = BuildPolynomial(*pp.ctx);
-  const swgr::whir::WhirProver prover(swgr::whir::WhirParameters{});
-  const swgr::whir::WhirVerifier verifier(swgr::whir::WhirParameters{});
-  swgr::whir::WhirCommitmentState state;
+  const stir_whir_gr::whir::WhirProver prover(stir_whir_gr::whir::WhirParameters{});
+  const stir_whir_gr::whir::WhirVerifier verifier(stir_whir_gr::whir::WhirParameters{});
+  stir_whir_gr::whir::WhirCommitmentState state;
   const auto commitment = prover.commit(pp, polynomial, &state);
   const auto point = pp.ctx->with_ntl_context(
       [&] { return std::vector<GRElem>{SmallElement(7)}; });

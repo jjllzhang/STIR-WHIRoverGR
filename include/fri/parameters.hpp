@@ -1,5 +1,5 @@
-#ifndef SWGR_FRI_PARAMETERS_HPP_
-#define SWGR_FRI_PARAMETERS_HPP_
+#ifndef STIR_WHIR_GR_FRI_PARAMETERS_HPP_
+#define STIR_WHIR_GR_FRI_PARAMETERS_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -8,7 +8,7 @@
 #include "../parameters.hpp"
 #include "fri/common.hpp"
 
-namespace swgr::fri {
+namespace stir_whir_gr::fri {
 
 // Current public FRI parameters intentionally expose the paper-facing
 // repetition-count semantics rather than the older engineering query schedule.
@@ -16,7 +16,7 @@ struct FriParameters {
   std::uint64_t fold_factor = 3;
   std::uint64_t stop_degree = 3;
   std::uint64_t repetition_count = 1;
-  swgr::HashProfile hash_profile = swgr::HashProfile::STIR_NATIVE;
+  stir_whir_gr::HashProfile hash_profile = stir_whir_gr::HashProfile::STIR_NATIVE;
 };
 
 struct QueryRoundMetadata {
@@ -34,6 +34,6 @@ std::uint64_t terminal_query_chain_count(const FriParameters& params);
 std::vector<QueryRoundMetadata> resolve_query_rounds_metadata(
     const FriParameters& params, const FriInstance& instance);
 
-}  // namespace swgr::fri
+}  // namespace stir_whir_gr::fri
 
-#endif  // SWGR_FRI_PARAMETERS_HPP_
+#endif  // STIR_WHIR_GR_FRI_PARAMETERS_HPP_

@@ -8,7 +8,7 @@
 
 #include "poly_utils/interpolation.hpp"
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 namespace {
 
 std::vector<algebra::GRElem> Trim(std::vector<algebra::GRElem> coefficients) {
@@ -212,4 +212,4 @@ algebra::GRElem quotient_eval_with_hint(
   });
 }
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils

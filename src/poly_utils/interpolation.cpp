@@ -16,7 +16,7 @@ using NTL::coeff;
 using NTL::set;
 using NTL::vec_ZZ_pE;
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 namespace {
 
 bool IsPowerOfThree(std::uint64_t value) {
@@ -228,4 +228,4 @@ Polynomial interpolate_for_gr_wrapper(
   });
 }
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils

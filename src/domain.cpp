@@ -13,7 +13,7 @@
 
 using NTL::power;
 
-namespace swgr {
+namespace stir_whir_gr {
 namespace {
 
 long CheckedLong(std::uint64_t value, const char* label) {
@@ -175,4 +175,4 @@ bool Domain::disjoint_with(const Domain& other) const {
   return true;
 }
 
-}  // namespace swgr
+}  // namespace stir_whir_gr

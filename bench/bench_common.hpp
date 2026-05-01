@@ -1,5 +1,5 @@
-#ifndef SWGR_BENCH_COMMON_HPP_
-#define SWGR_BENCH_COMMON_HPP_
+#ifndef STIR_WHIR_GR_BENCH_COMMON_HPP_
+#define STIR_WHIR_GR_BENCH_COMMON_HPP_
 
 #include <algorithm>
 #include <cctype>
@@ -18,7 +18,7 @@
 
 #include "parameters.hpp"
 
-namespace swgr::bench {
+namespace stir_whir_gr::bench {
 
 enum class OutputFormat {
   Text,
@@ -91,28 +91,28 @@ inline std::vector<std::uint64_t> ParseQueries(std::string_view raw_value) {
   return queries;
 }
 
-inline swgr::SecurityMode ParseSecurityMode(std::string_view raw_value) {
+inline stir_whir_gr::SecurityMode ParseSecurityMode(std::string_view raw_value) {
   const std::string normalized = ToLowerCopy(raw_value);
   if (normalized == "conjecturecapacity" ||
       normalized == "conjecture-capacity" ||
       normalized == "conjecture_capacity") {
-    return swgr::SecurityMode::ConjectureCapacity;
+    return stir_whir_gr::SecurityMode::ConjectureCapacity;
   }
   if (normalized == "conservative") {
-    return swgr::SecurityMode::Conservative;
+    return stir_whir_gr::SecurityMode::Conservative;
   }
   throw std::invalid_argument("unknown sec-mode: " + std::string(raw_value));
 }
 
-inline swgr::HashProfile ParseHashProfile(std::string_view raw_value) {
+inline stir_whir_gr::HashProfile ParseHashProfile(std::string_view raw_value) {
   const std::string normalized = ToLowerCopy(raw_value);
   if (normalized == "stir_native" || normalized == "stir-native" ||
       normalized == "stirnative") {
-    return swgr::HashProfile::STIR_NATIVE;
+    return stir_whir_gr::HashProfile::STIR_NATIVE;
   }
   if (normalized == "whir_native" || normalized == "whir-native" ||
       normalized == "whirnative") {
-    return swgr::HashProfile::WHIR_NATIVE;
+    return stir_whir_gr::HashProfile::WHIR_NATIVE;
   }
   throw std::invalid_argument("unknown hash-profile: " + std::string(raw_value));
 }
@@ -213,6 +213,6 @@ inline std::string JsonEscape(std::string_view field) {
   return escaped;
 }
 
-}  // namespace swgr::bench
+}  // namespace stir_whir_gr::bench
 
-#endif  // SWGR_BENCH_COMMON_HPP_
+#endif  // STIR_WHIR_GR_BENCH_COMMON_HPP_

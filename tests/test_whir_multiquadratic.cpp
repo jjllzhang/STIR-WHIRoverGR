@@ -11,10 +11,10 @@
 #include "tests/test_common.hpp"
 #include "whir/multiquadratic.hpp"
 
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::whir::MultiQuadraticPolynomial;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::whir::MultiQuadraticPolynomial;
 
 int g_failures = 0;
 
@@ -36,8 +36,8 @@ std::vector<GRElem> SampleCoefficients(const GRContext& ctx,
   return ctx.with_ntl_context([&] {
     std::vector<GRElem> coefficients;
     coefficients.reserve(
-        static_cast<std::size_t>(swgr::whir::pow3_checked(variable_count)));
-    for (std::uint64_t i = 0; i < swgr::whir::pow3_checked(variable_count);
+        static_cast<std::size_t>(stir_whir_gr::whir::pow3_checked(variable_count)));
+    for (std::uint64_t i = 0; i < stir_whir_gr::whir::pow3_checked(variable_count);
          ++i) {
       coefficients.push_back(SmallElement((i * 7U + 3U) % 11U));
     }
@@ -48,14 +48,14 @@ std::vector<GRElem> SampleCoefficients(const GRContext& ctx,
 void TestBase3HelpersAndPow3() {
   testutil::PrintInfo("base-3 helpers use little-endian variable digits");
 
-  CHECK_EQ(swgr::whir::pow3_checked(0), std::uint64_t{1});
-  CHECK_EQ(swgr::whir::pow3_checked(5), std::uint64_t{243});
+  CHECK_EQ(stir_whir_gr::whir::pow3_checked(0), std::uint64_t{1});
+  CHECK_EQ(stir_whir_gr::whir::pow3_checked(5), std::uint64_t{243});
 
   const std::vector<std::uint8_t> digits{2, 0, 1, 2};
-  const std::uint64_t index = swgr::whir::encode_base3_index(digits);
+  const std::uint64_t index = stir_whir_gr::whir::encode_base3_index(digits);
   CHECK_EQ(index, std::uint64_t{65});
 
-  const auto decoded = swgr::whir::decode_base3_index(index, 4);
+  const auto decoded = stir_whir_gr::whir::decode_base3_index(index, 4);
   CHECK_EQ(decoded.size(), digits.size());
   for (std::size_t i = 0; i < digits.size(); ++i) {
     CHECK_EQ(decoded[i], digits[i]);
@@ -67,7 +67,7 @@ void TestPowM() {
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 2});
   const GRElem x = ctx.with_ntl_context([&] { return SmallElement(5); });
-  const auto powers = swgr::whir::pow_m(ctx, x, 4);
+  const auto powers = stir_whir_gr::whir::pow_m(ctx, x, 4);
 
   CHECK_EQ(powers.size(), std::size_t{4});
   ctx.with_ntl_context([&] {
@@ -90,7 +90,7 @@ void TestEvaluatePowMatchesUnivariate() {
   const auto univariate = poly.to_univariate_pow_polynomial(ctx);
   CHECK_EQ(poly.evaluate_pow(ctx, x), univariate.evaluate(ctx, x));
 
-  const auto pow_point = swgr::whir::pow_m(ctx, x, poly.variable_count());
+  const auto pow_point = stir_whir_gr::whir::pow_m(ctx, x, poly.variable_count());
   CHECK_EQ(poly.evaluate(ctx, pow_point), poly.evaluate_pow(ctx, x));
 }
 
@@ -134,7 +134,7 @@ void TestMultilinearEmbedding() {
 
   const MultiQuadraticPolynomial poly(2, coefficients);
   const auto point = ctx.with_ntl_context([&] {
-    const swgr::Domain grid = swgr::Domain::teichmuller_subgroup(ctx, 3);
+    const stir_whir_gr::Domain grid = stir_whir_gr::Domain::teichmuller_subgroup(ctx, 3);
     return std::vector<GRElem>{grid.element(1), grid.element(2)};
   });
 
@@ -186,7 +186,7 @@ void TestInvalidInputsReject() {
   bool bad_digit_threw = false;
   try {
     const std::vector<std::uint8_t> digits{0, 3};
-    (void)swgr::whir::encode_base3_index(digits);
+    (void)stir_whir_gr::whir::encode_base3_index(digits);
   } catch (const std::invalid_argument&) {
     bad_digit_threw = true;
   }
@@ -194,7 +194,7 @@ void TestInvalidInputsReject() {
 
   bool bad_decode_threw = false;
   try {
-    (void)swgr::whir::decode_base3_index(9, 2);
+    (void)stir_whir_gr::whir::decode_base3_index(9, 2);
   } catch (const std::out_of_range&) {
     bad_decode_threw = true;
   }
@@ -202,7 +202,7 @@ void TestInvalidInputsReject() {
 
   bool overflow_threw = false;
   try {
-    (void)swgr::whir::pow3_checked(41);
+    (void)stir_whir_gr::whir::pow3_checked(41);
   } catch (const std::overflow_error&) {
     overflow_threw = true;
   }

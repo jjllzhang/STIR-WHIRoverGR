@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace swgr::soundness {
+namespace stir_whir_gr::soundness {
 namespace {
 
 constexpr double kMinRho = 1.0 / 4096.0;
@@ -32,26 +32,26 @@ std::uint64_t effective_security_bits(std::uint64_t lambda_target,
   return 1;
 }
 
-double heuristic_eta(swgr::SecurityMode mode, double rho) {
+double heuristic_eta(stir_whir_gr::SecurityMode mode, double rho) {
   const double clamped_rho = clamp_rho(rho);
-  if (mode == swgr::SecurityMode::Conservative) {
+  if (mode == stir_whir_gr::SecurityMode::Conservative) {
     return clamped_rho;
   }
   return std::clamp(clamped_rho / 2.0, kMinRho, kMaxRho);
 }
 
-std::uint64_t heuristic_base_query_count(swgr::SecurityMode mode, double rho,
+std::uint64_t heuristic_base_query_count(stir_whir_gr::SecurityMode mode, double rho,
                                          std::uint64_t effective_bits) {
   const double eta = heuristic_eta(mode, rho);
   std::uint64_t base_queries = eta >= (1.0 / 6.0) ? 2U : 1U;
-  if (mode == swgr::SecurityMode::Conservative && effective_bits >= 96 &&
+  if (mode == stir_whir_gr::SecurityMode::Conservative && effective_bits >= 96 &&
       eta >= (1.0 / 6.0)) {
     base_queries = 3U;
   }
   return base_queries;
 }
 
-std::uint64_t auto_query_count_for_round(swgr::SecurityMode mode,
+std::uint64_t auto_query_count_for_round(stir_whir_gr::SecurityMode mode,
                                          std::uint64_t lambda_target,
                                          std::uint64_t pow_bits, double rho,
                                          std::size_t round_index) {
@@ -61,7 +61,7 @@ std::uint64_t auto_query_count_for_round(swgr::SecurityMode mode,
 }
 
 EngineeringHeuristicResult engineering_heuristic_result(
-    swgr::SecurityMode mode, std::uint64_t lambda_target,
+    stir_whir_gr::SecurityMode mode, std::uint64_t lambda_target,
     std::uint64_t pow_bits, bool manual_query_schedule, double rho) {
   EngineeringHeuristicResult result;
   result.model = "engineering-heuristic-v1";
@@ -88,7 +88,7 @@ EngineeringHeuristicResult engineering_heuristic_result(
   }
 
   const double eta = heuristic_eta(mode, rho);
-  if (mode == swgr::SecurityMode::Conservative && eta >= (1.0 / 6.0) &&
+  if (mode == stir_whir_gr::SecurityMode::Conservative && eta >= (1.0 / 6.0) &&
       result.effective_security_bits >= 96) {
     result.notes.push_back(
         "Conservative mode may start with 3 queries when effective security is high.");
@@ -96,4 +96,4 @@ EngineeringHeuristicResult engineering_heuristic_result(
   return result;
 }
 
-}  // namespace swgr::soundness
+}  // namespace stir_whir_gr::soundness

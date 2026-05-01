@@ -12,13 +12,13 @@
 #include "algebra/teichmuller.hpp"
 #include "crypto/hash.hpp"
 
-namespace swgr::crypto {
+namespace stir_whir_gr::crypto {
 namespace {
 
-constexpr char kInitDomain[] = "swgr.fs.init.v1";
-constexpr char kAbsorbDomain[] = "swgr.fs.absorb.v1";
-constexpr char kSqueezeDomain[] = "swgr.fs.squeeze.v1";
-constexpr char kRatchetDomain[] = "swgr.fs.ratchet.v1";
+constexpr char kInitDomain[] = "stir_whir_gr.fs.init.v1";
+constexpr char kAbsorbDomain[] = "stir_whir_gr.fs.absorb.v1";
+constexpr char kSqueezeDomain[] = "stir_whir_gr.fs.squeeze.v1";
+constexpr char kRatchetDomain[] = "stir_whir_gr.fs.ratchet.v1";
 
 void AppendU64Le(std::vector<std::uint8_t>& out, std::uint64_t value) {
   for (std::size_t i = 0; i < sizeof(value); ++i) {
@@ -183,4 +183,4 @@ std::uint64_t Transcript::challenge_index(std::string_view label,
   }
 }
 
-}  // namespace swgr::crypto
+}  // namespace stir_whir_gr::crypto

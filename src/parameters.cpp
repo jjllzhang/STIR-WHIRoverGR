@@ -1,6 +1,6 @@
 #include "parameters.hpp"
 
-namespace swgr {
+namespace stir_whir_gr {
 
 std::string to_string(SecurityMode mode) {
   switch (mode) {
@@ -22,4 +22,4 @@ std::string to_string(HashProfile profile) {
   return "UnknownHashProfile";
 }
 
-}  // namespace swgr
+}  // namespace stir_whir_gr

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 namespace {
 
 constexpr std::uint64_t kWhirSumcheckDegreeBound = 4;
@@ -601,4 +601,4 @@ select_whir_unique_decoding_parameters(const WhirUniqueDecodingInputs &inputs) {
   return result;
 }
 
-} // namespace swgr::whir
+} // namespace stir_whir_gr::whir

@@ -1,11 +1,11 @@
-#ifndef SWGR_WHIR_SOUNDNESS_HPP_
-#define SWGR_WHIR_SOUNDNESS_HPP_
+#ifndef STIR_WHIR_GR_WHIR_SOUNDNESS_HPP_
+#define STIR_WHIR_GR_WHIR_SOUNDNESS_HPP_
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
-namespace swgr::whir {
+namespace stir_whir_gr::whir {
 
 struct WhirRational {
   std::uint64_t numerator = 0;
@@ -80,6 +80,6 @@ std::uint64_t multiplicative_order_mod_odd(std::uint64_t modulus,
 bool domain_divides_teichmuller_group(std::uint64_t domain_size,
                                       std::uint64_t extension_degree);
 
-} // namespace swgr::whir
+} // namespace stir_whir_gr::whir
 
-#endif // SWGR_WHIR_SOUNDNESS_HPP_
+#endif // STIR_WHIR_GR_WHIR_SOUNDNESS_HPP_

@@ -11,7 +11,7 @@
 
 #include "GaloisRing/Inverse.hpp"
 
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
 #include <omp.h>
 #endif
 
@@ -20,7 +20,7 @@ using NTL::clear;
 using NTL::deg;
 using NTL::power;
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 namespace {
 
 constexpr std::uint64_t kParallelFoldThreshold = 27U;
@@ -243,7 +243,7 @@ algebra::GRElem EvaluateGenericFiber(
 std::ptrdiff_t ChooseFoldChunkSize(std::uint64_t folded_size,
                                    std::uint64_t k_fold) {
   std::uint64_t chunk_size = std::max<std::uint64_t>(1U, k_fold);
-#if defined(SWGR_HAS_OPENMP)
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
   const int max_threads = omp_get_max_threads();
   if (max_threads > 0) {
     const std::uint64_t target_chunks =
@@ -381,4 +381,4 @@ std::vector<algebra::GRElem> fold_table_k(
   });
 }
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils

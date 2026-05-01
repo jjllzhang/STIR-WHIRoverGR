@@ -1,5 +1,5 @@
-#ifndef SWGR_STIR_SOUNDNESS_HPP_
-#define SWGR_STIR_SOUNDNESS_HPP_
+#ifndef STIR_WHIR_GR_STIR_SOUNDNESS_HPP_
+#define STIR_WHIR_GR_STIR_SOUNDNESS_HPP_
 
 #include <cstdint>
 #include <string>
@@ -8,7 +8,7 @@
 #include "stir/common.hpp"
 #include "stir/parameters.hpp"
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 
 enum class StirTheoremSoundnessFlavor {
   GrHalfGapUniqueOod,
@@ -50,6 +50,6 @@ StirTheoremSoundnessAnalysis analyze_theorem_soundness(
 StirTheoremQuerySolveResult solve_min_query_schedule_for_lambda(
     const StirParameters& params, const StirInstance& instance);
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir
 
-#endif  // SWGR_STIR_SOUNDNESS_HPP_
+#endif  // STIR_WHIR_GR_STIR_SOUNDNESS_HPP_

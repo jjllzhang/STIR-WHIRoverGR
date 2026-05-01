@@ -6,7 +6,7 @@
 
 using NTL::clear;
 
-namespace swgr::poly_utils {
+namespace stir_whir_gr::poly_utils {
 
 Polynomial::Polynomial(std::vector<algebra::GRElem> coefficients)
     : coefficients_(std::move(coefficients)) {
@@ -42,4 +42,4 @@ algebra::GRElem Polynomial::evaluate(const algebra::GRContext& ctx,
   });
 }
 
-}  // namespace swgr::poly_utils
+}  // namespace stir_whir_gr::poly_utils

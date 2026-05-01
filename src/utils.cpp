@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace swgr {
+namespace stir_whir_gr {
 
 [[noreturn]] void throw_unimplemented(std::string_view feature) {
   throw std::logic_error("Not implemented yet: " + std::string(feature));
@@ -21,4 +21,4 @@ bool is_power_of(std::uint64_t value, std::uint64_t base) {
   return current == 1;
 }
 
-}  // namespace swgr
+}  // namespace stir_whir_gr

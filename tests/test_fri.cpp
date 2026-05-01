@@ -21,11 +21,11 @@ int g_failures = 0;
 
 namespace {
 
-using swgr::Domain;
-using swgr::algebra::GRConfig;
-using swgr::algebra::GRContext;
-using swgr::algebra::GRElem;
-using swgr::poly_utils::Polynomial;
+using stir_whir_gr::Domain;
+using stir_whir_gr::algebra::GRConfig;
+using stir_whir_gr::algebra::GRContext;
+using stir_whir_gr::algebra::GRElem;
+using stir_whir_gr::poly_utils::Polynomial;
 
 Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
                             std::size_t coefficient_count) {
@@ -43,28 +43,28 @@ Polynomial SamplePolynomial(const GRContext& ctx, const Domain& domain,
   });
 }
 
-swgr::fri::FriParameters MakeParams(
+stir_whir_gr::fri::FriParameters MakeParams(
     std::uint64_t fold_factor,
     std::uint64_t repetition_count = 2,
     std::uint64_t stop_degree = 1) {
-  swgr::fri::FriParameters params;
+  stir_whir_gr::fri::FriParameters params;
   params.fold_factor = fold_factor;
   params.stop_degree = stop_degree;
   params.repetition_count = repetition_count;
-  params.hash_profile = swgr::HashProfile::STIR_NATIVE;
+  params.hash_profile = stir_whir_gr::HashProfile::STIR_NATIVE;
   return params;
 }
 
-swgr::fri::FriInstance MakeInstance(const GRContext& ctx,
+stir_whir_gr::fri::FriInstance MakeInstance(const GRContext& ctx,
                                     std::uint64_t domain_size,
                                     std::uint64_t claimed_degree) {
-  return swgr::fri::FriInstance{
+  return stir_whir_gr::fri::FriInstance{
       .domain = Domain::teichmuller_subgroup(ctx, domain_size),
       .claimed_degree = claimed_degree,
   };
 }
 
-void TamperMerklePayload(swgr::crypto::MerkleProof* proof) {
+void TamperMerklePayload(stir_whir_gr::crypto::MerkleProof* proof) {
   if (!proof->leaf_payloads.empty() && !proof->leaf_payloads.front().empty()) {
     proof->leaf_payloads.front().front() ^= 0x01U;
   } else if (!proof->sibling_hashes.empty() &&
@@ -73,14 +73,14 @@ void TamperMerklePayload(swgr::crypto::MerkleProof* proof) {
   }
 }
 
-void TamperOpeningValue(const GRContext& ctx, swgr::fri::FriOpening* opening) {
+void TamperOpeningValue(const GRContext& ctx, stir_whir_gr::fri::FriOpening* opening) {
   ctx.with_ntl_context([&] {
     opening->claim.value += ctx.one();
     return 0;
   });
 }
 
-void TamperFinalOracle(const GRContext& ctx, swgr::fri::FriOpening* opening) {
+void TamperFinalOracle(const GRContext& ctx, stir_whir_gr::fri::FriOpening* opening) {
   ctx.with_ntl_context([&] {
     if (opening->proof.final_oracle.empty()) {
       return 0;
@@ -90,7 +90,7 @@ void TamperFinalOracle(const GRContext& ctx, swgr::fri::FriOpening* opening) {
   });
 }
 
-swgr::algebra::GRElem NonTeichAlpha(const GRContext& ctx) {
+stir_whir_gr::algebra::GRElem NonTeichAlpha(const GRContext& ctx) {
   return ctx.with_ntl_context([&] {
     auto candidate = ctx.one();
     candidate += ctx.one();
@@ -116,13 +116,13 @@ void TestFriFoldChallengesAlwaysLieInTeichmullerSet() {
   testutil::PrintInfo("fri folding challenges are always sampled from T");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  swgr::crypto::Transcript transcript(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript transcript(stir_whir_gr::HashProfile::STIR_NATIVE);
 
   for (std::size_t round_index = 0; round_index < 16; ++round_index) {
     transcript.absorb_bytes(RoundRootBytes(round_index));
-    const auto beta = swgr::fri::derive_fri_folding_challenge(
+    const auto beta = stir_whir_gr::fri::derive_fri_folding_challenge(
         transcript, ctx, FoldRoundLabel(round_index));
-    CHECK(swgr::algebra::is_teichmuller_element(ctx, beta));
+    CHECK(stir_whir_gr::algebra::is_teichmuller_element(ctx, beta));
   }
 }
 
@@ -131,16 +131,16 @@ void TestFriFoldChallengeReplayMatchesAcrossTranscripts() {
       "fri prover and verifier replay the same teichmuller folding challenges");
 
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
-  swgr::crypto::Transcript prover(swgr::HashProfile::STIR_NATIVE);
-  swgr::crypto::Transcript verifier(swgr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript prover(stir_whir_gr::HashProfile::STIR_NATIVE);
+  stir_whir_gr::crypto::Transcript verifier(stir_whir_gr::HashProfile::STIR_NATIVE);
 
   for (std::size_t round_index = 0; round_index < 16; ++round_index) {
     const auto root_bytes = RoundRootBytes(round_index);
     prover.absorb_bytes(root_bytes);
     verifier.absorb_bytes(root_bytes);
-    const auto prover_beta = swgr::fri::derive_fri_folding_challenge(
+    const auto prover_beta = stir_whir_gr::fri::derive_fri_folding_challenge(
         prover, ctx, FoldRoundLabel(round_index));
-    const auto verifier_beta = swgr::fri::derive_fri_folding_challenge(
+    const auto verifier_beta = stir_whir_gr::fri::derive_fri_folding_challenge(
         verifier, ctx, FoldRoundLabel(round_index));
     CHECK(prover_beta == verifier_beta);
   }
@@ -155,18 +155,18 @@ void TestFriFoldChallengesDoNotReuseGenericRingSampling() {
 
   for (std::size_t attempt = 0; attempt < 16 && !found_non_teich_generic;
        ++attempt) {
-    swgr::crypto::Transcript generic(swgr::HashProfile::STIR_NATIVE);
-    swgr::crypto::Transcript theorem(swgr::HashProfile::STIR_NATIVE);
+    stir_whir_gr::crypto::Transcript generic(stir_whir_gr::HashProfile::STIR_NATIVE);
+    stir_whir_gr::crypto::Transcript theorem(stir_whir_gr::HashProfile::STIR_NATIVE);
     const auto root_bytes = RoundRootBytes(attempt);
     generic.absorb_bytes(root_bytes);
     theorem.absorb_bytes(root_bytes);
 
     const auto generic_beta = generic.challenge_ring(ctx, FoldRoundLabel(0));
-    const auto theorem_beta = swgr::fri::derive_fri_folding_challenge(
+    const auto theorem_beta = stir_whir_gr::fri::derive_fri_folding_challenge(
         theorem, ctx, FoldRoundLabel(0));
-    if (!swgr::algebra::is_teichmuller_element(ctx, generic_beta)) {
+    if (!stir_whir_gr::algebra::is_teichmuller_element(ctx, generic_beta)) {
       found_non_teich_generic = true;
-      CHECK(swgr::algebra::is_teichmuller_element(ctx, theorem_beta));
+      CHECK(stir_whir_gr::algebra::is_teichmuller_element(ctx, theorem_beta));
       CHECK(!(generic_beta == theorem_beta));
     }
   }
@@ -182,7 +182,7 @@ void TestFriRepetitionCountMapsToFreshRoundQueries() {
   const auto instance = MakeInstance(ctx, 9, 8);
   const auto params = MakeParams(3, 2);
 
-  const auto metadata = swgr::fri::resolve_query_rounds_metadata(params, instance);
+  const auto metadata = stir_whir_gr::fri::resolve_query_rounds_metadata(params, instance);
   CHECK_EQ(metadata.size(), std::size_t{2});
   CHECK_EQ(metadata[0].query_chain_count, std::uint64_t{2});
   CHECK_EQ(metadata[0].fresh_query_count, std::uint64_t{2});
@@ -192,15 +192,15 @@ void TestFriRepetitionCountMapsToFreshRoundQueries() {
   CHECK_EQ(metadata[1].fresh_query_count, std::uint64_t{2});
   CHECK_EQ(metadata[1].bundle_count, std::uint64_t{1});
   CHECK(!metadata[1].carries_previous_queries);
-  CHECK_EQ(swgr::fri::terminal_query_chain_count(params), std::uint64_t{2});
+  CHECK_EQ(stir_whir_gr::fri::terminal_query_chain_count(params), std::uint64_t{2});
 }
 
 void TestStandaloneFriSoundnessSolvesMainPreset() {
   testutil::PrintInfo(
       "standalone FRI PCS theorem auto solver matches the main preset m");
 
-  const auto analysis = swgr::fri::analyze_standalone_soundness(
-      swgr::fri::StandaloneFriSoundnessInputs{
+  const auto analysis = stir_whir_gr::fri::analyze_standalone_soundness(
+      stir_whir_gr::fri::StandaloneFriSoundnessInputs{
           .base_prime = 2,
           .ring_extension_degree = 162,
           .domain_size = 243,
@@ -219,8 +219,8 @@ void TestStandaloneFriSoundnessRejectsImpossibleSpanTerm() {
   testutil::PrintInfo(
       "standalone FRI PCS theorem auto solver detects impossible span terms");
 
-  const auto analysis = swgr::fri::analyze_standalone_soundness(
-      swgr::fri::StandaloneFriSoundnessInputs{
+  const auto analysis = stir_whir_gr::fri::analyze_standalone_soundness(
+      stir_whir_gr::fri::StandaloneFriSoundnessInputs{
           .base_prime = 2,
           .ring_extension_degree = 32,
           .domain_size = 243,
@@ -239,8 +239,8 @@ void TestStandaloneFriSoundnessRejectsZeroDelta() {
 
   bool threw = false;
   try {
-    (void)swgr::fri::analyze_standalone_soundness(
-        swgr::fri::StandaloneFriSoundnessInputs{
+    (void)stir_whir_gr::fri::analyze_standalone_soundness(
+        stir_whir_gr::fri::StandaloneFriSoundnessInputs{
             .base_prime = 2,
             .ring_extension_degree = 54,
             .domain_size = 9,
@@ -263,21 +263,21 @@ void TestFriPcsCommitOpenVerifyRoundtripAlphaOutsideDomain() {
   const auto params = MakeParams(3, 2);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   const auto alpha = ctx.zero();
   const auto opening = prover.open(commitment, polynomial, alpha);
 
-  CHECK(swgr::fri::commitment_domain_supported(commitment));
-  CHECK(swgr::fri::opening_point_valid(commitment, alpha));
+  CHECK(stir_whir_gr::fri::commitment_domain_supported(commitment));
+  CHECK(stir_whir_gr::fri::opening_point_valid(commitment, alpha));
   CHECK_EQ(commitment.stats.serialized_bytes,
-           swgr::fri::serialized_message_bytes(commitment));
+           stir_whir_gr::fri::serialized_message_bytes(commitment));
   CHECK_EQ(opening.claim.value, polynomial.evaluate(ctx, alpha));
   CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
                         opening));
   CHECK_EQ(opening.proof.stats.serialized_bytes,
-           swgr::fri::serialized_message_bytes(ctx, opening));
+           stir_whir_gr::fri::serialized_message_bytes(ctx, opening));
   CHECK_EQ(opening.proof.oracle_roots.size(), std::size_t{2});
   CHECK_EQ(opening.proof.rounds.size(), std::size_t{2});
   CHECK_EQ(opening.proof.final_oracle.size(), std::size_t{1});
@@ -292,13 +292,13 @@ void TestFriPcsCommitOpenVerifyRoundtripAlphaInsideDomain() {
   const auto params = MakeParams(3, 2);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   const auto alpha = instance.domain.element(0);
   const auto opening = prover.open(commitment, polynomial, alpha);
 
-  CHECK(swgr::fri::opening_point_valid(commitment, alpha));
+  CHECK(stir_whir_gr::fri::opening_point_valid(commitment, alpha));
   CHECK_EQ(opening.claim.value, polynomial.evaluate(ctx, alpha));
   CHECK(verifier.verify(commitment, opening.claim.alpha, opening.claim.value,
                         opening));
@@ -313,8 +313,8 @@ void TestFriZeroFoldRoundtrip() {
   const auto params = MakeParams(3, 3, 1);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 2);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   const auto alpha = instance.domain.element(0);
   const auto opening = prover.open(commitment, polynomial, alpha);
@@ -343,7 +343,7 @@ void TestFriPcsRejectsWrongPolynomialForCommitment() {
     return 0;
   });
 
-  const swgr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriProver prover(params);
   const auto commitment = prover.commit(instance, committed_polynomial);
 
   bool threw = false;
@@ -363,11 +363,11 @@ void TestFriPcsRejectsNonTeichAlpha() {
   const auto params = MakeParams(3);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriProver prover(params);
   const auto commitment = prover.commit(instance, polynomial);
   const auto alpha = NonTeichAlpha(ctx);
 
-  CHECK(!swgr::fri::opening_point_valid(commitment, alpha));
+  CHECK(!stir_whir_gr::fri::opening_point_valid(commitment, alpha));
   bool threw = false;
   try {
     (void)prover.open(commitment, polynomial, alpha);
@@ -384,15 +384,15 @@ void TestFriPcsRejectsNonTeichCommitmentDomain() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   const auto params = MakeParams(3);
   const auto non_teich_offset = NonTeichAlpha(ctx);
-  const swgr::fri::FriInstance bad_instance{
+  const stir_whir_gr::fri::FriInstance bad_instance{
       .domain = Domain::teichmuller_coset(ctx, non_teich_offset, 9),
       .claimed_degree = 8,
   };
   const auto polynomial = SamplePolynomial(ctx, bad_instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  CHECK(!swgr::fri::commitment_domain_supported(
-      swgr::fri::FriCommitment{.domain = bad_instance.domain, .degree_bound = 8}));
+  const stir_whir_gr::fri::FriProver prover(params);
+  CHECK(!stir_whir_gr::fri::commitment_domain_supported(
+      stir_whir_gr::fri::FriCommitment{.domain = bad_instance.domain, .degree_bound = 8}));
   bool threw = false;
   try {
     (void)prover.commit(bad_instance, polynomial);
@@ -410,8 +410,8 @@ void TestFriPcsRejectsTamperedClaimValue() {
   const auto params = MakeParams(3);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   auto opening = prover.open(commitment, polynomial, ctx.zero());
 
@@ -430,8 +430,8 @@ void TestFriPcsRejectsTamperedFirstRoundParentOpening() {
   const auto params = MakeParams(3);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   auto opening = prover.open(commitment, polynomial, ctx.zero());
 
@@ -450,8 +450,8 @@ void TestFriPcsRejectsTamperedIntermediateChildOpening() {
   const auto params = MakeParams(3);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   auto opening = prover.open(commitment, polynomial, ctx.zero());
 
@@ -470,8 +470,8 @@ void TestFriPcsRejectsTamperedAlphaInsideDomainFirstRoundChildOpening() {
   const auto params = MakeParams(3);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   auto opening =
       prover.open(commitment, polynomial, instance.domain.element(0));
@@ -491,8 +491,8 @@ void TestFriPcsRejectsTamperedFinalOracleTable() {
   const auto params = MakeParams(3);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   auto opening = prover.open(commitment, polynomial, ctx.zero());
 
@@ -511,13 +511,13 @@ void TestFriPcsRejectsMismatchedAlpha() {
   const auto params = MakeParams(3);
   const auto polynomial = SamplePolynomial(ctx, instance.domain, 9);
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   const auto opening = prover.open(commitment, polynomial, ctx.zero());
   const auto wrong_alpha = ctx.teich_generator();
 
-  CHECK(swgr::fri::opening_point_valid(commitment, wrong_alpha));
+  CHECK(stir_whir_gr::fri::opening_point_valid(commitment, wrong_alpha));
   CHECK(!verifier.verify(commitment, wrong_alpha, opening.claim.value, opening));
 }
 
@@ -537,8 +537,8 @@ void TestFriPcsRejectsMismatchedCommitment() {
     return 0;
   });
 
-  const swgr::fri::FriProver prover(params);
-  const swgr::fri::FriVerifier verifier(params);
+  const stir_whir_gr::fri::FriProver prover(params);
+  const stir_whir_gr::fri::FriVerifier verifier(params);
   const auto commitment = prover.commit(instance, polynomial);
   const auto other_commitment = prover.commit(instance, other_polynomial);
   const auto opening = prover.open(commitment, polynomial, ctx.zero());
@@ -554,16 +554,16 @@ void TestFriValidationRejectsBadInputs() {
   const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 6});
   auto params = MakeParams(3);
   params.repetition_count = 0;
-  CHECK(!swgr::fri::validate(params));
+  CHECK(!stir_whir_gr::fri::validate(params));
 
   const auto instance = MakeInstance(ctx, 9, 8);
-  CHECK(swgr::fri::validate(MakeParams(3), instance));
+  CHECK(stir_whir_gr::fri::validate(MakeParams(3), instance));
 
-  const swgr::fri::FriInstance bad_degree{
+  const stir_whir_gr::fri::FriInstance bad_degree{
       .domain = instance.domain,
       .claimed_degree = 9,
   };
-  CHECK(!swgr::fri::validate(MakeParams(3), bad_degree));
+  CHECK(!stir_whir_gr::fri::validate(MakeParams(3), bad_degree));
 }
 
 }  // namespace

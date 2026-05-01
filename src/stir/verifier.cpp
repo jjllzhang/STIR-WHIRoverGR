@@ -16,7 +16,7 @@
 #include "poly_utils/quotient.hpp"
 #include "soundness/configurator.hpp"
 
-namespace swgr::stir {
+namespace stir_whir_gr::stir {
 namespace {
 
 std::uint64_t SaturatingSubtract(std::uint64_t lhs, std::uint64_t rhs) {
@@ -34,22 +34,22 @@ std::string RoundLabel(const char* prefix, std::size_t round_index) {
   return std::string(prefix) + ":" + std::to_string(round_index);
 }
 
-swgr::algebra::GRElem DeriveFoldingChallenge(
-    const StirParameters& params, swgr::crypto::Transcript& transcript,
-    const swgr::algebra::GRContext& ctx, std::string_view label) {
+stir_whir_gr::algebra::GRElem DeriveFoldingChallenge(
+    const StirParameters& params, stir_whir_gr::crypto::Transcript& transcript,
+    const stir_whir_gr::algebra::GRContext& ctx, std::string_view label) {
   if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_stir_folding_challenge(transcript, ctx, label);
   }
-  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+  return stir_whir_gr::fri::derive_round_challenge(transcript, ctx, label);
 }
 
-swgr::algebra::GRElem DeriveCombChallenge(
-    const StirParameters& params, swgr::crypto::Transcript& transcript,
-    const swgr::algebra::GRContext& ctx, std::string_view label) {
+stir_whir_gr::algebra::GRElem DeriveCombChallenge(
+    const StirParameters& params, stir_whir_gr::crypto::Transcript& transcript,
+    const stir_whir_gr::algebra::GRContext& ctx, std::string_view label) {
   if (params.protocol_mode == StirProtocolMode::TheoremGr) {
     return derive_stir_comb_challenge(transcript, ctx, label);
   }
-  return swgr::fri::derive_round_challenge(transcript, ctx, label);
+  return stir_whir_gr::fri::derive_round_challenge(transcript, ctx, label);
 }
 
 std::vector<std::uint64_t> SortedPositions(
@@ -66,37 +66,37 @@ std::uint64_t ResolveFinalQueryCount(const StirParameters& params,
                                      std::size_t round_count) {
   if (!params.query_repetitions.empty()) {
     const auto schedule =
-        swgr::fri::query_schedule(round_count + 1U, params.query_repetitions);
+        stir_whir_gr::fri::query_schedule(round_count + 1U, params.query_repetitions);
     return std::min(schedule.back(), final_domain_size);
   }
 
   const double rho = static_cast<double>(final_degree_bound + 1U) /
                      static_cast<double>(final_domain_size);
   return std::min(
-      swgr::soundness::auto_query_count_for_round(
+      stir_whir_gr::soundness::auto_query_count_for_round(
           params.sec_mode, params.lambda_target, params.pow_bits, rho,
           round_count),
       final_domain_size);
 }
 
 struct VirtualFunctionState {
-  swgr::algebra::GRElem comb_randomness;
-  swgr::poly_utils::Polynomial ans_polynomial;
-  std::vector<swgr::algebra::GRElem> quotient_set;
+  stir_whir_gr::algebra::GRElem comb_randomness;
+  stir_whir_gr::poly_utils::Polynomial ans_polynomial;
+  std::vector<stir_whir_gr::algebra::GRElem> quotient_set;
 };
 
 struct VerificationState {
   Domain domain;
   std::uint64_t degree_bound = 0;
-  swgr::algebra::GRElem folding_alpha;
+  stir_whir_gr::algebra::GRElem folding_alpha;
   bool initial = true;
   VirtualFunctionState virtual_function;
 };
 
 bool QueryCurrentFunction(const VerificationState& state,
-                          const swgr::algebra::GRElem& evaluation_point,
-                          const swgr::algebra::GRElem& actual_oracle_value,
-                          swgr::algebra::GRElem* out) {
+                          const stir_whir_gr::algebra::GRElem& evaluation_point,
+                          const stir_whir_gr::algebra::GRElem& actual_oracle_value,
+                          stir_whir_gr::algebra::GRElem* out) {
   if (out == nullptr) {
     return false;
   }
@@ -122,10 +122,10 @@ bool QueryCurrentFunction(const VerificationState& state,
 
       const auto ans_eval =
           state.virtual_function.ans_polynomial.evaluate(ctx, evaluation_point);
-      const auto quotient_value = swgr::poly_utils::quotient_eval_with_hint(
+      const auto quotient_value = stir_whir_gr::poly_utils::quotient_eval_with_hint(
           ctx, actual_oracle_value, evaluation_point,
           state.virtual_function.quotient_set, ctx.inv(denominator), ans_eval);
-      *out = swgr::poly_utils::degree_correction_eval(
+      *out = stir_whir_gr::poly_utils::degree_correction_eval(
           ctx, evaluation_point, quotient_value, state.degree_bound,
           SaturatingSubtract(
               state.degree_bound,
@@ -139,15 +139,15 @@ bool QueryCurrentFunction(const VerificationState& state,
   }
 }
 
-bool DecodeBundle(const swgr::algebra::GRContext& ctx,
+bool DecodeBundle(const stir_whir_gr::algebra::GRContext& ctx,
                   const std::vector<std::uint8_t>& payload,
                   std::uint64_t expected_bundle_size,
-                  std::vector<swgr::algebra::GRElem>* bundle) {
+                  std::vector<stir_whir_gr::algebra::GRElem>* bundle) {
   if (bundle == nullptr) {
     return false;
   }
   try {
-    *bundle = swgr::fri::deserialize_oracle_bundle(ctx, payload);
+    *bundle = stir_whir_gr::fri::deserialize_oracle_bundle(ctx, payload);
   } catch (...) {
     return false;
   }
@@ -157,8 +157,8 @@ bool DecodeBundle(const swgr::algebra::GRContext& ctx,
 bool ComputeFoldedAnswers(const VerificationState& state,
                           std::uint64_t fold_factor,
                           const std::vector<std::uint64_t>& query_positions,
-                          const swgr::crypto::MerkleProof& proof,
-                          std::vector<swgr::algebra::GRElem>* folded_answers) {
+                          const stir_whir_gr::crypto::MerkleProof& proof,
+                          std::vector<stir_whir_gr::algebra::GRElem>* folded_answers) {
   if (folded_answers == nullptr ||
       proof.queried_indices != query_positions ||
       proof.leaf_payloads.size() != query_positions.size()) {
@@ -172,21 +172,21 @@ bool ComputeFoldedAnswers(const VerificationState& state,
 
   for (std::size_t query_index = 0; query_index < query_positions.size();
        ++query_index) {
-    std::vector<swgr::algebra::GRElem> bundle_values;
+    std::vector<stir_whir_gr::algebra::GRElem> bundle_values;
     if (!DecodeBundle(ctx, proof.leaf_payloads[query_index], fold_factor,
                       &bundle_values)) {
       return false;
     }
 
-    std::vector<swgr::algebra::GRElem> fiber_points;
-    std::vector<swgr::algebra::GRElem> current_values;
+    std::vector<stir_whir_gr::algebra::GRElem> fiber_points;
+    std::vector<stir_whir_gr::algebra::GRElem> current_values;
     fiber_points.reserve(static_cast<std::size_t>(fold_factor));
     current_values.reserve(static_cast<std::size_t>(fold_factor));
     for (std::uint64_t fiber_offset = 0; fiber_offset < fold_factor;
          ++fiber_offset) {
       const auto point = state.domain.element(query_positions[query_index] +
                                               fiber_offset * folded_domain_size);
-      swgr::algebra::GRElem current_value;
+      stir_whir_gr::algebra::GRElem current_value;
       if (!QueryCurrentFunction(state, point,
                                 bundle_values[static_cast<std::size_t>(
                                     fiber_offset)],
@@ -199,7 +199,7 @@ bool ComputeFoldedAnswers(const VerificationState& state,
 
     try {
       folded_answers->push_back(ctx.with_ntl_context([&] {
-        return swgr::poly_utils::fold_eval_k(fiber_points, current_values,
+        return stir_whir_gr::poly_utils::fold_eval_k(fiber_points, current_values,
                                              state.folding_alpha);
       }));
     } catch (...) {
@@ -210,19 +210,19 @@ bool ComputeFoldedAnswers(const VerificationState& state,
 }
 
 bool CheckShakeConsistency(
-    const swgr::algebra::GRContext& ctx,
-    const swgr::poly_utils::Polynomial& ans_polynomial,
-    const swgr::poly_utils::Polynomial& shake_polynomial,
-    const std::vector<swgr::algebra::GRElem>& quotient_points,
-    const std::vector<swgr::algebra::GRElem>& quotient_values,
-    const swgr::algebra::GRElem& shake_point) {
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const stir_whir_gr::poly_utils::Polynomial& ans_polynomial,
+    const stir_whir_gr::poly_utils::Polynomial& shake_polynomial,
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_points,
+    const std::vector<stir_whir_gr::algebra::GRElem>& quotient_values,
+    const stir_whir_gr::algebra::GRElem& shake_point) {
   if (quotient_points.size() != quotient_values.size()) {
     return false;
   }
 
   try {
     return ctx.with_ntl_context([&] {
-      std::vector<swgr::algebra::GRElem> denominators;
+      std::vector<stir_whir_gr::algebra::GRElem> denominators;
       denominators.reserve(quotient_points.size());
       for (const auto& point : quotient_points) {
         const auto difference = shake_point - point;
@@ -252,8 +252,8 @@ bool CheckShakeConsistency(
 StirVerifier::StirVerifier(StirParameters params) : params_(std::move(params)) {}
 
 bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
-                          swgr::ProofStatistics* stats) const {
-  swgr::ProofStatistics local_stats;
+                          stir_whir_gr::ProofStatistics* stats) const {
+  stir_whir_gr::ProofStatistics local_stats;
   const auto verify_start = std::chrono::steady_clock::now();
   try {
     if (!validate(params_, instance)) {
@@ -272,7 +272,7 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
     }
 
     const auto& ctx = instance.domain.context();
-    swgr::crypto::Transcript transcript(params_.hash_profile);
+    stir_whir_gr::crypto::Transcript transcript(params_.hash_profile);
     const auto transcript_start = std::chrono::steady_clock::now();
     transcript.absorb_bytes(proof.initial_root);
     VerificationState state{
@@ -299,7 +299,7 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
           folded_degree_bound(state.degree_bound, params_.virtual_fold_factor);
 
       const auto merkle_start = std::chrono::steady_clock::now();
-      if (!swgr::crypto::MerkleTree::verify(
+      if (!stir_whir_gr::crypto::MerkleTree::verify(
               params_.hash_profile, folded_domain.size(), current_root,
               round.queries_to_prev)) {
         return false;
@@ -329,7 +329,7 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
           round_transcript_start, std::chrono::steady_clock::now());
 
       const auto query_phase_start = std::chrono::steady_clock::now();
-      std::vector<swgr::algebra::GRElem> folded_answers;
+      std::vector<stir_whir_gr::algebra::GRElem> folded_answers;
       if (!ComputeFoldedAnswers(state, params_.virtual_fold_factor, query_positions,
                                 round.queries_to_prev, &folded_answers)) {
         return false;
@@ -337,8 +337,8 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
       local_stats.verifier_query_phase_ms += ElapsedMilliseconds(
           query_phase_start, std::chrono::steady_clock::now());
 
-      std::vector<swgr::algebra::GRElem> quotient_points = ood_points;
-      std::vector<swgr::algebra::GRElem> quotient_values = round.betas;
+      std::vector<stir_whir_gr::algebra::GRElem> quotient_points = ood_points;
+      std::vector<stir_whir_gr::algebra::GRElem> quotient_values = round.betas;
       quotient_points.reserve(quotient_points.size() + query_positions.size());
       quotient_values.reserve(quotient_values.size() + query_positions.size());
       for (std::size_t i = 0; i < query_positions.size(); ++i) {
@@ -394,7 +394,7 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
         final_transcript_start, std::chrono::steady_clock::now());
 
     const auto final_merkle_start = std::chrono::steady_clock::now();
-    if (!swgr::crypto::MerkleTree::verify(
+    if (!stir_whir_gr::crypto::MerkleTree::verify(
             params_.hash_profile, final_domain.size(), current_root,
             proof.queries_to_final)) {
       return false;
@@ -403,7 +403,7 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
         final_merkle_start, std::chrono::steady_clock::now());
 
     const auto final_query_phase_start = std::chrono::steady_clock::now();
-    std::vector<swgr::algebra::GRElem> final_folded_answers;
+    std::vector<stir_whir_gr::algebra::GRElem> final_folded_answers;
     if (!ComputeFoldedAnswers(state, params_.virtual_fold_factor, final_queries,
                               proof.queries_to_final, &final_folded_answers)) {
       return false;
@@ -435,8 +435,8 @@ bool StirVerifier::verify(const StirInstance& instance, const StirProof& proof,
 
 bool StirVerifier::verify(const StirInstance& instance,
                           const StirProofWithWitness& artifact,
-                          swgr::ProofStatistics* stats) const {
+                          stir_whir_gr::ProofStatistics* stats) const {
   return verify(instance, artifact.proof, stats);
 }
 
-}  // namespace swgr::stir
+}  // namespace stir_whir_gr::stir
