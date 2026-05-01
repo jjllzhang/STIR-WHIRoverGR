@@ -142,6 +142,11 @@ void ValidateInputs(const WhirUniqueDecodingInputs &inputs) {
   if (inputs.max_n0_search_steps == 0) {
     throw std::invalid_argument("WHIR n0 search step guard must be non-zero");
   }
+  if (inputs.fixed_extension_degree != 0 && inputs.max_extension_degree != 0 &&
+      inputs.fixed_extension_degree > inputs.max_extension_degree) {
+    throw std::invalid_argument(
+        "WHIR fixed_extension_degree exceeds max_extension_degree guard");
+  }
   ValidateOpenUnitRational(inputs.rho0, "WHIR rho0");
 }
 
@@ -450,9 +455,13 @@ AnalyzeCandidate(const WhirUniqueDecodingInputs &inputs,
   const std::uint64_t algebraic_bits = CeilLog2ZZ(algebraic_bound);
   selection.rsec = CheckedAdd(CheckedAdd(inputs.lambda_target, 1, "WHIR rsec"),
                               algebraic_bits, "WHIR rsec");
-  selection.selected_r =
-      CheckedMul(selection.rdom, CeilDiv(selection.rsec, selection.rdom),
-                 "WHIR selected r");
+  if (inputs.fixed_extension_degree != 0) {
+    selection.selected_r = inputs.fixed_extension_degree;
+  } else {
+    selection.selected_r =
+        CheckedMul(selection.rdom, CeilDiv(selection.rsec, selection.rdom),
+                   "WHIR selected r");
+  }
   selection.public_params.extension_degree = selection.selected_r;
   selection.algebraic_bound = ZZToString(algebraic_bound);
   selection.algebraic_error_log2 =
@@ -468,6 +477,15 @@ AnalyzeCandidate(const WhirUniqueDecodingInputs &inputs,
       domain_divides_teichmuller_group(n0, selection.selected_r);
 
   if (!selection.feasible) {
+    if (!domain_divides_teichmuller_group(n0, selection.selected_r)) {
+      selection.notes.push_back(
+          "candidate n0 does not divide the fixed Teichmuller group size 2^r-1");
+    }
+    if (!(selection.algebraic_error_log2 <
+          -static_cast<long double>(inputs.lambda_target))) {
+      selection.notes.push_back(
+          "candidate fixed r is too small for the WHIR algebraic error target");
+    }
     selection.notes.push_back(
         "candidate does not meet the WHIR unique-decoding soundness target");
   }
@@ -524,6 +542,11 @@ select_whir_unique_decoding_parameters(const WhirUniqueDecodingInputs &inputs) {
   result.notes.push_back(
       "Unique-decoding thresholds use the half-gap value "
       "delta_i=(1-rho_i)/2.");
+  if (inputs.fixed_extension_degree != 0) {
+    result.notes.push_back("WHIR selector uses caller-fixed extension degree r=" +
+                           std::to_string(inputs.fixed_extension_degree) +
+                           " and searches only compatible domains.");
+  }
 
   const auto layer_widths =
       LayerWidths(inputs.variable_count, inputs.max_layer_width);
@@ -549,13 +572,17 @@ select_whir_unique_decoding_parameters(const WhirUniqueDecodingInputs &inputs) {
     CandidateAnalysis analysis =
         AnalyzeCandidate(inputs, layer_widths, candidate);
     if (analysis.valid) {
-      analysis.selection.notes.insert(analysis.selection.notes.begin(),
-                                      result.notes.begin(), result.notes.end());
       if (!analysis.selection.feasible) {
+        for (const auto &note : analysis.selection.notes) {
+          result.notes.push_back("skipping WHIR n0 candidate " +
+                                 std::to_string(candidate) + ": " + note);
+        }
         result.notes.push_back("skipping a WHIR n0 candidate because its "
                                "soundness envelope is still infeasible");
       } else if (inputs.max_extension_degree == 0 ||
                  analysis.selection.selected_r <= inputs.max_extension_degree) {
+        analysis.selection.notes.insert(analysis.selection.notes.begin(),
+                                        result.notes.begin(), result.notes.end());
         return analysis.selection;
       } else {
         result.notes.push_back("skipping a WHIR n0 candidate because selected "

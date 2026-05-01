@@ -16,6 +16,9 @@ class WhirProver {
   WhirCommitment commit(const WhirPublicParameters& pp,
                         const MultiQuadraticPolynomial& polynomial,
                         WhirCommitmentState* state) const;
+  WhirCommitment commit(const WhirPublicParameters& pp,
+                        const MultilinearPolynomial& polynomial,
+                        WhirCommitmentState* state) const;
 
   WhirOpening open(const WhirCommitment& commitment,
                    const WhirCommitmentState& state,

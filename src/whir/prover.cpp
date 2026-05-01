@@ -99,6 +99,16 @@ WhirCommitment WhirProver::commit(
   return commitment;
 }
 
+WhirCommitment WhirProver::commit(
+    const WhirPublicParameters& pp, const MultilinearPolynomial& polynomial,
+    WhirCommitmentState* state) const {
+  if (!pp.ctx) {
+    throw std::invalid_argument(
+        "whir::WhirProver::commit received invalid public parameters");
+  }
+  return commit(pp, polynomial.to_multi_quadratic(*pp.ctx), state);
+}
+
 WhirOpening WhirProver::open(
     const WhirCommitment& commitment, const WhirCommitmentState& state,
     std::span<const swgr::algebra::GRElem> point) const {

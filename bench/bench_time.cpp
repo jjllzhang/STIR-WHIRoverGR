@@ -40,11 +40,17 @@ enum class FriSoundnessMode {
   ManualRepetition,
 };
 
+enum class WhirPolynomialKind {
+  MultiQuadratic,
+  Multilinear,
+};
+
 struct TimeBenchOptions {
   std::vector<std::string> protocols = {"fri3", "fri9", "stir9to3"};
   std::uint64_t p = 2;
   std::uint64_t k_exp = 16;
   std::uint64_t r = 162;
+  bool r_was_set = false;
   std::uint64_t n = 243;
   std::uint64_t d = 81;
   FriSoundnessMode fri_soundness_mode = FriSoundnessMode::TheoremAuto;
@@ -60,6 +66,8 @@ struct TimeBenchOptions {
   std::uint64_t whir_m = 3;
   std::uint64_t whir_bmax = 1;
   swgr::whir::WhirRational whir_rho0{1, 3};
+  WhirPolynomialKind whir_polynomial_kind = WhirPolynomialKind::MultiQuadratic;
+  std::optional<std::uint64_t> whir_fixed_r;
   std::optional<std::uint64_t> whir_repetitions;
   std::uint64_t threads = 1;
   std::uint64_t warmup = 1;
@@ -161,6 +169,19 @@ FriSoundnessMode ParseFriSoundnessMode(const std::string& value) {
   throw std::invalid_argument(
       "unsupported --fri-soundness-mode: " + value +
       " (expected theorem_auto or manual_repetition)");
+}
+
+WhirPolynomialKind ParseWhirPolynomialKind(const std::string& value) {
+  const std::string lowered = swgr::bench::ToLowerCopy(value);
+  if (lowered == "multiquadratic" || lowered == "multi_quadratic") {
+    return WhirPolynomialKind::MultiQuadratic;
+  }
+  if (lowered == "multilinear" || lowered == "multi_linear") {
+    return WhirPolynomialKind::Multilinear;
+  }
+  throw std::invalid_argument(
+      "unsupported --whir-polynomial: " + value +
+      " (expected multiquadratic or multilinear)");
 }
 
 std::string DeltaRatioString(
@@ -373,7 +394,7 @@ double VerifyProfileUnaccountedTotal(const TimeBenchRow& row) {
 std::string TimeBenchUsage(const char* binary_name) {
   return std::string("Usage: ") + binary_name +
          " [options]\n"
-         "  --protocol fri3|fri9|stir9to3|all\n"
+         "  --protocol fri3|fri9|stir9to3|whir_gr_ud|all\n"
          "  --p <uint> --k-exp <uint> --r <uint>\n"
          "  --n <uint> --d <uint>\n"
          "  --fri-soundness-mode theorem_auto|manual_repetition\n"
@@ -384,6 +405,8 @@ std::string TimeBenchUsage(const char* binary_name) {
          "  --stop-degree <uint> --ood-samples <uint>\n"
          "  --queries auto|theorem_auto|q0[,q1,...] --threads <uint>\n"
          "  --whir-m <uint> --whir-bmax <uint>\n"
+         "  --whir-r <uint> or --whir-fixed-r <uint>\n"
+         "  --whir-polynomial multiquadratic|multilinear\n"
          "  --whir-rho0 <num/den>\n"
          "  --whir-repetitions <uint>\n"
          "    note: fri3/fri9 default to theorem_auto, which solves the\n"
@@ -401,11 +424,13 @@ std::string TimeBenchUsage(const char* binary_name) {
          "    note: theorem metadata is reported for the resulting live\n"
          "    parameterization, and pow_bits is not folded into theorem\n"
          "    security bits\n"
+         "    note: --protocol all expands to fri3,fri9,stir9to3,whir_gr_ud\n"
          "    note: whir_gr_ud runs the unique-decoding GR(2^s,r) WHIR PCS\n"
-         "    selector from whir_gr2k_pcs.pdf and chooses r from lambda; the\n"
-         "    existing --k-exp option supplies s\n"
+         "    selector from whir_gr2k_pcs.pdf; --k-exp supplies s, and r is\n"
+         "    chosen from lambda unless --whir-r/--whir-fixed-r or explicit --r\n"
+         "    fixes it first\n"
          "    note: text/csv/json output currently keeps one shared row schema\n"
-         "    across FRI and STIR; theorem_fri and theorem_gr\n"
+         "    across FRI, STIR, and WHIR; theorem_fri and theorem_gr\n"
          "    rows use lambda_target/effective_security_bits, while\n"
          "    manual_standalone_fri rows still leave theorem-only fields as\n"
          "    not_applicable\n"
@@ -443,6 +468,7 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
       options.k_exp = swgr::bench::ParseUint64(key, value);
     } else if (key == "--r") {
       options.r = swgr::bench::ParseUint64(key, value);
+      options.r_was_set = true;
     } else if (key == "--n") {
       options.n = swgr::bench::ParseUint64(key, value);
     } else if (key == "--d") {
@@ -477,6 +503,10 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
       options.whir_bmax = swgr::bench::ParseUint64(key, value);
     } else if (key == "--whir-rho0") {
       options.whir_rho0 = ParseWhirRational(key, value);
+    } else if (key == "--whir-r" || key == "--whir-fixed-r") {
+      options.whir_fixed_r = swgr::bench::ParseUint64(key, value);
+    } else if (key == "--whir-polynomial") {
+      options.whir_polynomial_kind = ParseWhirPolynomialKind(value);
     } else if (key == "--whir-repetitions") {
       options.whir_repetitions = swgr::bench::ParseUint64(key, value);
     } else if (key == "--threads") {
@@ -514,6 +544,12 @@ TimeBenchOptions ParseTimeBenchOptions(int argc, char** argv) {
   }
   if (options.whir_bmax == 0) {
     throw std::invalid_argument("--whir-bmax must be > 0");
+  }
+  if (options.r == 0) {
+    throw std::invalid_argument("--r must be > 0");
+  }
+  if (options.whir_fixed_r.has_value() && *options.whir_fixed_r == 0) {
+    throw std::invalid_argument("--whir-r/--whir-fixed-r must be > 0");
   }
   if (options.whir_repetitions.has_value() &&
       *options.whir_repetitions == 0) {
@@ -555,6 +591,25 @@ swgr::whir::MultiQuadraticPolynomial SampleWhirPolynomial(
     coefficients.back() += ctx.one();
     return swgr::whir::MultiQuadraticPolynomial(variable_count,
                                                 std::move(coefficients));
+  });
+}
+
+swgr::whir::MultilinearPolynomial SampleWhirMultilinearPolynomial(
+    const swgr::algebra::GRContext& ctx, std::uint64_t variable_count) {
+  return ctx.with_ntl_context([&] {
+    std::vector<swgr::algebra::GRElem> coefficients;
+    coefficients.reserve(
+        static_cast<std::size_t>(swgr::whir::pow2_checked(variable_count)));
+    auto current = ctx.one();
+    const auto twist = ctx.teich_generator();
+    for (std::uint64_t i = 0; i < swgr::whir::pow2_checked(variable_count);
+         ++i) {
+      coefficients.push_back(current + ctx.one());
+      current *= twist;
+    }
+    coefficients.back() += ctx.one();
+    return swgr::whir::MultilinearPolynomial(variable_count,
+                                             std::move(coefficients));
   });
 }
 
@@ -1171,6 +1226,15 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
     throw std::invalid_argument("whir_gr_ud currently requires --p 2");
   }
 
+  const std::optional<std::uint64_t> fixed_whir_r =
+      options.whir_fixed_r.has_value()
+          ? options.whir_fixed_r
+          : (options.r_was_set ? std::optional<std::uint64_t>(options.r)
+                               : std::nullopt);
+  if (fixed_whir_r.has_value() && *fixed_whir_r == 0) {
+    throw std::invalid_argument("WHIR fixed r must be non-zero");
+  }
+
   auto selection = swgr::whir::select_whir_unique_decoding_parameters(
       swgr::whir::WhirUniqueDecodingInputs{
           .lambda_target = options.lambda_target,
@@ -1178,6 +1242,7 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
           .variable_count = options.whir_m,
           .max_layer_width = options.whir_bmax,
           .rho0 = options.whir_rho0,
+          .fixed_extension_degree = fixed_whir_r.value_or(0),
       });
   if (!selection.feasible) {
     throw std::invalid_argument("WHIR unique-decoding selector found no "
@@ -1222,7 +1287,16 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
   swgr::whir::WhirParameters params;
   params.lambda_target = options.lambda_target;
   params.hash_profile = options.hash_profile;
-  const auto polynomial = SampleWhirPolynomial(*ctx, options.whir_m);
+  const auto multiquadratic_polynomial =
+      options.whir_polynomial_kind == WhirPolynomialKind::MultiQuadratic
+          ? std::optional<swgr::whir::MultiQuadraticPolynomial>(
+                SampleWhirPolynomial(*ctx, options.whir_m))
+          : std::nullopt;
+  const auto multilinear_polynomial =
+      options.whir_polynomial_kind == WhirPolynomialKind::Multilinear
+          ? std::optional<swgr::whir::MultilinearPolynomial>(
+                SampleWhirMultilinearPolynomial(*ctx, options.whir_m))
+          : std::nullopt;
   const auto point = SampleWhirOpenPoint(*ctx, pp.initial_domain, options.whir_m);
   const swgr::whir::WhirProver prover(params);
   const swgr::whir::WhirVerifier verifier(params);
@@ -1231,7 +1305,12 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
                           [&](TimeBenchRow* current_row) {
                             swgr::whir::WhirCommitmentState state;
                             const auto commitment =
-                                prover.commit(pp, polynomial, &state);
+                                multilinear_polynomial.has_value()
+                                    ? prover.commit(pp, *multilinear_polynomial,
+                                                    &state)
+                                    : prover.commit(pp,
+                                                    *multiquadratic_polynomial,
+                                                    &state);
                             const auto opening =
                                 prover.open(commitment, state, point);
                             swgr::ProofStatistics verify_stats;
@@ -1274,7 +1353,20 @@ TimeBenchRow MakeWhirRow(const TimeBenchOptions& options) {
   row.effective_security_bits = selection.effective_security_bits;
   auto notes = selection.notes;
   notes.push_back("selected_r=" + std::to_string(selection.selected_r));
+  if (fixed_whir_r.has_value()) {
+    notes.push_back("fixed_r=" + std::to_string(*fixed_whir_r));
+  }
   notes.push_back("initial_domain_size=" + std::to_string(row.n));
+  if (options.whir_polynomial_kind == WhirPolynomialKind::Multilinear) {
+    notes.push_back("polynomial_family=multilinear_embedded_in_ternary_"
+                    "multi_quadratic_code");
+    notes.push_back("multilinear_coefficient_count=" +
+                    std::to_string(swgr::whir::pow2_checked(options.whir_m)));
+    notes.push_back("soundness_dimension_remains_3^m=" +
+                    std::to_string(code_dimension));
+  } else {
+    notes.push_back("polynomial_family=multi_quadratic");
+  }
   if (options.whir_repetitions.has_value()) {
     notes.push_back("manual --whir-repetitions overrides selector repetitions "
                     "for debugging only");

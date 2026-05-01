@@ -47,6 +47,29 @@ algebra::GRElem PrefixWeight(std::uint64_t prefix_index,
   return weight;
 }
 
+std::uint64_t BinaryIndexToTernaryIndex(std::uint64_t binary_index,
+                                        std::uint64_t variable_count) {
+  std::uint64_t ternary_index = 0;
+  std::uint64_t ternary_place = 1;
+  for (std::uint64_t variable = 0; variable < variable_count; ++variable) {
+    if ((binary_index & 1U) != 0U) {
+      if (ternary_index >
+          std::numeric_limits<std::uint64_t>::max() - ternary_place) {
+        throw std::overflow_error("multilinear ternary index overflow");
+      }
+      ternary_index += ternary_place;
+    }
+    binary_index >>= 1U;
+    if (variable + 1U < variable_count) {
+      if (ternary_place > std::numeric_limits<std::uint64_t>::max() / 3U) {
+        throw std::overflow_error("multilinear ternary index overflow");
+      }
+      ternary_place *= 3U;
+    }
+  }
+  return ternary_index;
+}
+
 }  // namespace
 
 std::uint64_t pow3_checked(std::uint64_t exponent) {
@@ -56,6 +79,17 @@ std::uint64_t pow3_checked(std::uint64_t exponent) {
       throw std::overflow_error("pow3_checked overflow");
     }
     out *= 3U;
+  }
+  return out;
+}
+
+std::uint64_t pow2_checked(std::uint64_t exponent) {
+  std::uint64_t out = 1;
+  for (std::uint64_t i = 0; i < exponent; ++i) {
+    if (out > std::numeric_limits<std::uint64_t>::max() / 2U) {
+      throw std::overflow_error("pow2_checked overflow");
+    }
+    out *= 2U;
   }
   return out;
 }
@@ -224,6 +258,77 @@ poly_utils::Polynomial MultiQuadraticPolynomial::to_univariate_pow_polynomial(
     const algebra::GRContext& ctx) const {
   return ctx.with_ntl_context(
       [&] { return poly_utils::Polynomial(coefficients_); });
+}
+
+MultilinearPolynomial::MultilinearPolynomial(
+    std::uint64_t variable_count, std::vector<algebra::GRElem> coefficients)
+    : variable_count_(variable_count) {
+  const std::uint64_t max_coefficients = pow2_checked(variable_count_);
+  if (coefficients.size() >
+      CheckedSize(max_coefficients, "multilinear coefficient bound")) {
+    throw std::invalid_argument(
+        "MultilinearPolynomial coefficient length exceeds 2^m");
+  }
+  coefficients_ = TrimTrailingZeros(std::move(coefficients));
+}
+
+algebra::GRElem MultilinearPolynomial::evaluate(
+    const algebra::GRContext& ctx,
+    std::span<const algebra::GRElem> point) const {
+  if (point.size() != CheckedSize(variable_count_, "variable_count")) {
+    throw std::invalid_argument(
+        "MultilinearPolynomial::evaluate point length mismatch");
+  }
+
+  return ctx.with_ntl_context([&] {
+    algebra::GRElem acc;
+    clear(acc);
+
+    for (std::size_t index = 0; index < coefficients_.size(); ++index) {
+      const auto& coefficient = coefficients_[index];
+      if (coefficient == 0) {
+        continue;
+      }
+
+      std::uint64_t bits = static_cast<std::uint64_t>(index);
+      algebra::GRElem monomial;
+      set(monomial);
+      for (std::uint64_t variable = 0; variable < variable_count_; ++variable) {
+        if ((bits & 1U) != 0U) {
+          monomial *= point[CheckedSize(variable, "variable")];
+        }
+        bits >>= 1U;
+      }
+      acc += coefficient * monomial;
+    }
+    return acc;
+  });
+}
+
+MultiQuadraticPolynomial MultilinearPolynomial::to_multi_quadratic(
+    const algebra::GRContext& ctx) const {
+  return ctx.with_ntl_context([&] {
+    std::vector<algebra::GRElem> embedded(
+        CheckedSize(pow3_checked(variable_count_),
+                    "embedded multilinear coefficient count"));
+    for (auto& coefficient : embedded) {
+      clear(coefficient);
+    }
+
+    for (std::size_t index = 0; index < coefficients_.size(); ++index) {
+      embedded[CheckedSize(BinaryIndexToTernaryIndex(
+                               static_cast<std::uint64_t>(index),
+                               variable_count_),
+                           "embedded multilinear coefficient index")] =
+          coefficients_[index];
+    }
+    return MultiQuadraticPolynomial(variable_count_, std::move(embedded));
+  });
+}
+
+algebra::GRElem MultilinearPolynomial::evaluate_pow(
+    const algebra::GRContext& ctx, const algebra::GRElem& x) const {
+  return to_multi_quadratic(ctx).evaluate_pow(ctx, x);
 }
 
 }  // namespace swgr::whir

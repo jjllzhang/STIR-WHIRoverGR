@@ -172,6 +172,10 @@ if(SWGR_BUILD_TESTS)
   target_link_libraries(test_whir_multiquadratic PRIVATE stir_over_gr)
   target_include_directories(test_whir_multiquadratic
                              PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  add_executable(test_whir_multilinear tests/test_whir_multilinear.cpp)
+  target_link_libraries(test_whir_multilinear PRIVATE stir_over_gr)
+  target_include_directories(test_whir_multilinear
+                             PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   add_executable(test_whir_constraint tests/test_whir_constraint.cpp)
   target_link_libraries(test_whir_constraint PRIVATE stir_over_gr)
   target_include_directories(test_whir_constraint
@@ -202,6 +206,8 @@ if(SWGR_BUILD_TESTS)
   add_test(NAME test_whir COMMAND $<TARGET_FILE:test_whir>)
   add_test(NAME test_whir_multiquadratic
            COMMAND $<TARGET_FILE:test_whir_multiquadratic>)
+  add_test(NAME test_whir_multilinear
+           COMMAND $<TARGET_FILE:test_whir_multilinear>)
   add_test(NAME test_whir_constraint
            COMMAND $<TARGET_FILE:test_whir_constraint>)
   add_test(NAME test_whir_folding COMMAND $<TARGET_FILE:test_whir_folding>)

@@ -20,6 +20,7 @@ struct WhirUniqueDecodingInputs {
   WhirRational rho0{1, 3};
 
   // Optional benchmark guards. A value of 0 means "unbounded".
+  std::uint64_t fixed_extension_degree = 0; // r in GR(2^s, r); 0 means auto.
   std::uint64_t max_extension_degree = 0;
   std::uint64_t max_domain_size = 0;
   std::uint64_t max_n0_search_steps = 100000;

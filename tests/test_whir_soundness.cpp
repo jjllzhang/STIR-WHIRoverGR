@@ -86,6 +86,44 @@ void TestSelectedN0DividesSelectedTeichmullerGroup() {
            selected.rdom);
 }
 
+void TestFixedExtensionDegreeIsAccepted() {
+  testutil::PrintInfo("WHIR selector accepts caller-fixed r");
+
+  auto inputs = SmallInputs();
+  inputs.fixed_extension_degree = 54;
+  const auto selected =
+      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+
+  CHECK(selected.feasible);
+  CHECK_EQ(selected.selected_r, std::uint64_t{54});
+  CHECK_EQ(selected.public_params.extension_degree, std::uint64_t{54});
+  CHECK_EQ(selected.public_params.initial_domain_size, std::uint64_t{81});
+  CHECK(swgr::whir::domain_divides_teichmuller_group(
+      selected.public_params.initial_domain_size, selected.selected_r));
+}
+
+void TestFixedExtensionDegreeCanRejectRing() {
+  testutil::PrintInfo("WHIR selector rejects incompatible fixed r");
+
+  auto inputs = SmallInputs();
+  inputs.fixed_extension_degree = 55;
+  inputs.max_n0_search_steps = 3;
+  const auto selected =
+      swgr::whir::select_whir_unique_decoding_parameters(inputs);
+
+  CHECK(!selected.feasible);
+}
+
+void TestFixedExtensionGuardConflictRejects() {
+  testutil::PrintInfo("WHIR selector rejects conflicting fixed-r guard");
+
+  auto inputs = SmallInputs();
+  inputs.fixed_extension_degree = 54;
+  inputs.max_extension_degree = 53;
+  ExpectInvalidArgument(
+      [&] { swgr::whir::select_whir_unique_decoding_parameters(inputs); });
+}
+
 void TestRequiredDomainsDivideThroughRoundChain() {
   testutil::PrintInfo("WHIR layer and shift domains divide through the chain");
 
@@ -169,6 +207,9 @@ int main() {
   RUN_TEST(TestInvalidRatesReject);
   RUN_TEST(TestSmallSmokeParamsAreAccepted);
   RUN_TEST(TestSelectedN0DividesSelectedTeichmullerGroup);
+  RUN_TEST(TestFixedExtensionDegreeIsAccepted);
+  RUN_TEST(TestFixedExtensionDegreeCanRejectRing);
+  RUN_TEST(TestFixedExtensionGuardConflictRejects);
   RUN_TEST(TestRequiredDomainsDivideThroughRoundChain);
   RUN_TEST(TestAlgebraicBoundIsBelowTarget);
   RUN_TEST(TestDomainGuardCanReportInfeasible);
