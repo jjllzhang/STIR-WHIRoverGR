@@ -316,6 +316,28 @@ Expected impact:
 This is a secondary optimization. For `m=3`, encode + fold + Merkle are small
 compared with sumcheck, but after Phase 1 they may become visible.
 
+Phase 3 validation on 2026-05-02:
+
+1. `WhirCommitmentState` now caches the initial Merkle tree produced by
+   `commit`, and `open` reuses it after checking root and leaf-count
+   consistency against the commitment.
+2. Added state mismatch tests for cached-tree presence and cached-tree root
+   mismatch, while preserving the existing commitment-root mismatch rejection.
+3. Replaced unconditional full-table virtual folding with a hybrid path:
+   dense shift-query layers keep the existing full-table fold, while sparse
+   layers compute only queried fibers with the same sparse fold evaluator used
+   by verifier-side tests. This avoids changing transcript labels, roots,
+   query derivation, or proof shape.
+4. Focused release WHIR CTest passed: 7/7 tests.
+5. Baseline `m=3`, `--warmup 1 --reps 3`, `--threads 1` produced
+   `serialized_bytes_actual=32360`, `prover_total_ms=928.505`,
+   `verify_ms=724.701`, `profile_prover_merkle_mean_ms=5.900`, and
+   `profile_prover_fold_mean_ms=30.221`.
+6. The `m=4`, `--warmup 0 --reps 1`, `--threads 1` row produced
+   `serialized_bytes_actual=131636`, `prover_total_ms=8344.528`,
+   `profile_prover_merkle_mean_ms=30.688`, and
+   `profile_prover_fold_mean_ms=127.895`.
+
 ## Phase 4: Verifier Query and Sparse Fold Cleanup
 
 Goal: reduce verifier overhead once prover sumcheck is no longer dominant.

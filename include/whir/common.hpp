@@ -43,6 +43,7 @@ struct WhirCommitment {
 struct WhirCommitmentState {
   std::optional<WhirPublicParameters> public_params;
   std::optional<MultiQuadraticPolynomial> polynomial;
+  std::optional<stir_whir_gr::crypto::MerkleTree> initial_tree;
   std::vector<stir_whir_gr::algebra::GRElem> initial_oracle;
   std::vector<std::uint8_t> oracle_root;
 };

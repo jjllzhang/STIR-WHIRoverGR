@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -43,6 +45,28 @@ std::vector<std::uint64_t> SortedUnique(std::vector<std::uint64_t> values) {
   std::sort(values.begin(), values.end());
   values.erase(std::unique(values.begin(), values.end()), values.end());
   return values;
+}
+
+stir_whir_gr::algebra::GRElem EvaluateVirtualFoldQueryFromOracle(
+    const Domain& domain,
+    const std::vector<stir_whir_gr::algebra::GRElem>& oracle,
+    std::span<const std::uint64_t> indices,
+    std::span<const stir_whir_gr::algebra::GRElem> alphas) {
+  if (oracle.size() != domain.size()) {
+    throw std::invalid_argument(
+        "WHIR virtual fold query requires oracle size == domain size");
+  }
+
+  std::vector<stir_whir_gr::algebra::GRElem> points;
+  std::vector<stir_whir_gr::algebra::GRElem> values;
+  points.reserve(indices.size());
+  values.reserve(indices.size());
+  for (const std::uint64_t index : indices) {
+    points.push_back(domain.element(index));
+    values.push_back(oracle[static_cast<std::size_t>(index)]);
+  }
+
+  return evaluate_repeated_ternary_fold_from_values(points, values, alphas);
 }
 
 }  // namespace
@@ -93,6 +117,7 @@ WhirCommitment WhirProver::commit(
   if (state != nullptr) {
     state->public_params = pp;
     state->polynomial = polynomial;
+    state->initial_tree = std::move(tree);
     state->initial_oracle = std::move(initial_oracle);
     state->oracle_root = commitment.oracle_root;
   }
@@ -116,7 +141,7 @@ WhirOpening WhirProver::open(
     throw std::invalid_argument(
         "whir::WhirProver::open received invalid commitment");
   }
-  if (!state.public_params || !state.polynomial) {
+  if (!state.public_params || !state.polynomial || !state.initial_tree) {
     throw std::invalid_argument(
         "whir::WhirProver::open requires commit state produced by commit");
   }
@@ -128,6 +153,9 @@ WhirOpening WhirProver::open(
         "whir::WhirProver::open point length mismatch");
   }
   if (state.oracle_root != commitment.oracle_root ||
+      state.initial_tree->root() != commitment.oracle_root ||
+      state.initial_tree->leaf_count() !=
+          static_cast<std::size_t>(pp.initial_domain.size()) ||
       state.initial_oracle.size() !=
           static_cast<std::size_t>(pp.initial_domain.size())) {
     throw std::invalid_argument(
@@ -147,13 +175,9 @@ WhirOpening WhirProver::open(
   double query_open_ms = 0.0;
 
   auto timer_start = std::chrono::steady_clock::now();
-  auto current_tree =
-      build_oracle_tree(pp.hash_profile, ctx, state.initial_oracle);
-  merkle_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
-  if (current_tree.root() != commitment.oracle_root) {
-    throw std::invalid_argument(
-        "whir::WhirProver::open state oracle does not match commitment root");
-  }
+  const stir_whir_gr::crypto::MerkleTree* current_tree =
+      &(*state.initial_tree);
+  std::optional<stir_whir_gr::crypto::MerkleTree> current_tree_storage;
 
   auto current_polynomial = *state.polynomial;
   auto current_oracle = state.initial_oracle;
@@ -231,11 +255,17 @@ WhirOpening WhirProver::open(
         shift_domain_size, pp.shift_repetitions[layer]);
     transcript_ms +=
         ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
-    timer_start = std::chrono::steady_clock::now();
-    auto folded_for_queries =
-        repeated_ternary_fold_table(current_domain, current_oracle, alphas);
-    fold_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
-
+    std::vector<stir_whir_gr::algebra::GRElem> folded_for_queries;
+    const bool dense_shift_queries =
+        shift_positions.size() >=
+        static_cast<std::size_t>((shift_domain_size + 1U) / 2U);
+    if (dense_shift_queries) {
+      timer_start = std::chrono::steady_clock::now();
+      folded_for_queries =
+          repeated_ternary_fold_table(current_domain, current_oracle, alphas);
+      fold_ms +=
+          ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
+    }
     std::vector<std::uint64_t> parent_indices;
     parent_indices.reserve(shift_positions.size() *
                            static_cast<std::size_t>(pow3_checked(width)));
@@ -244,19 +274,40 @@ WhirOpening WhirProver::open(
     std::vector<stir_whir_gr::algebra::GRElem> shift_values;
     shift_points.reserve(shift_positions.size());
     shift_values.reserve(shift_positions.size());
-    for (const auto shift_index : shift_positions) {
-      const auto indices =
-          virtual_fold_query_indices(current_domain.size(), width, shift_index);
-      parent_indices.insert(parent_indices.end(), indices.begin(), indices.end());
-      shift_values.push_back(folded_for_queries[static_cast<std::size_t>(
-          shift_index)]);
-      shift_points.push_back(
-          pow_m(ctx, shift_domain.element(shift_index),
-                next_polynomial.variable_count()));
+    if (dense_shift_queries) {
+      for (const auto shift_index : shift_positions) {
+        const auto indices = virtual_fold_query_indices(current_domain.size(),
+                                                       width, shift_index);
+        parent_indices.insert(parent_indices.end(), indices.begin(),
+                              indices.end());
+        shift_values.push_back(
+            folded_for_queries[static_cast<std::size_t>(shift_index)]);
+        shift_points.push_back(
+            pow_m(ctx, shift_domain.element(shift_index),
+                  next_polynomial.variable_count()));
+      }
+    } else {
+      timer_start = std::chrono::steady_clock::now();
+      ctx.with_ntl_context([&] {
+        for (const auto shift_index : shift_positions) {
+          const auto indices = virtual_fold_query_indices(current_domain.size(),
+                                                         width, shift_index);
+          parent_indices.insert(parent_indices.end(), indices.begin(),
+                                indices.end());
+          shift_values.push_back(EvaluateVirtualFoldQueryFromOracle(
+              current_domain, current_oracle, indices, alphas));
+          shift_points.push_back(
+              pow_m(ctx, shift_domain.element(shift_index),
+                    next_polynomial.variable_count()));
+        }
+        return 0;
+      });
+      fold_ms +=
+          ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
     }
     timer_start = std::chrono::steady_clock::now();
     round.virtual_fold_openings =
-        current_tree.open(SortedUnique(std::move(parent_indices)));
+        current_tree->open(SortedUnique(std::move(parent_indices)));
     query_open_ms +=
         ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 
@@ -281,7 +332,8 @@ WhirOpening WhirProver::open(
     current_polynomial = std::move(next_polynomial);
     current_domain = std::move(next_domain);
     current_oracle = std::move(next_oracle);
-    current_tree = std::move(next_tree);
+    current_tree_storage = std::move(next_tree);
+    current_tree = &(*current_tree_storage);
     constraint = std::move(next_constraint);
   }
 
@@ -298,7 +350,7 @@ WhirOpening WhirProver::open(
   transcript_ms +=
       ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
   timer_start = std::chrono::steady_clock::now();
-  opening.proof.final_openings = current_tree.open(final_positions);
+  opening.proof.final_openings = current_tree->open(final_positions);
   query_open_ms +=
       ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
 

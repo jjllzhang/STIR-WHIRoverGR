@@ -170,6 +170,10 @@ void TestCommitmentRootIsStableAndBindsTable() {
 
   CHECK_EQ(lhs.oracle_root, rhs.oracle_root);
   CHECK_EQ(lhs_state.oracle_root, lhs.oracle_root);
+  CHECK(lhs_state.initial_tree.has_value());
+  CHECK_EQ(lhs_state.initial_tree->root(), lhs.oracle_root);
+  CHECK_EQ(lhs_state.initial_tree->leaf_count(),
+           static_cast<std::size_t>(pp.initial_domain.size()));
   CHECK_EQ(lhs_state.initial_oracle.size(),
            static_cast<std::size_t>(pp.initial_domain.size()));
   CHECK(lhs.stats.serialized_bytes > 0);
@@ -251,10 +255,38 @@ void TestOpenRejectsMismatchedState() {
   const auto point = pp.ctx->with_ntl_context(
       [&] { return std::vector<GRElem>{SmallElement(7)}; });
 
-  state.oracle_root.front() ^= 0x01U;
+  auto root_mismatch = state;
+  root_mismatch.oracle_root.front() ^= 0x01U;
   bool threw = false;
   try {
-    (void)prover.open(commitment, state, point);
+    (void)prover.open(commitment, root_mismatch, point);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+
+  auto missing_tree = state;
+  missing_tree.initial_tree.reset();
+  threw = false;
+  try {
+    (void)prover.open(commitment, missing_tree, point);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  CHECK(threw);
+
+  auto tree_root_mismatch = state;
+  auto tampered_oracle = state.initial_oracle;
+  pp.ctx->with_ntl_context([&] {
+    tampered_oracle.front() += pp.ctx->one();
+    return 0;
+  });
+  tree_root_mismatch.initial_tree =
+      stir_whir_gr::whir::build_oracle_tree(pp.hash_profile, *pp.ctx,
+                                            tampered_oracle);
+  threw = false;
+  try {
+    (void)prover.open(commitment, tree_root_mismatch, point);
   } catch (const std::invalid_argument&) {
     threw = true;
   }
