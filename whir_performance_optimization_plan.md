@@ -367,6 +367,22 @@ Acceptance:
 3. `profile_verify_algebra_mean_ms` is not increased by extra conversions or
    allocations.
 
+Phase 4 validation on 2026-05-02:
+
+1. Replaced verifier payload lookup with `std::lower_bound` over the sorted
+   Merkle proof query list after the existing exact query-set check.
+2. Avoided copying leaf payload byte vectors while evaluating virtual folds;
+   verifier now keeps payload references and deserializes directly into the
+   sparse fold input.
+3. Reused the already-computed parent index vectors for each shift query, so
+   verifier query processing no longer regenerates virtual-fold indices.
+4. Focused release WHIR CTest passed: 7/7 tests, including tamper/replay
+   rejection in `test_whir`.
+5. Baseline `m=3`, `--warmup 1 --reps 3`, `--threads 1` produced
+   `serialized_bytes_actual=32360`, `verify_ms=720.029`,
+   `profile_verify_query_mean_ms=131.679`, and
+   `profile_verify_algebra_mean_ms=535.906`.
+
 ## Phase 5: Parallelize Only After Algorithmic Fixes
 
 Goal: make `--threads` meaningful for WHIR only after the dominant algorithm is

@@ -33,23 +33,48 @@ bool SameQueries(std::vector<std::uint64_t> expected,
   return SortedUnique(std::move(expected)) == proof.queried_indices;
 }
 
-std::vector<std::vector<std::uint8_t>> PayloadsForIndices(
+using PayloadRef = const std::vector<std::uint8_t>*;
+
+std::vector<PayloadRef> PayloadRefsForIndices(
     const stir_whir_gr::crypto::MerkleProof& proof,
-    const std::vector<std::uint64_t>& indices) {
-  std::vector<std::vector<std::uint8_t>> payloads;
+    std::span<const std::uint64_t> indices) {
+  std::vector<PayloadRef> payloads;
   payloads.reserve(indices.size());
   for (const auto index : indices) {
-    const auto it =
-        std::find(proof.queried_indices.begin(), proof.queried_indices.end(),
-                  index);
-    if (it == proof.queried_indices.end()) {
+    const auto it = std::lower_bound(proof.queried_indices.begin(),
+                                     proof.queried_indices.end(), index);
+    if (it == proof.queried_indices.end() || *it != index) {
       throw std::invalid_argument("missing WHIR Merkle payload for query");
     }
     const std::size_t offset =
         static_cast<std::size_t>(it - proof.queried_indices.begin());
-    payloads.push_back(proof.leaf_payloads[offset]);
+    if (offset >= proof.leaf_payloads.size()) {
+      throw std::invalid_argument("missing WHIR Merkle payload for query");
+    }
+    payloads.push_back(&proof.leaf_payloads[offset]);
   }
   return payloads;
+}
+
+stir_whir_gr::algebra::GRElem EvaluateVirtualFoldQueryFromPayloadRefs(
+    const Domain& domain, std::span<const std::uint64_t> parent_indices,
+    std::span<const PayloadRef> payloads,
+    std::span<const stir_whir_gr::algebra::GRElem> alphas) {
+  if (payloads.size() != parent_indices.size()) {
+    throw std::invalid_argument(
+        "WHIR virtual fold query requires one payload per parent index");
+  }
+
+  std::vector<stir_whir_gr::algebra::GRElem> points;
+  std::vector<stir_whir_gr::algebra::GRElem> values;
+  points.reserve(parent_indices.size());
+  values.reserve(parent_indices.size());
+  for (std::size_t i = 0; i < parent_indices.size(); ++i) {
+    points.push_back(domain.element(parent_indices[i]));
+    values.push_back(domain.context().deserialize(*payloads[i]));
+  }
+
+  return evaluate_repeated_ternary_fold_from_values(points, values, alphas);
 }
 
 }  // namespace
@@ -156,11 +181,14 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
     std::vector<std::uint64_t> expected_parent_indices;
     expected_parent_indices.reserve(shift_positions.size() *
                                     static_cast<std::size_t>(fold_width));
+    std::vector<std::vector<std::uint64_t>> parent_indices_by_shift;
+    parent_indices_by_shift.reserve(shift_positions.size());
     for (const auto shift_index : shift_positions) {
-      const auto indices =
+      auto indices =
           virtual_fold_query_indices(current_domain.size(), width, shift_index);
       expected_parent_indices.insert(expected_parent_indices.end(),
                                      indices.begin(), indices.end());
+      parent_indices_by_shift.push_back(std::move(indices));
     }
     const bool same_queries =
         SameQueries(expected_parent_indices, round.virtual_fold_openings);
@@ -191,15 +219,14 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
     try {
       ctx.with_ntl_context([&] {
         auto gamma_power = gamma;
-        for (const auto shift_index : shift_positions) {
+        for (std::size_t i = 0; i < shift_positions.size(); ++i) {
+          const auto shift_index = shift_positions[i];
+          const auto& indices = parent_indices_by_shift[i];
           auto inner_start = std::chrono::steady_clock::now();
-          const auto indices = virtual_fold_query_indices(
-              current_domain.size(), width, shift_index);
-          const auto payloads =
-              PayloadsForIndices(round.virtual_fold_openings, indices);
-          const auto folded_value =
-              evaluate_virtual_fold_query_from_leaf_payloads(
-                  current_domain, width, shift_index, payloads, alphas);
+          const auto payloads = PayloadRefsForIndices(round.virtual_fold_openings,
+                                                      indices);
+          const auto folded_value = EvaluateVirtualFoldQueryFromPayloadRefs(
+              current_domain, indices, payloads, alphas);
           query_ms +=
               ElapsedMilliseconds(inner_start, std::chrono::steady_clock::now());
 
