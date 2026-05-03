@@ -585,6 +585,77 @@ path because it slightly regressed the `m=4`, `--threads 16` row; the retained
 version gives large single-thread encode wins while leaving the multi-thread
 encoder on the previous path.
 
+### Rejected: Remove Initial `open` Polynomial/Oracle Deep Copies
+
+Protocol-visible behavior would have stayed unchanged because the change only
+replaced local prover copies with references to commit-state data plus owned
+storage for later rounds. Timings did not improve enough to keep it:
+
+1. `m=3`, `--threads 1`, `--warmup 1 --reps 3`:
+   `prover_total_ms=843.342` before, `847.135` after,
+   `serialized_bytes_actual=32360`.
+2. `m=4`, `--threads 16`, `--warmup 0 --reps 1`:
+   after trial `prover_total_ms=6828.585`,
+   `serialized_bytes_actual=131636`, compared with the post-FFT baseline
+   band of `6788.970` to `6804.510`.
+
+Decision: reverted and not committed.
+
+### Rejected: Formula-Only WHIR Byte Counting
+
+Protocol-visible behavior would have stayed unchanged because the trial changed
+only `serialized_message_bytes`; transcript absorption still used the existing
+`Serialize*` routines. Timings were noise-level:
+
+1. `m=3`, `--threads 1`, `--warmup 1 --reps 3`:
+   `prover_total_ms=843.342` before, `842.618` after,
+   `serialized_bytes_actual=32360`.
+2. `m=4`, `--threads 16`, `--warmup 0 --reps 1`:
+   after trial `prover_total_ms=6781.770`,
+   `serialized_bytes_actual=131636`, within the same noise band as the
+   post-FFT baseline.
+
+Decision: reverted and not committed.
+
+### Kept: Verifier `eq_B` Lagrange Basis Cache
+
+Protocol-visible behavior is unchanged: verifier-side constraint restriction
+and final `W` evaluation use the same equality-kernel formula over the same
+ternary grid, but cache the three Lagrange basis polynomials instead of
+rebuilding and inverting their denominators for every `eq_B` call. Sumcheck
+checks, Merkle checks, query derivation, transcript labels, and proof fields are
+unchanged.
+
+Validation:
+
+1. `cmake --build build-release -j 16 --target test_whir test_whir_roundtrip bench_time`
+   completed.
+2. `ctest --test-dir build-release --output-on-failure -R 'test_whir(_roundtrip)?$'`
+   passed: 2/2 tests.
+3. Focused release WHIR CTest passed:
+   `ctest --test-dir build-release --output-on-failure -R 'test_whir(_constraint|_folding|_roundtrip|_multiquadratic|_multilinear|_soundness)?$'`
+   passed 7/7 tests.
+
+Timing comparison:
+
+1. `m=3`, `--threads 1`, `--warmup 1 --reps 3`:
+   - before: `verify_ms=724.922`,
+     `profile_verify_algebra_mean_ms=540.454`,
+     `serialized_bytes_actual=32360`.
+   - after: `verify_ms=245.271`,
+     `profile_verify_algebra_mean_ms=57.281`,
+     `serialized_bytes_actual=32360`.
+2. `m=4`, `--threads 16`, `--warmup 0 --reps 1`:
+   - before: `verify_ms=5107.671` to `5228.163`,
+     `profile_verify_algebra_mean_ms=4217.522` to `4318.551`,
+     `serialized_bytes_actual=131636`.
+   - after: `verify_ms=1309.944`,
+     `profile_verify_algebra_mean_ms=412.838`,
+     `serialized_bytes_actual=131636`.
+
+Decision: keep and commit. This is the largest retained verifier-side win in
+the protocol-preserving follow-up batch.
+
 ## Non-Goals
 
 1. Do not change WHIR selector semantics in `src/whir/soundness.cpp`.

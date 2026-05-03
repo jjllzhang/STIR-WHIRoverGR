@@ -1,6 +1,9 @@
 #include "whir/verifier.hpp"
 
+#include <NTL/ZZ_pE.h>
+
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -12,8 +15,16 @@
 #include "whir/constraint.hpp"
 #include "whir/folding.hpp"
 
+using NTL::clear;
+using NTL::set;
+
 namespace stir_whir_gr::whir {
 namespace {
+
+constexpr std::size_t kTernaryDegreePlusOne = 3U;
+
+using EqPolynomialCoefficients =
+    std::array<stir_whir_gr::algebra::GRElem, kTernaryDegreePlusOne>;
 
 double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
                            std::chrono::steady_clock::time_point end) {
@@ -26,6 +37,188 @@ std::vector<std::uint64_t> SortedUnique(std::vector<std::uint64_t> values) {
   std::sort(values.begin(), values.end());
   values.erase(std::unique(values.begin(), values.end()), values.end());
   return values;
+}
+
+void Clear(EqPolynomialCoefficients* coefficients) {
+  for (auto& coefficient : *coefficients) {
+    clear(coefficient);
+  }
+}
+
+bool SameGrid(std::span<const stir_whir_gr::algebra::GRElem> lhs,
+              std::span<const stir_whir_gr::algebra::GRElem> rhs) {
+  if (lhs.size() != rhs.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < lhs.size(); ++i) {
+    if (lhs[i] != rhs[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+EqPolynomialCoefficients LagrangeBasisPolynomial(
+    const stir_whir_gr::algebra::GRContext& ctx, const TernaryGrid& grid,
+    std::size_t basis_index) {
+  if (basis_index >= grid.size()) {
+    throw std::out_of_range("lagrange basis index exceeds ternary grid");
+  }
+
+  EqPolynomialCoefficients coefficients;
+  Clear(&coefficients);
+  set(coefficients[0]);
+  std::size_t degree = 0;
+
+  stir_whir_gr::algebra::GRElem denominator;
+  set(denominator);
+  const auto& basis_point = grid[basis_index];
+  for (std::size_t i = 0; i < grid.size(); ++i) {
+    if (i == basis_index) {
+      continue;
+    }
+
+    EqPolynomialCoefficients next;
+    Clear(&next);
+    for (std::size_t d = 0; d <= degree; ++d) {
+      next[d] -= coefficients[d] * grid[i];
+      next[d + 1U] += coefficients[d];
+    }
+    coefficients = next;
+    ++degree;
+    denominator *= basis_point - grid[i];
+  }
+
+  const auto denominator_inverse = ctx.inv(denominator);
+  for (auto& coefficient : coefficients) {
+    coefficient *= denominator_inverse;
+  }
+  return coefficients;
+}
+
+struct VerifierEqCache {
+  std::vector<stir_whir_gr::algebra::GRElem> grid;
+  std::vector<EqPolynomialCoefficients> lagrange_coefficients;
+
+  VerifierEqCache(const stir_whir_gr::algebra::GRContext& ctx,
+                  const TernaryGrid& ternary_grid) {
+    ctx.with_ntl_context([&] {
+      grid.assign(ternary_grid.begin(), ternary_grid.end());
+      if (!points_have_pairwise_unit_differences(ctx, grid)) {
+        throw std::invalid_argument(
+            "WHIR verifier eq cache requires a valid ternary grid");
+      }
+
+      lagrange_coefficients.reserve(kTernaryDegreePlusOne);
+      for (std::size_t i = 0; i < ternary_grid.size(); ++i) {
+        lagrange_coefficients.push_back(
+            LagrangeBasisPolynomial(ctx, ternary_grid, i));
+      }
+      return 0;
+    });
+  }
+};
+
+stir_whir_gr::algebra::GRElem EvaluateEqPolynomial(
+    const EqPolynomialCoefficients& coefficients,
+    const stir_whir_gr::algebra::GRElem& x) {
+  stir_whir_gr::algebra::GRElem out;
+  clear(out);
+  for (auto it = coefficients.rbegin(); it != coefficients.rend(); ++it) {
+    out *= x;
+    out += *it;
+  }
+  return out;
+}
+
+stir_whir_gr::algebra::GRElem CachedEqB(
+    const VerifierEqCache& cache, const stir_whir_gr::algebra::GRElem& z,
+    const stir_whir_gr::algebra::GRElem& x) {
+  stir_whir_gr::algebra::GRElem out;
+  clear(out);
+  for (std::size_t i = 0; i < cache.lagrange_coefficients.size(); ++i) {
+    out += EvaluateEqPolynomial(cache.lagrange_coefficients[i], z) *
+           EvaluateEqPolynomial(cache.lagrange_coefficients[i], x);
+  }
+  return out;
+}
+
+stir_whir_gr::algebra::GRElem CachedEqB(
+    const VerifierEqCache& cache,
+    std::span<const stir_whir_gr::algebra::GRElem> z,
+    std::span<const stir_whir_gr::algebra::GRElem> x) {
+  if (z.size() != x.size()) {
+    throw std::invalid_argument("eq_B requires equal-length points");
+  }
+
+  stir_whir_gr::algebra::GRElem out;
+  set(out);
+  for (std::size_t i = 0; i < z.size(); ++i) {
+    out *= CachedEqB(cache, z[i], x[i]);
+  }
+  return out;
+}
+
+WhirConstraint RestrictPrefixWithEqCache(
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const VerifierEqCache& cache, const WhirConstraint& constraint,
+    std::span<const stir_whir_gr::algebra::GRElem> alphas) {
+  return ctx.with_ntl_context([&] {
+    if (!SameGrid(cache.grid, constraint.grid())) {
+      throw std::invalid_argument(
+          "WHIR verifier eq cache grid does not match constraint");
+    }
+
+    std::vector<EqTerm> restricted_terms;
+    restricted_terms.reserve(constraint.terms().size());
+    for (const auto& term : constraint.terms()) {
+      if (alphas.size() > term.point.size()) {
+        throw std::invalid_argument(
+            "WhirConstraint::restrict_prefix fixes too many variables");
+      }
+
+      auto restricted_weight = term.weight;
+      for (std::size_t i = 0; i < alphas.size(); ++i) {
+        restricted_weight *= CachedEqB(cache, term.point[i], alphas[i]);
+      }
+
+      std::vector<stir_whir_gr::algebra::GRElem> tail(
+          term.point.begin() + static_cast<std::ptrdiff_t>(alphas.size()),
+          term.point.end());
+      restricted_terms.push_back(
+          EqTerm{std::move(restricted_weight), std::move(tail)});
+    }
+    return WhirConstraint(constraint.grid(), std::move(restricted_terms));
+  });
+}
+
+stir_whir_gr::algebra::GRElem EvaluateAWithEqCacheNoContext(
+    const VerifierEqCache& cache, const WhirConstraint& constraint,
+    std::span<const stir_whir_gr::algebra::GRElem> x) {
+  if (!SameGrid(cache.grid, constraint.grid())) {
+    throw std::invalid_argument(
+        "WHIR verifier eq cache grid does not match constraint");
+  }
+
+  stir_whir_gr::algebra::GRElem out;
+  clear(out);
+  for (const auto& term : constraint.terms()) {
+    if (term.point.size() != x.size()) {
+      throw std::invalid_argument(
+          "WhirConstraint::evaluate_A point length mismatch");
+    }
+    out += term.weight * CachedEqB(cache, term.point, x);
+  }
+  return out;
+}
+
+stir_whir_gr::algebra::GRElem EvaluateWWithEqCache(
+    const stir_whir_gr::algebra::GRContext& ctx,
+    const VerifierEqCache& cache, const WhirConstraint& constraint,
+    const stir_whir_gr::algebra::GRElem& z,
+    std::span<const stir_whir_gr::algebra::GRElem> x) {
+  return ctx.with_ntl_context(
+      [&] { return z * EvaluateAWithEqCacheNoContext(cache, constraint, x); });
 }
 
 bool SameQueries(std::vector<std::uint64_t> expected,
@@ -114,6 +307,7 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
   constraint.add_shift_term(ctx.one(),
                             std::vector<stir_whir_gr::algebra::GRElem>(point.begin(),
                                                                 point.end()));
+  const VerifierEqCache eq_cache(ctx, pp.ternary_grid);
   auto sigma = opening.value;
   auto current_domain = pp.initial_domain;
   auto current_root = commitment.oracle_root;
@@ -212,7 +406,8 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
     transcript_ms +=
         ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
     timer_start = std::chrono::steady_clock::now();
-    auto next_constraint = constraint.restrict_prefix(ctx, alphas);
+    auto next_constraint =
+        RestrictPrefixWithEqCache(ctx, eq_cache, constraint, alphas);
     algebra_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
     const Domain shift_domain = current_domain.pow_map(fold_width);
     const std::uint64_t next_variable_count = live_variables - width;
@@ -252,11 +447,10 @@ bool WhirVerifier::verify(const WhirCommitment& commitment,
   }
 
   timer_start = std::chrono::steady_clock::now();
-  const auto final_ok = ctx.with_ntl_context([&] {
-    const std::vector<stir_whir_gr::algebra::GRElem> empty_point;
-    return constraint.evaluate_W(ctx, opening.proof.final_constant,
-                                 empty_point) == sigma;
-  });
+  const std::vector<stir_whir_gr::algebra::GRElem> empty_point;
+  const auto final_ok =
+      EvaluateWWithEqCache(ctx, eq_cache, constraint,
+                           opening.proof.final_constant, empty_point) == sigma;
   algebra_ms += ElapsedMilliseconds(timer_start, std::chrono::steady_clock::now());
   if (!final_ok) {
     return false;
