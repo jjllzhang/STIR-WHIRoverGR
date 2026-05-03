@@ -488,6 +488,48 @@ Final report should include before/after values for:
 7. `profile_verify_algebra_mean_ms`
 8. `serialized_bytes_actual`
 
+Final acceptance validation on 2026-05-03:
+
+1. `cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release` completed.
+2. `cmake --build build-release -j 16` completed.
+3. Focused release WHIR CTest passed: 7/7 tests.
+4. Current `m=3`, `--warmup 1 --reps 3`, `--threads 1`:
+   `prover_total_ms=892.556`,
+   `profile_prover_interpolate_mean_ms=171.726`,
+   `profile_prover_encode_mean_ms=105.370`,
+   `profile_prover_fold_mean_ms=30.172`,
+   `verify_ms=717.077`,
+   `profile_verify_query_mean_ms=131.126`,
+   `profile_verify_algebra_mean_ms=533.639`,
+   `serialized_bytes_actual=32360`.
+5. Current `m=3`, `--warmup 1 --reps 3`, `--threads 16`:
+   `prover_total_ms=885.040`,
+   `profile_prover_interpolate_mean_ms=172.035`,
+   `profile_prover_encode_mean_ms=106.260`,
+   `profile_prover_fold_mean_ms=18.134`,
+   `verify_ms=720.654`,
+   `profile_verify_query_mean_ms=131.720`,
+   `profile_verify_algebra_mean_ms=536.740`,
+   `serialized_bytes_actual=32360`.
+6. Current `m=4`, `--warmup 0 --reps 1`, `--threads 1`:
+   `prover_total_ms=8047.204`,
+   `profile_prover_interpolate_mean_ms=2035.189`,
+   `profile_prover_encode_mean_ms=1541.605`,
+   `profile_prover_fold_mean_ms=127.278`,
+   `verify_ms=5036.903`,
+   `profile_verify_query_mean_ms=718.142`,
+   `profile_verify_algebra_mean_ms=4158.964`,
+   `serialized_bytes_actual=131636`.
+7. Current `m=4`, `--warmup 0 --reps 1`, `--threads 16`:
+   `prover_total_ms=6719.762`,
+   `profile_prover_interpolate_mean_ms=2040.379`,
+   `profile_prover_encode_mean_ms=264.386`,
+   `profile_prover_fold_mean_ms=42.989`,
+   `verify_ms=5052.538`,
+   `profile_verify_query_mean_ms=720.992`,
+   `profile_verify_algebra_mean_ms=4170.925`,
+   `serialized_bytes_actual=131636`.
+
 ## Non-Goals
 
 1. Do not change WHIR selector semantics in `src/whir/soundness.cpp`.
