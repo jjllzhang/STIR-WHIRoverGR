@@ -1,21 +1,34 @@
 #include "whir/prover.hpp"
 
+#include <NTL/ZZ_pE.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
+
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
+#include <omp.h>
+#endif
 
 #include "crypto/fs/transcript.hpp"
 #include "whir/constraint.hpp"
 #include "whir/folding.hpp"
 
+using NTL::clear;
+using NTL::power;
+
 namespace stir_whir_gr::whir {
 namespace {
+
+constexpr std::uint64_t kParallelEncodeThreshold = 128U;
 
 double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
                            std::chrono::steady_clock::time_point end) {
@@ -24,14 +37,82 @@ double ElapsedMilliseconds(std::chrono::steady_clock::time_point start,
       .count();
 }
 
+long CheckedLong(std::uint64_t value, const char* label) {
+  if (value > static_cast<std::uint64_t>(std::numeric_limits<long>::max())) {
+    throw std::invalid_argument(std::string(label) + " exceeds long");
+  }
+  return static_cast<long>(value);
+}
+
+std::ptrdiff_t CheckedPtrdiff(std::uint64_t value, const char* label) {
+  if (value >
+      static_cast<std::uint64_t>(std::numeric_limits<std::ptrdiff_t>::max())) {
+    throw std::invalid_argument(std::string(label) + " exceeds ptrdiff_t");
+  }
+  return static_cast<std::ptrdiff_t>(value);
+}
+
+std::size_t CheckedSize(std::uint64_t value, const char* label) {
+  if (value >
+      static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())) {
+    throw std::invalid_argument(std::string(label) + " exceeds size_t");
+  }
+  return static_cast<std::size_t>(value);
+}
+
+std::ptrdiff_t ChooseEncodeChunkSize(std::uint64_t count) {
+  std::uint64_t chunk_size = 1U;
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
+  const int max_threads = omp_get_max_threads();
+  if (max_threads > 0) {
+    const std::uint64_t target_chunks =
+        static_cast<std::uint64_t>(max_threads) * 4U;
+    chunk_size =
+        std::max(chunk_size, (count + target_chunks - 1U) / target_chunks);
+  }
+#else
+  chunk_size = count;
+#endif
+  return CheckedPtrdiff(chunk_size, "encode chunk_size");
+}
+
+stir_whir_gr::algebra::GRElem EvaluatePowNoContext(
+    const std::vector<stir_whir_gr::algebra::GRElem>& coefficients,
+    const stir_whir_gr::algebra::GRElem& x) {
+  stir_whir_gr::algebra::GRElem acc;
+  clear(acc);
+  for (auto it = coefficients.rbegin(); it != coefficients.rend(); ++it) {
+    acc *= x;
+    acc += *it;
+  }
+  return acc;
+}
+
 std::vector<stir_whir_gr::algebra::GRElem> EncodeOracle(
     const stir_whir_gr::algebra::GRContext& ctx, const Domain& domain,
     const MultiQuadraticPolynomial& polynomial) {
-  std::vector<stir_whir_gr::algebra::GRElem> oracle;
-  oracle.reserve(static_cast<std::size_t>(domain.size()));
-  for (std::uint64_t index = 0; index < domain.size(); ++index) {
-    oracle.push_back(polynomial.evaluate_pow(ctx, domain.element(index)));
-  }
+  std::vector<stir_whir_gr::algebra::GRElem> oracle(
+      CheckedSize(domain.size(), "domain size"));
+  const std::ptrdiff_t count = CheckedPtrdiff(domain.size(), "domain size");
+  const bool large_enough = domain.size() >= kParallelEncodeThreshold;
+  const std::ptrdiff_t chunk_size =
+      large_enough ? ChooseEncodeChunkSize(domain.size()) : count;
+  const bool parallelize = large_enough && count > chunk_size;
+  const auto& coefficients = polynomial.coefficients();
+
+  ctx.parallel_for_chunks_with_ntl_context(
+      count, chunk_size, parallelize,
+      [&](std::ptrdiff_t begin, std::ptrdiff_t end) {
+        auto x = domain.offset() *
+                 power(domain.root(),
+                       CheckedLong(static_cast<std::uint64_t>(begin),
+                                   "encode chunk begin"));
+        for (std::ptrdiff_t index = begin; index < end; ++index) {
+          oracle[static_cast<std::size_t>(index)] =
+              EvaluatePowNoContext(coefficients, x);
+          x *= domain.root();
+        }
+      });
   return oracle;
 }
 

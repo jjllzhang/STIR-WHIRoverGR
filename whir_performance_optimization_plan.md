@@ -412,6 +412,36 @@ Acceptance:
 3. If `m=3` is too small to benefit, document it as a workload-size threshold
    rather than forcing parallel overhead into small rows.
 
+Phase 5 validation on 2026-05-03:
+
+1. Parallelized WHIR oracle encoding with
+   `GRContext::parallel_for_chunks_with_ntl_context(...)`. Each worker restores
+   the NTL context and writes only disjoint oracle slots; the Merkle tree,
+   transcript schedule, query derivation, and proof serialization remain
+   unchanged.
+2. Added a regression test that opens the same WHIR commitment with 1 and 4
+   OpenMP threads, compares the commitment root and proof messages while
+   ignoring timing counters, and verifies both openings.
+3. Focused release WHIR CTest passed: 7/7 tests.
+4. Baseline `m=3`, `--warmup 1 --reps 3`, produced:
+   - `--threads 1`: `serialized_bytes_actual=32360`,
+     `prover_total_ms=893.713`,
+     `profile_prover_encode_mean_ms=105.660`,
+     `profile_prover_fold_mean_ms=30.215`.
+   - `--threads 16`: `serialized_bytes_actual=32360`,
+     `prover_total_ms=885.876`,
+     `profile_prover_encode_mean_ms=105.718`,
+     `profile_prover_fold_mean_ms=18.498`.
+   The `m=3` row remains a small workload; the encode threshold avoids forcing
+   parallel overhead into domains smaller than 128.
+5. The `m=4`, `--warmup 0 --reps 1` row produced:
+   - `--threads 1`: `serialized_bytes_actual=131636`,
+     `prover_total_ms=8052.558`,
+     `profile_prover_encode_mean_ms=1538.592`.
+   - `--threads 16`: `serialized_bytes_actual=131636`,
+     `prover_total_ms=6726.754`,
+     `profile_prover_encode_mean_ms=264.098`.
+
 ## Recommended Execution Order
 
 1. Phase 0: lock the benchmark and test harness.

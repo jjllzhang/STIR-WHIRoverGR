@@ -3,9 +3,14 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "NTL/ZZ_pE.h"
+
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
+#include <omp.h>
+#endif
 
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
@@ -21,6 +26,27 @@ namespace {
 using stir_whir_gr::algebra::GRConfig;
 using stir_whir_gr::algebra::GRContext;
 using stir_whir_gr::algebra::GRElem;
+
+class ScopedOpenMpThreads {
+ public:
+  explicit ScopedOpenMpThreads(int requested) {
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
+    previous_ = omp_get_max_threads();
+    omp_set_num_threads(requested);
+#else
+    (void)requested;
+#endif
+  }
+
+  ~ScopedOpenMpThreads() {
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
+    omp_set_num_threads(previous_);
+#endif
+  }
+
+ private:
+  int previous_ = 1;
+};
 
 GRElem SmallElement(std::uint64_t value) {
   GRElem out;
@@ -82,12 +108,98 @@ stir_whir_gr::whir::WhirPublicParameters BuildPublicParameters() {
   });
 }
 
+stir_whir_gr::whir::WhirPublicParameters BuildLargeDomainPublicParameters() {
+  auto ctx =
+      std::make_shared<GRContext>(GRConfig{.p = 2, .k_exp = 16, .r = 162});
+  const stir_whir_gr::Domain domain =
+      stir_whir_gr::Domain::teichmuller_subgroup(ctx, 243);
+  return ctx->with_ntl_context([&] {
+    const GRElem omega = NTL::power(domain.root(), 81L);
+    return stir_whir_gr::whir::WhirPublicParameters{
+        .ctx = ctx,
+        .initial_domain = domain,
+        .variable_count = 1,
+        .layer_widths = {1},
+        .shift_repetitions = {1},
+        .final_repetitions = 1,
+        .degree_bounds = {4},
+        .deltas = {0.1L},
+        .omega = omega,
+        .ternary_grid = {ctx->one(), omega, omega * omega},
+        .lambda_target = 128,
+        .hash_profile = stir_whir_gr::HashProfile::WHIR_NATIVE,
+    };
+  });
+}
+
 stir_whir_gr::whir::MultiQuadraticPolynomial BuildPolynomial(const GRContext& ctx) {
   return ctx.with_ntl_context([&] {
     return stir_whir_gr::whir::MultiQuadraticPolynomial(
         1, std::vector<GRElem>{SmallElement(2), SmallElement(3),
                                SmallElement(5)});
   });
+}
+
+bool MerkleProofEqual(const stir_whir_gr::crypto::MerkleProof& lhs,
+                      const stir_whir_gr::crypto::MerkleProof& rhs) {
+  return lhs.queried_indices == rhs.queried_indices &&
+         lhs.leaf_payloads == rhs.leaf_payloads &&
+         lhs.sibling_hashes == rhs.sibling_hashes;
+}
+
+bool SumcheckPolynomialEqual(
+    const stir_whir_gr::whir::WhirSumcheckPolynomial& lhs,
+    const stir_whir_gr::whir::WhirSumcheckPolynomial& rhs) {
+  if (lhs.coefficients.size() != rhs.coefficients.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < lhs.coefficients.size(); ++i) {
+    if (lhs.coefficients[i] != rhs.coefficients[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool WhirProofEqualIgnoringTimings(const stir_whir_gr::whir::WhirProof& lhs,
+                                   const stir_whir_gr::whir::WhirProof& rhs) {
+  if (lhs.rounds.size() != rhs.rounds.size() ||
+      lhs.final_constant != rhs.final_constant ||
+      !MerkleProofEqual(lhs.final_openings, rhs.final_openings)) {
+    return false;
+  }
+  for (std::size_t round_index = 0; round_index < lhs.rounds.size();
+       ++round_index) {
+    const auto& lhs_round = lhs.rounds[round_index];
+    const auto& rhs_round = rhs.rounds[round_index];
+    if (lhs_round.g_root != rhs_round.g_root ||
+        lhs_round.sumcheck_polynomials.size() !=
+            rhs_round.sumcheck_polynomials.size() ||
+        !MerkleProofEqual(lhs_round.virtual_fold_openings,
+                          rhs_round.virtual_fold_openings)) {
+      return false;
+    }
+    for (std::size_t i = 0; i < lhs_round.sumcheck_polynomials.size(); ++i) {
+      if (!SumcheckPolynomialEqual(lhs_round.sumcheck_polynomials[i],
+                                   rhs_round.sumcheck_polynomials[i])) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+std::pair<stir_whir_gr::whir::WhirCommitment,
+          stir_whir_gr::whir::WhirOpening>
+OpenWithThreadCount(const stir_whir_gr::whir::WhirProver& prover,
+                    const stir_whir_gr::whir::WhirPublicParameters& pp,
+                    const stir_whir_gr::whir::MultiQuadraticPolynomial& polynomial,
+                    const std::vector<GRElem>& point, int thread_count) {
+  const ScopedOpenMpThreads threads(thread_count);
+  stir_whir_gr::whir::WhirCommitmentState state;
+  auto commitment = prover.commit(pp, polynomial, &state);
+  auto opening = prover.open(commitment, state, point);
+  return {std::move(commitment), std::move(opening)};
 }
 
 void TestIndexedLabelsAreStableAndSeparated() {
@@ -364,6 +476,27 @@ void TestVerifyRejectsTamperingAndReplay() {
   CHECK(!verifier.verify(commitment, different_point, opening));
 }
 
+void TestOpeningIsStableAcrossThreadCounts() {
+  testutil::PrintInfo(
+      "WHIR prover output is stable across single and multi-thread encoding");
+
+  const auto pp = BuildLargeDomainPublicParameters();
+  const auto polynomial = BuildPolynomial(*pp.ctx);
+  const stir_whir_gr::whir::WhirProver prover(stir_whir_gr::whir::WhirParameters{});
+  const stir_whir_gr::whir::WhirVerifier verifier(stir_whir_gr::whir::WhirParameters{});
+  const auto point = pp.ctx->with_ntl_context(
+      [&] { return std::vector<GRElem>{SmallElement(7)}; });
+
+  auto single = OpenWithThreadCount(prover, pp, polynomial, point, 1);
+  auto multi = OpenWithThreadCount(prover, pp, polynomial, point, 4);
+
+  CHECK_EQ(single.first.oracle_root, multi.first.oracle_root);
+  CHECK_EQ(single.second.value, multi.second.value);
+  CHECK(WhirProofEqualIgnoringTimings(single.second.proof, multi.second.proof));
+  CHECK(verifier.verify(single.first, point, single.second));
+  CHECK(verifier.verify(multi.first, point, multi.second));
+}
+
 }  // namespace
 
 int main() {
@@ -377,6 +510,7 @@ int main() {
     RUN_TEST(TestOpenRejectsMismatchedState);
     RUN_TEST(TestVerifyAcceptsRoundtripOpening);
     RUN_TEST(TestVerifyRejectsTamperingAndReplay);
+    RUN_TEST(TestOpeningIsStableAcrossThreadCounts);
   } catch (const std::exception& ex) {
     std::cerr << "Unhandled std::exception: " << ex.what() << "\n";
     return 2;
