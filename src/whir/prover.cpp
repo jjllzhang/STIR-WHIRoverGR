@@ -19,6 +19,7 @@
 #endif
 
 #include "crypto/fs/transcript.hpp"
+#include "poly_utils/interpolation.hpp"
 #include "whir/constraint.hpp"
 #include "whir/folding.hpp"
 
@@ -88,7 +89,7 @@ stir_whir_gr::algebra::GRElem EvaluatePowNoContext(
   return acc;
 }
 
-std::vector<stir_whir_gr::algebra::GRElem> EncodeOracle(
+std::vector<stir_whir_gr::algebra::GRElem> EncodeOracleParallelHorner(
     const stir_whir_gr::algebra::GRContext& ctx, const Domain& domain,
     const MultiQuadraticPolynomial& polynomial) {
   std::vector<stir_whir_gr::algebra::GRElem> oracle(
@@ -114,6 +115,18 @@ std::vector<stir_whir_gr::algebra::GRElem> EncodeOracle(
         }
       });
   return oracle;
+}
+
+std::vector<stir_whir_gr::algebra::GRElem> EncodeOracle(
+    const stir_whir_gr::algebra::GRContext& ctx, const Domain& domain,
+    const MultiQuadraticPolynomial& polynomial) {
+#if defined(STIR_WHIR_GR_HAS_OPENMP)
+  if (omp_get_max_threads() > 1) {
+    return EncodeOracleParallelHorner(ctx, domain, polynomial);
+  }
+#endif
+  return poly_utils::rs_encode(
+      domain, polynomial.to_univariate_pow_polynomial(ctx));
 }
 
 std::vector<stir_whir_gr::algebra::GRElem> EncodeInitialOracle(

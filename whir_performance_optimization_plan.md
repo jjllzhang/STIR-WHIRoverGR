@@ -530,6 +530,61 @@ Final acceptance validation on 2026-05-03:
    `profile_verify_algebra_mean_ms=4170.925`,
    `serialized_bytes_actual=131636`.
 
+## Per-Item Optimization Log on 2026-05-03
+
+### Kept: Hybrid FFT Encode for Single-Thread Proving
+
+Protocol-visible behavior is unchanged: the committed oracle evaluations are
+still evaluations of `f(X, X^3, X^9, ...)` over the same WHIR domain, and the
+transcript labels, query derivation, Merkle payloads, and proof fields are
+unchanged. The implementation uses the existing `rs_encode`/`fft3` path when
+OpenMP is configured for one thread, and keeps the previous parallel Horner
+encoder when multiple OpenMP threads are available.
+
+Validation:
+
+1. `cmake --build build-release -j 16 --target test_whir_multiquadratic test_whir test_whir_roundtrip bench_time`
+   completed.
+2. `ctest --test-dir build-release --output-on-failure -R 'test_whir(_multiquadratic|_roundtrip)?$'`
+   passed: 3/3 tests.
+3. Added a regression test checking `rs_encode(domain,
+   f.to_univariate_pow_polynomial(ctx))` against direct `evaluate_pow` on a
+   ternary WHIR domain.
+
+Timing comparison:
+
+1. `m=3`, `--threads 1`, `--warmup 1 --reps 3`:
+   - before: `prover_total_ms=893.882`,
+     `profile_prover_encode_mean_ms=105.633`,
+     `verify_ms=717.589`,
+     `serialized_bytes_actual=32360`.
+   - after: `prover_total_ms=843.342`,
+     `profile_prover_encode_mean_ms=48.915`,
+     `verify_ms=724.922`,
+     `serialized_bytes_actual=32360`.
+2. `m=4`, `--threads 1`, `--warmup 0 --reps 1`:
+   - before: `prover_total_ms=8047.204`,
+     `profile_prover_encode_mean_ms=1541.605`,
+     `verify_ms=5036.903`,
+     `serialized_bytes_actual=131636`.
+   - after: `prover_total_ms=6962.008`,
+     `profile_prover_encode_mean_ms=386.815`,
+     `verify_ms=5087.367`,
+     `serialized_bytes_actual=131636`.
+3. `m=4`, `--threads 16`, `--warmup 0 --reps 1`:
+   - before: `prover_total_ms=6732.008`,
+     `profile_prover_encode_mean_ms=265.883`,
+     `verify_ms=5114.210`,
+     `serialized_bytes_actual=131636`.
+   - after hybrid reruns: `prover_total_ms=6788.970` and `6804.510`,
+     `profile_prover_encode_mean_ms=266.617` and `266.901`,
+     `serialized_bytes_actual=131636`.
+
+Decision: keep the hybrid form. Pure FFT was rejected for the multi-thread
+path because it slightly regressed the `m=4`, `--threads 16` row; the retained
+version gives large single-thread encode wins while leaving the multi-thread
+encoder on the previous path.
+
 ## Non-Goals
 
 1. Do not change WHIR selector semantics in `src/whir/soundness.cpp`.

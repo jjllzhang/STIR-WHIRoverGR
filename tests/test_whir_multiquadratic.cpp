@@ -8,6 +8,7 @@
 
 #include "algebra/gr_context.hpp"
 #include "domain.hpp"
+#include "poly_utils/interpolation.hpp"
 #include "tests/test_common.hpp"
 #include "whir/multiquadratic.hpp"
 
@@ -92,6 +93,24 @@ void TestEvaluatePowMatchesUnivariate() {
 
   const auto pow_point = stir_whir_gr::whir::pow_m(ctx, x, poly.variable_count());
   CHECK_EQ(poly.evaluate(ctx, pow_point), poly.evaluate_pow(ctx, x));
+}
+
+void TestRSEncodeMatchesEvaluatePowOnTernaryDomain() {
+  testutil::PrintInfo(
+      "RS encode matches evaluate_pow on a WHIR ternary domain");
+
+  const GRContext ctx(GRConfig{.p = 2, .k_exp = 16, .r = 18});
+  const stir_whir_gr::Domain domain =
+      stir_whir_gr::Domain::teichmuller_subgroup(ctx, 27);
+  const MultiQuadraticPolynomial poly(3, SampleCoefficients(ctx, 3));
+
+  const auto encoded = stir_whir_gr::poly_utils::rs_encode(
+      domain, poly.to_univariate_pow_polynomial(ctx));
+  CHECK_EQ(encoded.size(), static_cast<std::size_t>(domain.size()));
+  for (std::uint64_t i = 0; i < domain.size(); ++i) {
+    CHECK_EQ(encoded[static_cast<std::size_t>(i)],
+             poly.evaluate_pow(ctx, domain.element(i)));
+  }
 }
 
 void TestRestrictPrefixMatchesOriginalEvaluation() {
@@ -216,6 +235,7 @@ int main() {
     RUN_TEST(TestBase3HelpersAndPow3);
     RUN_TEST(TestPowM);
     RUN_TEST(TestEvaluatePowMatchesUnivariate);
+    RUN_TEST(TestRSEncodeMatchesEvaluatePowOnTernaryDomain);
     RUN_TEST(TestRestrictPrefixMatchesOriginalEvaluation);
     RUN_TEST(TestMultilinearEmbedding);
     RUN_TEST(TestInvalidInputsReject);
